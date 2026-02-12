@@ -865,17 +865,28 @@ def get_cross_doc_contradiction_view(progress=gr.Progress()):
         doc_id = doc_info["id"]
         index_result = store.get_document(doc_id)
         if index_result is not None:
-            skeleton, kv_store = index_result
+            skeleton, kv_store = index_result[0], index_result[1]
             doc_tuples.append((doc_id, skeleton, kv_store))
 
     if len(doc_tuples) < 2:
         return "Need at least 2 documents in the workspace to detect cross-document contradictions."
+
+    progress(0.5, desc="Initialising LLM for semantic analysis…")
+    try:
+        from rnsr.llm import get_llm
+        _llm = get_llm()
+        def _llm_fn(prompt: str) -> str:
+            result = _llm.complete(prompt)
+            return str(result)
+    except Exception:
+        _llm_fn = None  # fall back to heuristic-only
 
     progress(0.6, desc="Detecting contradictions across documents…")
     try:
         contradictions = detect_cross_document_contradictions(
             kg=kg,
             documents=doc_tuples,
+            llm_fn=_llm_fn,
         )
         progress(1.0, desc="Done")
         if not contradictions:

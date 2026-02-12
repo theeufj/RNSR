@@ -52,6 +52,11 @@ def check_environment():
         else:
             checks.append((name, "❌ Not set", "red"))
     
+    # Check Ollama
+    has_ollama = os.getenv("OLLAMA_BASE_URL") or os.getenv("USE_OLLAMA") or os.getenv("LLM_PROVIDER", "").lower() == "ollama"
+    if has_ollama:
+        checks.append(("Ollama", "✅ Configured", "green"))
+    
     # Check imports
     try:
         from rnsr.ingestion.pipeline import ingest_document
@@ -69,8 +74,8 @@ def check_environment():
     
     console.print(table)
     
-    if not has_key:
-        console.print("\n[red]⚠️  No API key found! Set one of the API keys above.[/red]")
+    if not has_key and not has_ollama:
+        console.print("\n[red]⚠️  No LLM provider configured! Set a cloud API key or configure Ollama.[/red]")
         return False
     
     return True

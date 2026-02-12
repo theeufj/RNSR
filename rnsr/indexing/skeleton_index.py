@@ -90,14 +90,14 @@ async def generate_summary_llm(
 ) -> str:
     """
     Generate a summary using an LLM.
-    
-    Supports OpenAI, Anthropic, and Gemini providers.
-    
+
+    Supports OpenAI, Anthropic, Gemini, Ollama, auto-detect.
+
     Args:
         content: Full text content.
         llm: LlamaIndex LLM instance (optional). If None, creates one.
         max_words: Target word count.
-        provider: LLM provider ("openai", "anthropic", "gemini", or None for auto).
+        provider: LLM provider ("openai", "anthropic", "gemini", "ollama", or None for auto).
         
     Returns:
         LLM-generated summary.
@@ -139,55 +139,23 @@ EXTRACTIVE SUMMARY:"""
 
 def _get_llm_for_summary(provider: str | None = None) -> Any:
     """
-    Get an LLM instance for summary generation.
-    
-    Supports: OpenAI, Anthropic, Gemini, auto-detect.
-    
+    Get an LLM instance for summary generation via central rnsr.llm.
+
+    Supports: OpenAI, Anthropic, Gemini, Ollama, auto-detect.
+
     Args:
-        provider: "openai", "anthropic", "gemini", or None for auto-detect.
-        
+        provider: "openai", "anthropic", "gemini", "ollama", or None for auto-detect.
+
     Returns:
         LlamaIndex-compatible LLM, or None if unavailable.
     """
-    import os
-    
-    # Auto-detect provider if not specified
-    if provider is None:
-        if os.getenv("GOOGLE_API_KEY"):
-            provider = "gemini"
-        elif os.getenv("ANTHROPIC_API_KEY"):
-            provider = "anthropic"
-        elif os.getenv("OPENAI_API_KEY"):
-            provider = "openai"
-        else:
-            logger.warning("no_llm_api_key_found")
-            return None
-    
-    provider = provider.lower()
-    
     try:
-        if provider == "gemini":
-            from llama_index.llms.gemini import Gemini
-            
-            logger.info("using_gemini_llm")
-            return Gemini(model="gemini-2.5-flash")
-        
-        elif provider == "anthropic":
-            from llama_index.llms.anthropic import Anthropic
-            
-            logger.info("using_anthropic_llm")
-            return Anthropic(model="claude-sonnet-4-5")
-        
-        elif provider == "openai":
-            from llama_index.llms.openai import OpenAI
-            
-            logger.info("using_openai_llm")
-            return OpenAI(model="gpt-5-mini")
-        
-        else:
-            logger.warning("unknown_llm_provider", provider=provider)
-            return None
-            
+        from rnsr.llm import LLMProvider, get_llm
+        p = LLMProvider.AUTO if provider is None else LLMProvider(provider.lower())
+        return get_llm(provider=p, enable_fallback=False)
+    except (ValueError, KeyError) as e:
+        logger.warning("llm_unavailable", provider=provider, error=str(e))
+        return None
     except ImportError as e:
         logger.warning("llm_import_failed", provider=provider, error=str(e))
         return None

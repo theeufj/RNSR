@@ -133,6 +133,12 @@ The single most important thing before a Show HN post. "Does it generalize?" is 
 - **What:** Currently only OpenAI embeddings are configured
 - **Status:** [ ] Not started
 
+### 5.5 Split LLM — Lightweight Nav Model + Full Synthesis Model
+- **What:** Allow separate LLM configs for navigation/decomposition steps vs final synthesis. E.g. `OLLAMA_NAV_MODEL=qwen2.5-coder:7b` for pattern generation, decomposition, verification, entity extraction; `OLLAMA_MODEL=qwen2.5-coder:14b` for synthesis only.
+- **Why:** Navigation steps produce short structured output (JSON, regex patterns) and don't need a large model. Running a smaller model for ~80% of LLM calls dramatically reduces latency on local hardware (e.g. single GPU) while preserving answer quality. Precursor to 6.1.
+- **Scope:** Refactor `set_llm_function()` on navigator components to accept per-component LLM functions; add env vars for nav vs synthesis model; wire through `RNSRClient`.
+- **Status:** [ ] Not started
+
 ---
 
 ## Phase 6: Research & Moat
@@ -161,5 +167,6 @@ The single most important thing before a Show HN post. "Does it generalize?" is 
 | 🟡 P2 | 3.3 API docs site | Developer experience |
 | 🟡 P2 | 4.2 Docker image | Deployment simplicity |
 | 🟢 P3 | 5.1 Multi-format ingestion | Feature expansion |
+| 🟢 P3 | 5.5 Split LLM (nav + synthesis) | Local performance / precursor to 6.1 |
 | 🟢 P3 | 6.1 Fine-tuned small model | Cost reduction / moat |
 | 🟢 P3 | 6.2 Publish a paper | Long-term credibility |

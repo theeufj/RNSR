@@ -20,7 +20,7 @@ Key Features:
 - Answer Verification (sub-LLM validation)
 - Vision-based Retrieval (OCR-free page image analysis)
 - Hybrid Text+Vision Mode (best of both worlds)
-- Multi-provider LLM support (OpenAI, Anthropic, Gemini)
+- Multi-provider LLM support (OpenAI, Anthropic, Gemini, Ollama)
 
 Usage:
     from rnsr import RNSRClient
@@ -55,9 +55,10 @@ LLM Provider Configuration:
     - GOOGLE_API_KEY (Gemini)
     - OPENAI_API_KEY (OpenAI)
     - ANTHROPIC_API_KEY (Anthropic)
+    - OLLAMA_BASE_URL or USE_OLLAMA (Ollama, local; default model qwen2.5-coder:32b)
 """
 
-__version__ = "0.2.0"  # Major update with RLM + Vision
+__version__ = "0.2.2"  # Ollama timeout env var; suppress API key warning for Ollama
 
 # Re-export main entry points
 from rnsr.ingestion import ingest_document, IngestionResult

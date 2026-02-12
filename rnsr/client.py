@@ -55,27 +55,36 @@ from rnsr.models import SkeletonNode
 
 logger = structlog.get_logger(__name__)
 
-# Cached LLM instance for better performance across queries
-_cached_llm = None
-_cached_llm_fn: Callable[[str], str] | None = None
+# Cached LLM instances: key (provider, model) or (None, None) for auto-detect
+_cached_llm: Any = None
+_cached_llm_key: tuple[str | None, str | None] = (None, None)
+_cached_llm_fns: dict[tuple[str | None, str | None], Callable[[str], str]] = {}
 
 
-def _get_cached_llm():
-    """Get a cached LLM instance to avoid re-initialization overhead."""
-    global _cached_llm
-    if _cached_llm is None:
-        from rnsr.llm import get_llm
-        _cached_llm = get_llm()
+def _get_cached_llm(provider: str | None = None, model: str | None = None) -> Any:
+    """Get a cached LLM instance. When provider/model are set, use them; else auto-detect."""
+    global _cached_llm, _cached_llm_key
+    key = (provider, model)
+    if _cached_llm is not None and _cached_llm_key == key:
+        return _cached_llm
+    from rnsr.llm import LLMProvider, get_llm
+    kwargs: dict[str, Any] = {}
+    if provider is not None:
+        kwargs["provider"] = LLMProvider(provider) if isinstance(provider, str) else provider
+    if model is not None:
+        kwargs["model"] = model
+    _cached_llm = get_llm(**kwargs)
+    _cached_llm_key = key
     return _cached_llm
 
 
-def _get_cached_llm_fn() -> Callable[[str], str]:
-    """Get a cached LLM function for navigator use."""
-    global _cached_llm_fn
-    if _cached_llm_fn is None:
-        llm = _get_cached_llm()
-        _cached_llm_fn = lambda p: str(llm.complete(p))
-    return _cached_llm_fn
+def _get_cached_llm_fn(provider: str | None = None, model: str | None = None) -> Callable[[str], str]:
+    """Get a cached LLM complete function for navigator use. Respects provider/model when set."""
+    key = (provider, model)
+    if key not in _cached_llm_fns:
+        llm = _get_cached_llm(provider, model)
+        _cached_llm_fns[key] = lambda p, _llm=llm: str(_llm.complete(p))
+    return _cached_llm_fns[key]
 
 
 class RNSRClient:
@@ -116,7 +125,7 @@ class RNSRClient:
         Args:
             cache_dir: Optional directory for caching indexes.
                        If provided, indexes are persisted and reused.
-            llm_provider: LLM provider ("openai", "anthropic", "gemini")
+            llm_provider: LLM provider ("openai", "anthropic", "gemini", "ollama")
             llm_model: LLM model name
         """
         self.cache_dir = Path(cache_dir) if cache_dir else None
@@ -941,8 +950,8 @@ class RNSRClient:
                     tables=tables,
                 )
                 
-                # Use cached LLM function for performance and consistency
-                navigator.set_llm_function(_get_cached_llm_fn())
+                # Use cached LLM function; respect client llm_provider/llm_model when set
+                navigator.set_llm_function(_get_cached_llm_fn(self.llm_provider, self.llm_model))
                 
                 self._navigator_cache[nav_key] = navigator
                 

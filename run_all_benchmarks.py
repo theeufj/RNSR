@@ -615,13 +615,13 @@ Examples:
     parser.add_argument(
         "--provider",
         default="gemini",
-        choices=["gemini", "openai", "anthropic"],
+        choices=["gemini", "openai", "anthropic", "ollama"],
         help="LLM provider (default: gemini)",
     )
     parser.add_argument(
         "--model",
         default="gemini-2.5-flash",
-        help="LLM model name (default: gemini-2.5-flash)",
+        help="LLM model name (default: gemini-2.5-flash; for ollama: OLLAMA_MODEL or qwen2.5-coder:32b)",
     )
     parser.add_argument(
         "--output",
@@ -633,11 +633,17 @@ Examples:
 
     max_samples = None if args.full else args.max_samples
 
+    # When provider is ollama and user did not pass --model, use default Ollama model
+    llm_model = args.model
+    if args.provider == "ollama" and args.model == "gemini-2.5-flash":
+        import os
+        llm_model = os.environ.get("OLLAMA_MODEL", "qwen2.5-coder:32b")
+
     run_benchmark_suite(
         benchmarks=args.benchmarks,
         max_samples=max_samples,
         llm_provider=args.provider,
-        llm_model=args.model,
+        llm_model=llm_model,
         output_path=args.output,
     )
 

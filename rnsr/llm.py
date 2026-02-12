@@ -5,6 +5,7 @@ Supports:
 - OpenAI (GPT-4, text-embedding-3-small)
 - Anthropic (Claude)
 - Google Gemini (gemini-pro, text-embedding-004)
+- Ollama (local; default llm qwen2.5-coder:32b, embed nomic-embed-text)
 
 Features:
 - Automatic rate limit handling with exponential backoff
@@ -62,6 +63,7 @@ class LLMProvider(str, Enum):
     OPENAI = "openai"
     ANTHROPIC = "anthropic"
     GEMINI = "gemini"
+    OLLAMA = "ollama"
     AUTO = "auto"  # Auto-detect from environment
 
 
@@ -79,6 +81,10 @@ DEFAULT_MODELS = {
         "llm": "gemini-2.5-flash",  # Stable model. Use "gemini-3-flash-preview" for latest.
         "embed": "text-embedding-004",
     },
+    LLMProvider.OLLAMA: {
+        "llm": "qwen2.5-coder:32b",  # Override via OLLAMA_MODEL env
+        "embed": "nomic-embed-text",  # User pulls via ollama pull nomic-embed-text
+    },
 }
 
 # Fallback chain when a provider hits rate limits
@@ -86,6 +92,7 @@ PROVIDER_FALLBACK_CHAIN = {
     LLMProvider.GEMINI: [LLMProvider.OPENAI, LLMProvider.ANTHROPIC],
     LLMProvider.OPENAI: [LLMProvider.ANTHROPIC, LLMProvider.GEMINI],
     LLMProvider.ANTHROPIC: [LLMProvider.OPENAI, LLMProvider.GEMINI],
+    LLMProvider.OLLAMA: [],  # No cloud fallback from Ollama by default
 }
 
 
@@ -137,16 +144,17 @@ def detect_provider() -> LLMProvider:
     """
     Auto-detect LLM provider from environment variables.
     
-    Checks for API keys in order:
+    Checks in order:
     1. GOOGLE_API_KEY -> Gemini
     2. ANTHROPIC_API_KEY -> Anthropic
     3. OPENAI_API_KEY -> OpenAI
+    4. OLLAMA_BASE_URL or USE_OLLAMA -> Ollama (local)
     
     Returns:
         Detected LLMProvider.
         
     Raises:
-        ValueError: If no API key is found.
+        ValueError: If no provider is configured.
     """
     if os.getenv("GOOGLE_API_KEY"):
         logger.info("provider_detected", provider="gemini")
@@ -160,9 +168,13 @@ def detect_provider() -> LLMProvider:
         logger.info("provider_detected", provider="openai")
         return LLMProvider.OPENAI
     
+    if os.getenv("OLLAMA_BASE_URL") or os.getenv("USE_OLLAMA"):
+        logger.info("provider_detected", provider="ollama")
+        return LLMProvider.OLLAMA
+    
     raise ValueError(
-        "No LLM API key found. Set one of: "
-        "GOOGLE_API_KEY, ANTHROPIC_API_KEY, or OPENAI_API_KEY"
+        "No LLM provider found. Set one of: "
+        "GOOGLE_API_KEY, ANTHROPIC_API_KEY, OPENAI_API_KEY, or OLLAMA_BASE_URL/USE_OLLAMA"
     )
 
 
@@ -176,7 +188,7 @@ def get_llm(
     Get an LLM instance for the specified provider.
     
     Args:
-        provider: LLM provider (openai, anthropic, gemini, or auto).
+        provider: LLM provider (openai, anthropic, gemini, ollama, or auto).
         model: Model name override. Uses default if not specified.
         enable_fallback: If True, enables cross-provider fallback on rate limits.
         **kwargs: Additional arguments passed to the LLM constructor.
@@ -191,7 +203,11 @@ def get_llm(
     if provider == LLMProvider.AUTO:
         provider = detect_provider()
     
-    model = model or DEFAULT_MODELS[provider]["llm"]
+    # For Ollama, allow .env OLLAMA_MODEL to override default
+    if provider == LLMProvider.OLLAMA:
+        model = model or os.getenv("OLLAMA_MODEL") or DEFAULT_MODELS[provider]["llm"]
+    else:
+        model = model or DEFAULT_MODELS[provider]["llm"]
     
     # Get primary LLM
     primary_llm = _get_raw_llm(provider, model, **kwargs)
@@ -227,6 +243,8 @@ def _get_raw_llm(provider: LLMProvider, model: str, **kwargs: Any) -> Any:
         return _get_anthropic_llm(model, **kwargs)
     elif provider == LLMProvider.GEMINI:
         return _get_gemini_llm(model, **kwargs)
+    elif provider == LLMProvider.OLLAMA:
+        return _get_ollama_llm(model, **kwargs)
     else:
         raise ValueError(f"Unknown provider: {provider}")
 
@@ -240,7 +258,7 @@ def get_embed_model(
     Get an embedding model for the specified provider.
     
     Args:
-        provider: LLM provider (openai, gemini, or auto).
+        provider: LLM provider (openai, gemini, ollama, or auto).
         model: Model name override. Uses default if not specified.
         **kwargs: Additional arguments passed to the embedding constructor.
         
@@ -277,6 +295,8 @@ def get_embed_model(
         return _get_openai_embed(model, **kwargs)
     elif provider == LLMProvider.GEMINI:
         return _get_gemini_embed(model, **kwargs)
+    elif provider == LLMProvider.OLLAMA:
+        return _get_ollama_embed(model, **kwargs)
     else:
         raise ValueError(f"Unknown embedding provider: {provider}")
 
@@ -774,6 +794,40 @@ def _get_gemini_embed(model: str, **kwargs: Any) -> Any:
     return GeminiEmbedding(model_name=f"models/{model}", **kwargs)
 
 
+def _get_ollama_llm(model: str, **kwargs: Any) -> Any:
+    """Get Ollama LLM instance (local)."""
+    try:
+        from llama_index.llms.ollama import Ollama
+    except ImportError:
+        raise ImportError(
+            "Ollama LLM not installed. "
+            "Install with: pip install llama-index-llms-ollama"
+        )
+    base_url = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+    resolved_model = model or os.getenv("OLLAMA_MODEL", "qwen2.5-coder:32b")
+    timeout = float(os.getenv("OLLAMA_TIMEOUT", "120"))
+    if "temperature" not in kwargs:
+        kwargs["temperature"] = 0.0
+    if "request_timeout" not in kwargs:
+        kwargs["request_timeout"] = timeout
+    logger.debug("initializing_llm", provider="ollama", model=resolved_model, timeout=timeout)
+    return Ollama(model=resolved_model, base_url=base_url, **kwargs)
+
+
+def _get_ollama_embed(model: str, **kwargs: Any) -> Any:
+    """Get Ollama embedding model (local)."""
+    try:
+        from llama_index.embeddings.ollama import OllamaEmbedding
+    except ImportError:
+        raise ImportError(
+            "Ollama embeddings not installed. "
+            "Install with: pip install llama-index-embeddings-ollama"
+        )
+    base_url = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+    logger.debug("initializing_embed", provider="ollama", model=model)
+    return OllamaEmbedding(model_name=model, base_url=base_url, **kwargs)
+
+
 # =============================================================================
 # Convenience Functions
 # =============================================================================
@@ -798,6 +852,8 @@ def get_provider_info() -> dict[str, Any]:
         info["available"].append("anthropic")
     if os.getenv("GOOGLE_API_KEY"):
         info["available"].append("gemini")
+    if os.getenv("OLLAMA_BASE_URL") or os.getenv("USE_OLLAMA"):
+        info["available"].append("ollama")
     
     if info["available"]:
         try:
@@ -824,10 +880,14 @@ def validate_provider(provider: LLMProvider) -> bool:
         return bool(os.getenv("ANTHROPIC_API_KEY"))
     elif provider == LLMProvider.GEMINI:
         return bool(os.getenv("GOOGLE_API_KEY"))
+    elif provider == LLMProvider.OLLAMA:
+        return bool(os.getenv("OLLAMA_BASE_URL") or os.getenv("USE_OLLAMA"))
     elif provider == LLMProvider.AUTO:
         return any([
             os.getenv("OPENAI_API_KEY"),
             os.getenv("ANTHROPIC_API_KEY"),
             os.getenv("GOOGLE_API_KEY"),
+            os.getenv("OLLAMA_BASE_URL"),
+            os.getenv("USE_OLLAMA"),
         ])
     return False

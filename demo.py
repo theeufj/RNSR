@@ -896,10 +896,19 @@ def create_demo():
 # Main
 # =============================================================================
 if __name__ == "__main__":
-    if not any(os.getenv(k) for k in ("GOOGLE_API_KEY", "OPENAI_API_KEY", "ANTHROPIC_API_KEY")):
-        print("Warning: No API key set (GOOGLE_API_KEY / OPENAI_API_KEY / ANTHROPIC_API_KEY)")
+    # Check for API key (skip warning if Ollama is configured)
+    has_cloud_key = os.getenv("GOOGLE_API_KEY") or os.getenv("OPENAI_API_KEY") or os.getenv("ANTHROPIC_API_KEY")
+    has_ollama = os.getenv("OLLAMA_BASE_URL") or os.getenv("USE_OLLAMA") or os.getenv("LLM_PROVIDER", "").lower() == "ollama"
+    if not has_cloud_key and not has_ollama:
+        print("⚠️  Warning: No LLM provider configured.")
+        print("   Set a cloud API key (GOOGLE_API_KEY, OPENAI_API_KEY, or ANTHROPIC_API_KEY)")
+        print("   or configure Ollama (OLLAMA_BASE_URL or LLM_PROVIDER=ollama)")
+        print()
 
-    print("Starting RNSR Demo — http://localhost:7860")
+    print("🚀 Starting RNSR Demo...")
+    print("   Open http://localhost:7860 in your browser")
+    print()
+
     demo = create_demo()
     launch_kw: dict[str, Any] = dict(server_name="0.0.0.0", server_port=7860, share=False)
     if _gradio_major >= 6:

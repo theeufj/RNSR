@@ -284,58 +284,19 @@ def try_semantic_splitter_ingestion(
 
 def _get_embedding_model(provider: str | None = None):
     """
-    Get embedding model with multi-provider support.
-    
-    Supports: OpenAI, Gemini, auto-detect.
-    
+    Get embedding model via central rnsr.llm.
+
+    Supports: OpenAI, Gemini, Ollama, auto-detect.
+
     Args:
-        provider: "openai", "gemini", or None for auto-detect.
-        
+        provider: "openai", "gemini", "ollama", or None for auto-detect.
+
     Returns:
         LlamaIndex-compatible embedding model.
     """
-    import os
-    
-    # Auto-detect provider if not specified
-    if provider is None:
-        if os.getenv("GOOGLE_API_KEY"):
-            provider = "gemini"
-        elif os.getenv("OPENAI_API_KEY"):
-            provider = "openai"
-        else:
-            raise ValueError(
-                "No embedding API key found. "
-                "Set GOOGLE_API_KEY or OPENAI_API_KEY."
-            )
-    
-    provider = provider.lower()
-    
-    if provider == "gemini":
-        try:
-            from llama_index.embeddings.gemini import GeminiEmbedding
-            
-            logger.info("using_gemini_embeddings")
-            return GeminiEmbedding(model_name="models/text-embedding-004")
-        except ImportError:
-            raise ImportError(
-                "Gemini embeddings not installed. "
-                "Install with: pip install llama-index-embeddings-gemini"
-            )
-    
-    elif provider == "openai":
-        try:
-            from llama_index.embeddings.openai import OpenAIEmbedding
-            
-            logger.info("using_openai_embeddings")
-            return OpenAIEmbedding(model="text-embedding-3-small")
-        except ImportError:
-            raise ImportError(
-                "OpenAI embeddings not installed. "
-                "Install with: pip install llama-index-embeddings-openai"
-            )
-    
-    else:
-        raise ValueError(f"Unknown embedding provider: {provider}")
+    from rnsr.llm import LLMProvider, get_embed_model
+    p = LLMProvider.AUTO if provider is None else LLMProvider(provider.lower())
+    return get_embed_model(provider=p)
 
 
 def _build_tree_from_semantic_nodes(nodes: list, title: str) -> DocumentTree:

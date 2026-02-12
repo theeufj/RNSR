@@ -156,22 +156,41 @@ def has_extractable_text(pdf_path: Path | str) -> bool:
     """
     Check if a PDF has extractable text.
     
+    Tries PyMuPDF first, then pdfplumber. Some PDFs (e.g. Google Docs
+    "Print to PDF") expose text to one extractor but not the other.
+    
     Args:
         pdf_path: Path to the PDF file.
         
     Returns:
         True if text can be extracted, False if OCR is needed.
     """
-    import fitz
-    
     pdf_path = Path(pdf_path)
-    doc = fitz.open(pdf_path)
     
-    for page in doc:
-        text = str(page.get_text()).strip()
-        if text:
-            doc.close()
-            return True
+    # 1. PyMuPDF (fitz)
+    try:
+        import fitz
+        doc = fitz.open(pdf_path)
+        for page in doc:
+            text = str(page.get_text()).strip()
+            if text:
+                doc.close()
+                return True
+        doc.close()
+    except Exception:
+        pass
     
-    doc.close()
+    # 2. pdfplumber (e.g. Google Docs "Print to PDF" often works here)
+    try:
+        import pdfplumber
+        with pdfplumber.open(pdf_path) as doc:
+            for page in doc.pages:
+                if page is None:
+                    continue
+                text = (page.extract_text() or "").strip()
+                if text:
+                    return True
+    except Exception:
+        pass
+    
     return False

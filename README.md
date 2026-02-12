@@ -129,6 +129,7 @@ pip install "rnsr[vision]"
 pip install "rnsr[openai]"       # OpenAI
 pip install "rnsr[anthropic]"    # Anthropic
 pip install "rnsr[gemini]"       # Google Gemini
+# Ollama (local): ensure Ollama is installed and running; pip install llama-index-llms-ollama llama-index-embeddings-ollama
 
 # Everything
 pip install "rnsr[all]"
@@ -152,26 +153,30 @@ pip install -e ".[all]"
 pip install -e ".[openai]"      # OpenAI only
 pip install -e ".[anthropic]"   # Anthropic only
 pip install -e ".[gemini]"      # Google Gemini only
+# Ollama: pip install llama-index-llms-ollama llama-index-embeddings-ollama (Ollama must be installed and running)
 ```
 
 ## Quick Start
 
-### 1. Set up API keys
+### 1. Set up API keys or Ollama
 
 Create a `.env` file:
 
 ```bash
 cp .env.example .env
-# Edit .env with your API keys
+# Edit .env with your API keys (or Ollama settings)
 ```
 
 ```env
-# Choose your preferred LLM provider
+# Choose your preferred LLM provider (set one of the following)
 OPENAI_API_KEY=sk-...
 # or
 ANTHROPIC_API_KEY=sk-ant-...
 # or
 GOOGLE_API_KEY=AI...
+# or Ollama (local; assume Ollama is already installed and running)
+OLLAMA_BASE_URL=http://localhost:11434
+OLLAMA_MODEL=qwen2.5-coder:32b
 
 # Optional: Override default models
 LLM_PROVIDER=anthropic
@@ -181,6 +186,15 @@ SUMMARY_MODEL=claude-sonnet-4-5
 RNSR_EXTRACTION_MODEL=gemini-2.5-flash
 # RNSR_EXTRACTION_PROVIDER=gemini  # if different from your primary provider
 ```
+
+**Ollama with WSL (Ollama on Windows):** If you run RNSR inside WSL and Ollama on Windows, `localhost` from WSL will not reach Ollama by default. Use [WSL mirrored networking](https://learn.microsoft.com/en-us/windows/wsl/networking#mirrored-mode-networking-in-wsl-2): create or edit `%USERPROFILE%\.wslconfig` with:
+
+```ini
+[wsl2]
+networkingMode=mirrored
+```
+
+Then run `wsl --shutdown` in PowerShell and reopen WSL. After that, `OLLAMA_BASE_URL=http://localhost:11434` works from WSL without firewall rules or Windows host IP.
 
 ### 2. Use the Python API
 
@@ -759,7 +773,7 @@ rnsr/
 from rnsr import RNSRClient
 
 client = RNSRClient(
-    llm_provider="anthropic",  # or "openai", "gemini"
+    llm_provider="anthropic",  # or "openai", "gemini", "ollama"
     llm_model="claude-sonnet-4-5"
 )
 
@@ -817,7 +831,10 @@ record = tracker.create_provenance_record(answer, question, variables)
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `LLM_PROVIDER` | Primary LLM provider | `auto` (detect from keys) |
+| `LLM_PROVIDER` | Primary LLM provider | `auto` (detect from keys or Ollama) |
+| `OLLAMA_BASE_URL` | Ollama server URL (enables Ollama when set) | `http://localhost:11434` |
+| `OLLAMA_MODEL` | Ollama LLM model name | `qwen2.5-coder:32b` |
+| `OLLAMA_TIMEOUT` | Timeout in seconds per Ollama LLM request (increase for large/slow models) | `120` |
 | `SUMMARY_MODEL` | Model for summarization | Provider default |
 | `AGENT_MODEL` | Model for navigation | Provider default |
 | `EMBEDDING_MODEL` | Embedding model | `text-embedding-3-small` |
@@ -835,6 +852,7 @@ record = tracker.create_provenance_record(answer, question, variables)
 | **OpenAI** | `gpt-5.2`, `gpt-5-mini`, `gpt-5-nano`, `gpt-4.1`, `gpt-4o-mini` |
 | **Anthropic** | `claude-opus-4-5`, `claude-sonnet-4-5`, `claude-haiku-4-5` |
 | **Gemini** | `gemini-3-pro-preview`, `gemini-3-flash-preview`, `gemini-2.5-pro`, `gemini-2.5-flash` |
+| **Ollama** | `qwen2.5-coder:32b` (default), or set `OLLAMA_MODEL`; embeddings: `nomic-embed-text` |
 
 ## Benchmarks
 
@@ -955,7 +973,7 @@ mypy rnsr/
 ## Requirements
 
 - Python 3.10+
-- At least one LLM API key (OpenAI, Anthropic, or Gemini)
+- At least one LLM API key (OpenAI, Anthropic, Gemini) or Ollama (set `OLLAMA_BASE_URL` or `USE_OLLAMA`; default model `qwen2.5-coder:32b`)
 - **Note:** `pip install rnsr` is lightweight (~20 MB). Vision features (LayoutLM, torch) are optional via `pip install "rnsr[vision]"`.
 
 ## License

@@ -29,6 +29,10 @@ google-genai>=1.0.0            # New official SDK (replaces deprecated google-ge
 llama-index-llms-gemini>=0.1.0
 llama-index-embeddings-gemini>=0.1.0
 
+# LLM Providers - Ollama (local; optional if not using Ollama)
+llama-index-llms-ollama>=0.1.0
+llama-index-embeddings-ollama>=0.1.0
+
 # UI
 gradio>=6.0.0              # Interactive demo interface (Gradio 6.x required)
 

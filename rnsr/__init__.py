@@ -64,6 +64,9 @@ from rnsr.ingestion import ingest_document, IngestionResult
 from rnsr.ingestion.pipeline import ingest_document_enhanced
 from rnsr.indexing import build_skeleton_index, SQLiteKVStore, InMemoryKVStore
 from rnsr.indexing import save_index, load_index, get_index_info, list_indexes
+from rnsr.indexing.knowledge_graph import KnowledgeGraph, InMemoryKnowledgeGraph
+from rnsr.indexing.kv_store import KVStore
+from rnsr.models import SkeletonNode
 from rnsr.agent import (
     run_navigator,
     VariableStore,
@@ -85,14 +88,19 @@ __all__ = [
     "__version__",
     # High-Level Client (Simplest API)
     "RNSRClient",
+    # Data Structures (for BYOD usage)
+    "SkeletonNode",
+    "KnowledgeGraph",
+    "InMemoryKnowledgeGraph",
+    "KVStore",
+    "SQLiteKVStore",
+    "InMemoryKVStore",
     # Ingestion
     "ingest_document",
     "ingest_document_enhanced",
     "IngestionResult",
     # Indexing
     "build_skeleton_index",
-    "SQLiteKVStore",
-    "InMemoryKVStore",
     # Persistence
     "save_index",
     "load_index",

@@ -106,6 +106,12 @@ RNSR combines neural and symbolic approaches to achieve accurate document unders
 | **Zero Hallucinations** | Grounded answers with provenance - if not found, says so |
 | **Hierarchical Extraction** | Preserves document structure (sections, subsections, paragraphs) |
 | **Knowledge Graph** | LLM-driven entity & relationship extraction with adaptive type learning and parallel processing |
+| **Persistent KG** | File-backed knowledge graphs that survive across sessions and documents |
+| **Multi-Document Workspace** | Upload multiple PDFs, build a workspace-wide KG, and query across all of them |
+| **Cross-Document Entity Linking** | Automatically discovers that "G. Sorenssen" in Doc A is "GeoV William Sorenssen" in Doc B |
+| **Timeline Extraction** | Automatically builds chronological timelines of events from the knowledge graph |
+| **Contradiction Detection** | Flags conflicting claims within or across documents (heuristic + LLM) |
+| **Bring Your Own Data (BYOD)** | Pass in pre-built skeleton indexes, KV stores, and knowledge graphs |
 | **RLM Navigation** | LLM writes code to navigate documents - deterministic and reproducible |
 | **SQL-like Table Queries** | `SELECT`, `WHERE`, `ORDER BY`, `SUM`, `AVG` over detected tables |
 | **Provenance System** | Every answer traces back to exact document citations |
@@ -207,9 +213,11 @@ print(f"Confidence: {result['confidence']}")
 ### 3. Run the Demo UI
 
 ```bash
-python demo.py
+make demo
 # Open http://localhost:7860 in your browser
 ```
+
+The demo includes tabs for **Chat**, **Document Structure**, **Tables**, **Knowledge Graph**, **Timeline**, **Contradictions**, and **Multi-Document** workspace.
 
 ## Production Setup: Achieving Benchmark-Level Performance
 
@@ -437,6 +445,130 @@ if is_ambiguous:
     # "What does 'it' refer to in your question?"
 ```
 
+### Multi-Document Workspace
+
+Manage multiple documents, build a workspace-wide knowledge graph, and ask questions that span across them:
+
+```python
+from rnsr import DocumentStore
+
+# Create or open a document store
+store = DocumentStore("./my_documents/")
+
+# Add documents
+store.add_document("contract_a.pdf")
+store.add_document("contract_b.pdf", metadata={"year": 2024})
+
+# Build workspace knowledge graph & link entities across documents
+kg = store.build_workspace_kg()
+links = store.link_entities_across_documents()
+print(f"Found {len(links)} cross-document entity links")
+
+# Query across all documents
+result = store.query_cross_document("What are the payment terms in each contract?")
+print(result["answer"])
+print(f"Documents used: {result['documents_used']}")
+```
+
+The demo UI includes a **Multi-Document** tab where you can upload multiple PDFs, build the workspace KG, and run cross-document queries interactively.
+
+### Bring Your Own Data (BYOD)
+
+For maximum flexibility, you can build indexes externally and pass them into RNSR:
+
+```python
+from rnsr import RNSRClient
+
+client = RNSRClient()
+
+# Build indexes once
+skeleton, kv_store = client.build_index("document.pdf")
+kg = client.build_knowledge_graph(skeleton, kv_store, doc_id="my_doc")
+
+# Query with pre-built data (no re-indexing)
+result = client.query(
+    "What are the key findings?",
+    skeleton=skeleton,
+    kv_store=kv_store,
+    knowledge_graph=kg,
+)
+print(result["answer"])
+
+# Or pass pre-built data into ask() / ask_advanced()
+answer = client.ask(
+    "document.pdf",
+    "Who is the primary applicant?",
+    skeleton=skeleton,
+    kv_store=kv_store,
+    knowledge_graph=kg,
+)
+```
+
+You can also import the building blocks directly:
+
+```python
+from rnsr import SkeletonNode, KnowledgeGraph, SQLiteKVStore, InMemoryKVStore
+```
+
+### Timeline Extraction
+
+Automatically build chronological timelines from the knowledge graph:
+
+```python
+from rnsr.extraction.timeline_extractor import extract_timeline, format_timeline
+
+# Extract timeline from any knowledge graph (single doc or workspace)
+events = extract_timeline(kg)
+
+# Pretty-print
+print(format_timeline(events))
+# 1. [15 Mar 2019] Contract signed — Entities: Acme Corp, John Smith
+# 2. [01 Jun 2023] Amendment filed — Entities: Acme Corp
+# 3. [10 Dec 2024] Renewal deadline — Entities: Acme Corp
+
+# Access structured data
+for event in events:
+    print(f"{event.date_str} — {event.description}")
+    print(f"  Parsed: {event.date_parsed}")
+    print(f"  Entities: {event.entities_involved}")
+    print(f"  Source doc: {event.doc_id}")
+```
+
+### Contradiction Detection
+
+Flag conflicting claims within a single document or across multiple documents:
+
+```python
+from rnsr.analysis import detect_document_contradictions, detect_cross_document_contradictions
+
+# Single-document contradictions
+contradictions = detect_document_contradictions(
+    kg=knowledge_graph,
+    skeleton=skeleton,
+    kv_store=kv_store,
+)
+
+for c in contradictions:
+    print(f"[{c.type}] {c.confidence:.0%} confidence")
+    print(f"  Claim 1 ({c.source_1}): {c.claim_1}")
+    print(f"  Claim 2 ({c.source_2}): {c.claim_2}")
+    print(f"  {c.explanation}")
+
+# Cross-document contradictions (compares claims from different docs)
+store = DocumentStore("./docs")
+kg = store.get_workspace_kg()
+doc_tuples = [
+    (doc_id, *store.get_document(doc_id))
+    for doc_id in store
+]
+cross_contradictions = detect_cross_document_contradictions(kg, doc_tuples)
+```
+
+Detection uses three strategies:
+1. **KG-based** — Looks for `CONTRADICTS` relationships already in the knowledge graph
+2. **Heuristic** — Negation detection ("was granted" vs "was denied") and numeric conflicts
+3. **LLM-based** (optional) — Semantic contradiction detection for ambiguous cases
+
 ## Adaptive Learning
 
 RNSR learns from your document workload. All learned data persists in `~/.rnsr/`:
@@ -663,6 +795,7 @@ flowchart TD
 ```mermaid
 graph TD
     CLIENT["client.py\nHigh-Level API"]
+    DS["document_store.py\nMulti-Doc Workspace"]
 
     subgraph INGESTION ["ingestion/"]
         P["pipeline.py"]
@@ -684,11 +817,17 @@ graph TD
         RUE["rlm_unified_extractor.py"]
         LT["learned_types.py"]
         EL["entity_linker.py"]
+        TL["timeline_extractor.py"]
         MOD["models.py"]
+    end
+
+    subgraph ANALYSIS ["analysis/"]
+        CD["contradiction_detector.py"]
     end
 
     subgraph AGENT ["agent/"]
         RN["rlm_navigator.py"]
+        CDN["cross_doc_navigator.py"]
         NR["nav_repl.py"]
         PROV["provenance.py"]
         LC["llm_cache.py"]
@@ -703,12 +842,18 @@ graph TD
     CLIENT --> INDEXING
     CLIENT --> EXTRACTION
     CLIENT --> AGENT
+    DS --> CLIENT
+    DS --> INDEXING
+    DS --> EXTRACTION
+    ANALYSIS --> EXTRACTION
     AGENT --> LLM
     EXTRACTION --> LLM
     INGESTION --> INDEXING
 
     style CLIENT fill:#e1f5fe
+    style DS fill:#e1f5fe
     style LLM fill:#fff3e0
+    style ANALYSIS fill:#fce4ec
 ```
 
 <details>
@@ -718,6 +863,7 @@ graph TD
 rnsr/
 ├── agent/                   # Query processing
 │   ├── rlm_navigator.py     # Main navigation agent (RLM + ToT)
+│   ├── cross_doc_navigator.py  # Cross-document query orchestrator
 │   ├── nav_repl.py          # NavigationREPL for code-based navigation
 │   ├── repl_env.py          # Base REPL environment
 │   ├── provenance.py        # Citation tracking
@@ -727,14 +873,17 @@ rnsr/
 │   ├── query_clarifier.py   # Ambiguity handling
 │   ├── graph.py             # LangGraph workflow
 │   └── variable_store.py    # Context management
+├── analysis/                # Higher-level analysis tools
+│   └── contradiction_detector.py  # Within- and cross-document contradiction detection
 ├── extraction/              # Entity/relationship extraction
 │   ├── rlm_unified_extractor.py  # Unified extractor (RLM + ToT)
 │   ├── learned_types.py     # Adaptive type learning
-│   ├── entity_linker.py     # Cross-document linking
+│   ├── entity_linker.py     # Cross-document entity linking
+│   ├── timeline_extractor.py # Chronological timeline extraction
 │   └── models.py            # Entity/Relationship models
 ├── indexing/                # Index construction
 │   ├── skeleton_index.py    # Summary generation
-│   ├── knowledge_graph.py   # Entity/relationship storage
+│   ├── knowledge_graph.py   # Entity/relationship storage (SQLite-backed)
 │   ├── kv_store.py          # SQLite/in-memory storage
 │   └── semantic_search.py   # Optional vector search
 ├── ingestion/               # Document processing
@@ -744,8 +893,9 @@ rnsr/
 │   ├── table_parser.py      # Table extraction
 │   ├── chart_parser.py      # Chart interpretation
 │   └── tree_builder.py      # Hierarchical tree construction
+├── document_store.py        # Multi-document workspace management
 ├── llm.py                   # Multi-provider LLM abstraction
-├── client.py                # High-level API
+├── client.py                # High-level API (incl. BYOD + cross-doc)
 └── models.py                # Data structures
 ```
 
@@ -950,6 +1100,25 @@ ruff check .
 
 # Type checking
 mypy rnsr/
+
+# Switch between feature branches (interactive picker)
+make switch
+```
+
+### Branch Switcher
+
+For testers trying out new features, `make switch` provides an interactive numbered menu of up to 10 branches sorted by most recent commit:
+
+```
+$ make switch
+🔀 Available branches:
+
+  1) feature/byod-multi-doc
+  2) main (current)
+
+Enter branch number (1-10): 1
+Switching to: feature/byod-multi-doc
+✅ Now on branch: feature/byod-multi-doc
 ```
 
 ## Requirements

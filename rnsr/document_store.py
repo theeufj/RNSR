@@ -381,6 +381,198 @@ class DocumentStore:
         
         return results
     
+    # =========================================================================
+    # Workspace Knowledge Graph and Cross-Document Entity Linking
+    # =========================================================================
+
+    def get_workspace_kg(self) -> "KnowledgeGraph":
+        """
+        Get or create the workspace-wide knowledge graph.
+        
+        This KG persists in ``<store_path>/workspace_kg.db`` and accumulates
+        entities from all documents added to the store. Use it together with
+        :meth:`link_entities_across_documents` and :meth:`query_cross_document`
+        to enable cross-document reasoning.
+        
+        Returns:
+            A file-backed ``KnowledgeGraph`` shared across all documents.
+            
+        Example:
+            kg = store.get_workspace_kg()
+            print(kg.get_stats())
+        """
+        from rnsr.indexing.knowledge_graph import KnowledgeGraph
+        
+        kg_path = self.store_path / "workspace_kg.db"
+        return KnowledgeGraph(str(kg_path))
+
+    def build_workspace_kg(
+        self,
+        doc_ids: list[str] | None = None,
+        max_workers: int = 8,
+    ) -> "KnowledgeGraph":
+        """
+        Build (or rebuild) the workspace KG from indexed documents.
+        
+        Extracts entities and relationships from each document and merges
+        them into the workspace KG. Then runs entity linking across all
+        document pairs to discover shared entities.
+        
+        Args:
+            doc_ids: Specific document IDs to process (default: all).
+            max_workers: Parallel extraction threads per document.
+            
+        Returns:
+            The populated workspace ``KnowledgeGraph``.
+        """
+        from rnsr.indexing.knowledge_graph import KnowledgeGraph
+        from rnsr.extraction import extract_entities_and_relationships
+
+        kg = self.get_workspace_kg()
+        target_ids = doc_ids or list(self._catalog.keys())
+
+        for doc_id in target_ids:
+            index_result = self.get_document(doc_id)
+            if index_result is None:
+                logger.warning("doc_not_found_for_kg", doc_id=doc_id)
+                continue
+
+            skeleton, kv_store = index_result[:2]
+
+            # Extract entities from each node
+            for node_id, node in skeleton.items():
+                content = kv_store.get(node_id) or ""
+                if len(content.strip()) < 50:
+                    continue
+
+                try:
+                    result = extract_entities_and_relationships(
+                        text=content,
+                        doc_id=doc_id,
+                        node_id=node_id,
+                        header=node.header,
+                    )
+                    for entity in result.entities:
+                        kg.add_entity(entity)
+                    for rel in result.relationships:
+                        kg.add_relationship(rel)
+                except Exception as exc:
+                    logger.debug(
+                        "workspace_kg_node_error",
+                        doc_id=doc_id,
+                        node_id=node_id,
+                        error=str(exc),
+                    )
+
+        logger.info(
+            "workspace_kg_built",
+            documents=len(target_ids),
+            stats=kg.get_stats(),
+        )
+        return kg
+
+    def link_entities_across_documents(
+        self,
+        doc_ids: list[str] | None = None,
+    ) -> list:
+        """
+        Run entity linking across all document pairs in the workspace KG.
+        
+        Discovers that e.g. "GeoV William Sorenssen" in Doc A is the same
+        entity as "G. Sorenssen" in Doc B, and stores the link in the KG.
+        
+        Args:
+            doc_ids: Specific document IDs to link (default: all).
+            
+        Returns:
+            List of ``EntityLink`` objects created.
+        """
+        from rnsr.extraction.entity_linker import EntityLinker
+
+        kg = self.get_workspace_kg()
+        linker = EntityLinker(kg)
+        target_ids = doc_ids or list(self._catalog.keys())
+        all_links = []
+
+        for i, d1 in enumerate(target_ids):
+            for d2 in target_ids[i + 1:]:
+                try:
+                    links = linker.link_across_documents(d1, d2)
+                    all_links.extend(links)
+                except Exception as exc:
+                    logger.debug(
+                        "entity_link_error",
+                        doc_1=d1,
+                        doc_2=d2,
+                        error=str(exc),
+                    )
+
+        logger.info(
+            "entities_linked",
+            document_pairs=len(target_ids) * (len(target_ids) - 1) // 2,
+            links_created=len(all_links),
+        )
+        return all_links
+
+    def query_cross_document(
+        self,
+        question: str,
+        doc_ids: list[str] | None = None,
+    ) -> dict[str, Any]:
+        """
+        Ask a question that spans multiple documents.
+        
+        Uses the ``CrossDocNavigator`` to decompose the question, resolve
+        entities to documents, navigate each document, and synthesize a
+        combined answer.
+        
+        Args:
+            question: The cross-document question.
+            doc_ids: Limit to specific documents (default: all).
+            
+        Returns:
+            Result dictionary with ``answer``, ``documents_used``, etc.
+        """
+        from rnsr.agent.cross_doc_navigator import (
+            create_cross_doc_navigator,
+        )
+        from rnsr.agent.rlm_navigator import RLMNavigator, RLMConfig
+        from rnsr.client import _get_cached_llm_fn
+
+        kg = self.get_workspace_kg()
+        cross_nav = create_cross_doc_navigator(kg)
+        target_ids = doc_ids or list(self._catalog.keys())
+
+        for doc_id in target_ids:
+            index_result = self.get_document(doc_id)
+            if index_result is None:
+                continue
+            skeleton, kv_store = index_result[:2]
+
+            navigator = RLMNavigator(
+                skeleton=skeleton,
+                kv_store=kv_store,
+                knowledge_graph=kg,
+                config=RLMConfig(),
+            )
+            navigator.set_llm_function(_get_cached_llm_fn())
+            cross_nav.register_document(doc_id, skeleton, kv_store, navigator=navigator)
+
+        result = cross_nav.query(question)
+        return {
+            "answer": result.answer if hasattr(result, "answer") else str(result),
+            "documents_used": [
+                r.doc_id for r in (result.document_results if hasattr(result, "document_results") else [])
+            ],
+            "entities_involved": [
+                e.canonical_name for e in (result.entities_involved if hasattr(result, "entities_involved") else [])
+            ],
+        }
+
+    # =========================================================================
+    # Dunder methods
+    # =========================================================================
+
     def __len__(self) -> int:
         """Number of documents in the store."""
         return len(self._catalog)

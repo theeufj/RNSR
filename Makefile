@@ -9,7 +9,7 @@ else
     PYTHON := $(VENV)/bin/python
 endif
 
-.PHONY: help demo test test-fast test-cov lint format install clean venv update
+.PHONY: help demo test test-fast test-cov lint format install clean venv update switch
 
 # Default target
 help:
@@ -31,6 +31,7 @@ help:
 	@echo ""
 	@echo "Development:"
 	@echo "  update        Pull the latest version from git"
+	@echo "  switch        Switch git branch (interactive numbered list)"
 	@echo "  lint          Run linter (ruff)"
 	@echo "  format        Format code (ruff)"
 	@echo "  venv          Create virtual environment"
@@ -191,6 +192,44 @@ update:
 	@echo "⬇️  Pulling latest changes..."
 	git pull
 	@echo "✅ Up to date."
+
+# Interactive branch switcher
+switch:
+	@echo "🔀 Available branches:"
+	@echo ""
+	@git fetch --prune --quiet 2>/dev/null || true
+	@branches=$$(git branch -a --sort=-committerdate \
+		| sed 's/^[* ]*//' \
+		| sed 's|remotes/origin/||' \
+		| grep -v '^HEAD ' \
+		| awk '!seen[$$0]++' \
+		| head -10); \
+	i=1; \
+	for b in $$branches; do \
+		current=""; \
+		if git branch --show-current 2>/dev/null | grep -qx "$$b"; then \
+			current=" (current)"; \
+		fi; \
+		echo "  $$i) $$b$$current"; \
+		i=$$((i + 1)); \
+	done; \
+	echo ""; \
+	printf "Enter branch number (1-10): "; \
+	read choice; \
+	target=$$(echo "$$branches" | sed -n "$${choice}p"); \
+	if [ -z "$$target" ]; then \
+		echo "❌ Invalid selection."; \
+		exit 1; \
+	fi; \
+	echo ""; \
+	echo "Switching to: $$target"; \
+	if git show-ref --verify --quiet "refs/heads/$$target" 2>/dev/null; then \
+		git checkout "$$target"; \
+	else \
+		git checkout -b "$$target" "origin/$$target" 2>/dev/null \
+			|| git checkout "$$target"; \
+	fi; \
+	echo "✅ Now on branch: $$(git branch --show-current)"
 
 # Check if environment is set up correctly
 check-env:

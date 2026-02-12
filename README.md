@@ -110,7 +110,7 @@ RNSR combines neural and symbolic approaches to achieve accurate document unders
 | **Multi-Document Workspace** | Upload multiple PDFs, build a workspace-wide KG, and query across all of them |
 | **Cross-Document Entity Linking** | Automatically discovers that "G. Sorenssen" in Doc A is "GeoV William Sorenssen" in Doc B |
 | **Timeline Extraction** | Automatically builds chronological timelines of events from the knowledge graph |
-| **Contradiction Detection** | Flags conflicting claims within or across documents (heuristic + LLM) |
+| **Contradiction Detection** | Six-strategy detection: KG relationships, subject-gated heuristics, LLM semantic analysis, structure-parallel section matching, entity-centric comparison, and relationship divergence |
 | **Bring Your Own Data (BYOD)** | Pass in pre-built skeleton indexes, KV stores, and knowledge graphs |
 | **RLM Navigation** | LLM writes code to navigate documents - deterministic and reproducible |
 | **SQL-like Table Queries** | `SELECT`, `WHERE`, `ORDER BY`, `SUM`, `AVG` over detected tables |
@@ -555,19 +555,34 @@ for c in contradictions:
     print(f"  {c.explanation}")
 
 # Cross-document contradictions (compares claims from different docs)
+# Pass an llm_fn for highest-quality results (strategies 3-5 use it)
+from rnsr.llm import get_llm
+llm = get_llm()
+llm_fn = lambda prompt: str(llm.complete(prompt))
+
 store = DocumentStore("./docs")
 kg = store.get_workspace_kg()
 doc_tuples = [
     (doc_id, *store.get_document(doc_id))
     for doc_id in store
 ]
-cross_contradictions = detect_cross_document_contradictions(kg, doc_tuples)
+cross_contradictions = detect_cross_document_contradictions(
+    kg, doc_tuples, llm_fn=llm_fn
+)
 ```
 
-Detection uses three strategies:
-1. **KG-based** — Looks for `CONTRADICTS` relationships already in the knowledge graph
-2. **Heuristic** — Negation detection ("was granted" vs "was denied") and numeric conflicts
-3. **LLM-based** (optional) — Semantic contradiction detection for ambiguous cases
+Cross-document detection uses **six complementary strategies**:
+
+| # | Strategy | How it works | Signal quality |
+|---|----------|-------------|----------------|
+| 1 | **KG CONTRADICTS** | Looks for explicit `CONTRADICTS` relationships already in the knowledge graph | High (pre-extracted) |
+| 2 | **Subject-Gated Heuristic** | Negation detection ("was granted" vs "was denied") and numeric conflicts, but only between claims that share meaningful content words. Dates, reference codes, and section numbers are stripped before comparison | Medium |
+| 3 | **LLM Semantic** | Broad LLM scan of top claims across documents | High (requires `llm_fn`) |
+| 4 | **Structure-Parallel** | Matches sections with similar headers across documents (e.g. "Diagnosis" in two expert reports) using `SequenceMatcher`, then compares their content via LLM or heuristic fallback | High |
+| 5 | **Entity-Centric** | Uses the KG + `EntityLinker` to find entities spanning multiple documents, gathers all passages mentioning each entity, groups by document, and asks the LLM to find conflicts about the same entity | Highest |
+| 6 | **Relationship Divergence** | Walks the KG relationship graph for linked entities across documents, detecting contradictory patterns (e.g. `SUPPORTS` in one doc but `CONTRADICTS` in another, or same relationship type with conflicting evidence) | High |
+
+Strategies 4 and 5 exploit the **document tree structure** (parallel section headers) and **cross-document entity mapping** (KG entity linking) to compare only what *should* be compared, eliminating the false positives that plague naive pairwise approaches.
 
 ## Adaptive Learning
 

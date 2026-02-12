@@ -447,10 +447,10 @@ class DocumentStore:
 
                 try:
                     result = extract_entities_and_relationships(
-                        text=content,
-                        doc_id=doc_id,
                         node_id=node_id,
+                        doc_id=doc_id,
                         header=node.header,
+                        content=content,
                     )
                     for entity in result.entities:
                         kg.add_entity(entity)

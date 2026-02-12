@@ -1,0 +1,115 @@
+{
+  "root": {
+    "node_id": "root",
+    "parent_id": null,
+    "level": 0,
+    "header": "CrossDoc - Employer Incident Report",
+    "summary": "Contains: Workplace Incident Report",
+    "child_ids": [
+      "sec_e94ff7"
+    ],
+    "page_num": null,
+    "metadata": {
+      "has_children": true,
+      "content_chars": 35
+    }
+  },
+  "sec_e94ff7": {
+    "node_id": "sec_e94ff7",
+    "parent_id": "root",
+    "level": 1,
+    "header": "Workplace Incident Report",
+    "summary": "Contains: 1. Injured Worker Details, 2. Incident Description, 3. Injuries Sustained, 4. Investigation Findings, 5. Witness Statements, 6. Corrective Actions",
+    "child_ids": [
+      "sec_4a7e0e",
+      "sec_d77bd4",
+      "sec_d4713b",
+      "sec_3c130e",
+      "sec_a8a97d",
+      "sec_11c201"
+    ],
+    "page_num": 0,
+    "metadata": {
+      "has_children": true,
+      "content_chars": 139
+    }
+  },
+  "sec_4a7e0e": {
+    "node_id": "sec_4a7e0e",
+    "parent_id": "sec_e94ff7",
+    "level": 2,
+    "header": "1. Injured Worker Details",
+    "summary": "1. Injured Worker Details\n\nName: Benjamin Reeves. Date of Birth: 22 April 1985. Position: Warehouse Supervisor (Level 3). Employment Start Date: 8 January 2018. Normal Hours: Monday to Friday, 7:00 AM to 3:30 PM.",
+    "child_ids": [],
+    "page_num": 0,
+    "metadata": {
+      "has_children": false,
+      "content_chars": 212
+    }
+  },
+  "sec_d77bd4": {
+    "node_id": "sec_d77bd4",
+    "parent_id": "sec_e94ff7",
+    "level": 2,
+    "header": "2. Incident Description",
+    "summary": "2. Incident Description At approximately 10:15 AM on 5 June 2023, Mr Reeves was walking through Aisle 7 of Warehouse B when he was struck by a counterbalance forklift operated by Mr Kyle Patterson (Forklift Operator, Level 2). The forklift was travelling in reverse at an estimated speed of 8 km/h. Mr Reeves was knocked to the ground and the rear wheel of the forklift made contact with his left lower leg. First aid was administered at the scene by Mr David Chen (First Aid Officer). An ambulance was called at 10:22 AM and Mr Reeves was transported to Westmead...",
+    "child_ids": [],
+    "page_num": 0,
+    "metadata": {
+      "has_children": false,
+      "content_chars": 610
+    }
+  },
+  "sec_d4713b": {
+    "node_id": "sec_d4713b",
+    "parent_id": "sec_e94ff7",
+    "level": 2,
+    "header": "3. Injuries Sustained",
+    "summary": "3. Injuries Sustained\n\nAs per the hospital discharge summary (12 June 2023, 7 days admission), Mr Reeves sustained: a comminuted fracture of the left tibial shaft, contusion and soft tissue damage to the lumbar spine, and multiple abrasions to the left hip and thigh.",
+    "child_ids": [],
+    "page_num": 0,
+    "metadata": {
+      "has_children": false,
+      "content_chars": 267
+    }
+  },
+  "sec_3c130e": {
+    "node_id": "sec_3c130e",
+    "parent_id": "sec_e94ff7",
+    "level": 2,
+    "header": "4. Investigation Findings",
+    "summary": "4. Investigation Findings\n\nThe investigation found that: (a) Mr Patterson did not sound the horn before reversing, in breach of Standard Operating Procedure WHS-014; (b) the convex mirror at the Aisle 7 junction had been damaged and not replaced; (c) Mr Reeves was wearing high-visibility clothing as required.",
+    "child_ids": [],
+    "page_num": 0,
+    "metadata": {
+      "has_children": false,
+      "content_chars": 310
+    }
+  },
+  "sec_a8a97d": {
+    "node_id": "sec_a8a97d",
+    "parent_id": "sec_e94ff7",
+    "level": 2,
+    "header": "5. Witness Statements",
+    "summary": "5. Witness Statements\n\nMr David Chen (First Aid Officer): \"I heard a shout and ran to Aisle 7. Ben was on the ground holding his leg. Kyle was very shaken. The forklift was still running. I applied a splint and called 000.\" Mr Kyle Patterson (Forklift Operator): \"I was reversing out of Aisle 7. I did not see Mr Reeves. I was travelling slowly, maybe 8 or 9 km/h. I heard a thud and stopped immediately.\"",
+    "child_ids": [],
+    "page_num": 0,
+    "metadata": {
+      "has_children": false,
+      "content_chars": 405
+    }
+  },
+  "sec_11c201": {
+    "node_id": "sec_11c201",
+    "parent_id": "sec_e94ff7",
+    "level": 2,
+    "header": "6. Corrective Actions",
+    "summary": "6. Corrective Actions\n\nAll aisle junction mirrors were inspected and replaced where necessary (completed 8 June 2023). Refresher training on SOP WHS-014 was conducted for all forklift operators on 12 June 2023. A proximity warning system trial was approved on 20 June 2023.",
+    "child_ids": [],
+    "page_num": 0,
+    "metadata": {
+      "has_children": false,
+      "content_chars": 273
+    }
+  }
+}

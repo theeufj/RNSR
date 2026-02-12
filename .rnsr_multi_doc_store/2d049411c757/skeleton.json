@@ -1,0 +1,115 @@
+{
+  "root": {
+    "node_id": "root",
+    "parent_id": null,
+    "level": 0,
+    "header": "CrossDoc - Expert Report A Dr Hartley",
+    "summary": "Contains: Expert Medical Report -- Dr Fiona Hartley",
+    "child_ids": [
+      "sec_6e8f8d"
+    ],
+    "page_num": null,
+    "metadata": {
+      "has_children": true,
+      "content_chars": 37
+    }
+  },
+  "sec_6e8f8d": {
+    "node_id": "sec_6e8f8d",
+    "parent_id": "root",
+    "level": 1,
+    "header": "Expert Medical Report -- Dr Fiona Hartley",
+    "summary": "Contains: 1. Qualifications, 2. History of Injury, 3. Current Symptoms, 4. Diagnosis, 5. Capacity for Work, 6. Treatment Recommendations",
+    "child_ids": [
+      "sec_cfe833",
+      "sec_68addc",
+      "sec_2a08af",
+      "sec_7f7074",
+      "sec_7ddfeb",
+      "sec_fcf7b7"
+    ],
+    "page_num": 0,
+    "metadata": {
+      "has_children": true,
+      "content_chars": 159
+    }
+  },
+  "sec_cfe833": {
+    "node_id": "sec_cfe833",
+    "parent_id": "sec_6e8f8d",
+    "level": 2,
+    "header": "1. Qualifications",
+    "summary": "1. Qualifications\n\nI am Dr Fiona Hartley, MBBS, FRANZCP, a consultant psychiatrist with 18 years of clinical experience. I have been asked to provide an independent assessment of Mr Reeves' psychological condition following a workplace incident.",
+    "child_ids": [],
+    "page_num": 0,
+    "metadata": {
+      "has_children": false,
+      "content_chars": 245
+    }
+  },
+  "sec_68addc": {
+    "node_id": "sec_68addc",
+    "parent_id": "sec_6e8f8d",
+    "level": 2,
+    "header": "2. History of Injury",
+    "summary": "2. History of Injury\n\nMr Reeves was involved in a workplace accident on 5 June 2023 at the Warwick Distribution Centre. He was struck by a forklift travelling at approximately 15 km/h, resulting in a fractured left tibia and soft tissue injuries to the lower back. He was transported to Westmead Hospital by ambulance and admitted for 6 days.",
+    "child_ids": [],
+    "page_num": 0,
+    "metadata": {
+      "has_children": false,
+      "content_chars": 342
+    }
+  },
+  "sec_2a08af": {
+    "node_id": "sec_2a08af",
+    "parent_id": "sec_6e8f8d",
+    "level": 2,
+    "header": "3. Current Symptoms",
+    "summary": "3. Current Symptoms\n\nAt the time of my examination on 8 March 2024, Mr Reeves reported persistent anxiety, nightmares occurring 4-5 times per week, hypervigilance in workplace settings, and depressed mood. He described difficulty concentrating and stated he has been unable to return to work since the accident.",
+    "child_ids": [],
+    "page_num": 0,
+    "metadata": {
+      "has_children": false,
+      "content_chars": 311
+    }
+  },
+  "sec_7f7074": {
+    "node_id": "sec_7f7074",
+    "parent_id": "sec_6e8f8d",
+    "level": 2,
+    "header": "4. Diagnosis",
+    "summary": "4. Diagnosis\n\nIn my opinion, Mr Reeves meets the diagnostic criteria for Post-Traumatic Stress Disorder (PTSD) under DSM-5. He also presents with a moderate Major Depressive Episode secondary to the PTSD and chronic pain. His GAF score is 45, indicating serious impairment in occupational and social functioning.",
+    "child_ids": [],
+    "page_num": 0,
+    "metadata": {
+      "has_children": false,
+      "content_chars": 312
+    }
+  },
+  "sec_7ddfeb": {
+    "node_id": "sec_7ddfeb",
+    "parent_id": "sec_6e8f8d",
+    "level": 2,
+    "header": "5. Capacity for Work",
+    "summary": "5. Capacity for Work\n\nMr Reeves is currently totally unfit for his pre-injury role as a warehouse supervisor. In my opinion, he is unlikely to be fit for any form of employment for at least the next 12 months. His prognosis is guarded given the severity of the PTSD and the comorbid depression.",
+    "child_ids": [],
+    "page_num": 0,
+    "metadata": {
+      "has_children": false,
+      "content_chars": 294
+    }
+  },
+  "sec_fcf7b7": {
+    "node_id": "sec_fcf7b7",
+    "parent_id": "sec_6e8f8d",
+    "level": 2,
+    "header": "6. Treatment Recommendations",
+    "summary": "6. Treatment Recommendations\n\nI recommend weekly trauma-focused cognitive behavioural therapy (TF-CBT) for a minimum of 20 sessions, continuation of his current medication (sertraline 150mg daily), and review in 6 months. A graduated return-to-work program should not be attempted before March 2025 at the earliest.",
+    "child_ids": [],
+    "page_num": 0,
+    "metadata": {
+      "has_children": false,
+      "content_chars": 315
+    }
+  }
+}

@@ -1,0 +1,87 @@
+{
+  "root": {
+    "node_id": "root",
+    "parent_id": null,
+    "level": 0,
+    "header": "Timeline - Baxter v Thornton",
+    "summary": "Contains: Chronology of Proceedings -- Baxter v Thornton Indus",
+    "child_ids": [
+      "sec_fc1312"
+    ],
+    "page_num": null,
+    "metadata": {
+      "has_children": true,
+      "content_chars": 28
+    }
+  },
+  "sec_fc1312": {
+    "node_id": "sec_fc1312",
+    "parent_id": "root",
+    "level": 1,
+    "header": "Chronology of Proceedings -- Baxter v Thornton Indus",
+    "summary": "Contains: Background, Events Leading to Dispute, Proceedings, Post-Decision",
+    "child_ids": [
+      "sec_5fa4f5",
+      "sec_8b9fef",
+      "sec_75966e",
+      "sec_30800b"
+    ],
+    "page_num": 0,
+    "metadata": {
+      "has_children": true,
+      "content_chars": 52
+    }
+  },
+  "sec_5fa4f5": {
+    "node_id": "sec_5fa4f5",
+    "parent_id": "sec_fc1312",
+    "level": 2,
+    "header": "Background",
+    "summary": "Background\n\nMs Rachel Baxter was employed by Thornton Industries Ltd as a Senior Process Engineer from 14 February 2017. Her annual salary at the time of termination was $142,500. She reported to Plant Manager Mr Gregory Thornton.",
+    "child_ids": [],
+    "page_num": 0,
+    "metadata": {
+      "has_children": false,
+      "content_chars": 230
+    }
+  },
+  "sec_8b9fef": {
+    "node_id": "sec_8b9fef",
+    "parent_id": "sec_fc1312",
+    "level": 2,
+    "header": "Events Leading to Dispute",
+    "summary": "Events Leading to Dispute On 3 July 2022, Ms Baxter submitted a formal complaint to the HR department alleging unsafe working conditions in Plant B. The complaint was acknowledged on 5 July 2022 by HR Manager Lisa Carmichael. An internal investigation commenced on 18 July 2022 and concluded on 29 August 2022. The investigation report found that three of Ms Baxter's five allegations were substantiated. On 15 September 2022, Ms Baxter was issued a formal warning for alleged insubordination during a meeting on 8 September 2022. Ms Baxter denied the allegations and filed a grievance on 22 September 2022. Ms...",
+    "child_ids": [],
+    "page_num": 0,
+    "metadata": {
+      "has_children": false,
+      "content_chars": 741
+    }
+  },
+  "sec_75966e": {
+    "node_id": "sec_75966e",
+    "parent_id": "sec_fc1312",
+    "level": 2,
+    "header": "Proceedings",
+    "summary": "Proceedings\n\nMs Baxter filed an unfair dismissal application with the Fair Work Commission on 14 December 2022. A conciliation conference was held on 2 February 2023 but did not result in settlement. The matter proceeded to hearing on 15 May 2023, 16 May 2023, and 17 May 2023. Commissioner Angela Morrison presided. Evidence was given by Ms Baxter, Mr Thornton, Ms Carmichael, and two independent witnesses. The decision was handed down on 28 July 2023. Commissioner Morrison found that the dismissal was unfair and ordered reinstatement effective 1 September 2023 with back pay of $98,750 covering the period of dismissal.",
+    "child_ids": [],
+    "page_num": 0,
+    "metadata": {
+      "has_children": false,
+      "content_chars": 624
+    }
+  },
+  "sec_30800b": {
+    "node_id": "sec_30800b",
+    "parent_id": "sec_fc1312",
+    "level": 2,
+    "header": "Post-Decision",
+    "summary": "Post-Decision\n\nThornton Industries filed an appeal on 25 August 2023. The appeal was heard on 12 November 2023 by a Full Bench comprising Vice President Roberts, Deputy President Singh, and Commissioner Lee. The Full Bench dismissed the appeal on 19 January 2024 and upheld the original decision in its entirety. Ms Baxter was reinstated on 5 February 2024.",
+    "child_ids": [],
+    "page_num": 0,
+    "metadata": {
+      "has_children": false,
+      "content_chars": 357
+    }
+  }
+}

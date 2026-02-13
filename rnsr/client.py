@@ -34,6 +34,23 @@ Usage:
         "scanned_document.pdf",
         "What is shown in the chart?",
     )
+    
+    # BYOD (Bring Your Own Data) -- use pre-built indexes
+    from rnsr.indexing import save_index, load_index
+    
+    # Build once, persist to your own storage
+    skeleton, kv_store = client.build_index("contract.pdf")
+    kg = client.build_knowledge_graph(skeleton, kv_store, "contract")
+    save_index(skeleton, kv_store, Path("my_storage/contract/"))
+    
+    # Load later, query without re-indexing
+    skeleton, kv_store, tables = load_index(Path("my_storage/contract/"))
+    result = client.query(
+        "What is the liability cap?",
+        skeleton=skeleton,
+        kv_store=kv_store,
+        knowledge_graph=kg,
+    )
 """
 
 from __future__ import annotations
@@ -143,12 +160,167 @@ class RNSRClient:
             cache_dir=str(self.cache_dir) if self.cache_dir else None,
         )
     
-    def ask(
+    # =========================================================================
+    # BYOD (Bring Your Own Data) API
+    # =========================================================================
+
+    def build_index(
         self,
         document: str | Path,
+    ) -> tuple[dict[str, SkeletonNode], KVStore]:
+        """
+        Build and return the skeleton index + KV store for a document.
+        
+        Use this to build indexes that you manage and persist yourself.
+        The returned objects can be saved with ``save_index()`` and later
+        reloaded with ``load_index()`` and passed to ``query()``.
+        
+        Args:
+            document: Path to PDF file.
+            
+        Returns:
+            Tuple of (skeleton, kv_store).
+            
+        Example:
+            from rnsr.indexing import save_index
+            
+            skeleton, kv_store = client.build_index("contract.pdf")
+            save_index(skeleton, kv_store, Path("my_storage/contract/"))
+        """
+        doc_path = Path(document)
+        if not doc_path.exists():
+            raise FileNotFoundError(f"Document not found: {doc_path}")
+
+        result = ingest_document(str(doc_path))
+        skeleton, kv_store = build_skeleton_index(result.tree)
+
+        logger.info(
+            "index_built",
+            document=str(doc_path),
+            nodes=len(skeleton),
+        )
+        return skeleton, kv_store
+
+    def build_knowledge_graph(
+        self,
+        skeleton: dict[str, SkeletonNode],
+        kv_store: KVStore,
+        doc_id: str = "document",
+    ) -> KnowledgeGraph:
+        """
+        Build and return a knowledge graph from a skeleton index.
+        
+        Use this to create a KG that you manage and persist yourself.
+        The returned ``KnowledgeGraph`` can be initialised with a file path
+        for persistence, or ``:memory:`` for ephemeral use.
+        
+        Args:
+            skeleton: Pre-built skeleton index.
+            kv_store: KV store with node content.
+            doc_id: Document identifier for entity attribution.
+            
+        Returns:
+            Populated KnowledgeGraph.
+            
+        Example:
+            skeleton, kv_store = client.build_index("contract.pdf")
+            kg = client.build_knowledge_graph(skeleton, kv_store, "contract")
+        """
+        # Use a synthetic cache key so the internal method works
+        import uuid
+        cache_key = f"byod_{uuid.uuid4().hex[:12]}"
+        kg = self._get_or_create_knowledge_graph(
+            cache_key=cache_key,
+            skeleton=skeleton,
+            kv_store=kv_store,
+            doc_id=doc_id,
+        )
+        return kg
+
+    def query(
+        self,
         question: str,
+        *,
+        skeleton: dict[str, SkeletonNode],
+        kv_store: KVStore,
+        knowledge_graph: KnowledgeGraph | None = None,
+        tables: list | None = None,
+        enable_pre_filtering: bool = True,
+        enable_verification: bool = False,
+        max_recursion_depth: int = 3,
+        metadata: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """
+        Query pre-built indexes directly — no document path needed.
+        
+        This is the primary BYOD entry point. Use it when you manage your
+        own storage and have already built (or loaded) the skeleton index,
+        KV store, and optionally a knowledge graph.
+        
+        Args:
+            question: Question to ask.
+            skeleton: Pre-built skeleton index (dict of node_id → SkeletonNode).
+            kv_store: Pre-built KV store with node content.
+            knowledge_graph: Optional pre-built knowledge graph.
+            tables: Optional detected tables for SQL-like queries.
+            enable_pre_filtering: Use keyword filtering before ToT evaluation.
+            enable_verification: Verify answers with strict critic loop.
+            max_recursion_depth: Max depth for recursive sub-LLM calls.
+            metadata: Optional metadata (e.g., multiple choice options).
+            
+        Returns:
+            Full result dictionary with answer, confidence, trace.
+            
+        Example:
+            from rnsr.indexing import load_index
+            
+            skeleton, kv_store, tables = load_index("my_storage/contract/")
+            result = client.query(
+                "What are the payment terms?",
+                skeleton=skeleton,
+                kv_store=kv_store,
+            )
+            print(result["answer"])
+        """
+        from rnsr.agent.rlm_navigator import RLMNavigator, RLMConfig
+
+        config = RLMConfig(
+            max_recursion_depth=max_recursion_depth,
+            enable_pre_filtering=enable_pre_filtering,
+            enable_verification=enable_verification,
+        )
+
+        navigator = RLMNavigator(
+            skeleton=skeleton,
+            kv_store=kv_store,
+            knowledge_graph=knowledge_graph,
+            config=config,
+            tables=tables or [],
+        )
+        navigator.set_llm_function(_get_cached_llm_fn())
+
+        logger.info(
+            "byod_query",
+            question=question[:80],
+            nodes=len(skeleton),
+            has_kg=knowledge_graph is not None,
+        )
+        return navigator.navigate(question, metadata=metadata)
+
+    # =========================================================================
+    # Document-Path API
+    # =========================================================================
+
+    def ask(
+        self,
+        document: str | Path | None = None,
+        question: str = "",
+        *,
         use_knowledge_graph: bool = True,
         force_reindex: bool = False,
+        skeleton: dict[str, SkeletonNode] | None = None,
+        kv_store: KVStore | None = None,
+        knowledge_graph: KnowledgeGraph | None = None,
     ) -> dict[str, Any]:
         """
         Ask a question about a PDF document.
@@ -158,19 +330,47 @@ class RNSRClient:
         Set ``use_knowledge_graph=False`` to skip this step for faster but
         less accurate results.
         
+        Supports BYOD: pass ``skeleton`` and ``kv_store`` directly to skip
+        document ingestion and indexing.
+        
         Args:
-            document: Path to PDF file
-            question: Question to ask
+            document: Path to PDF file (optional when using BYOD).
+            question: Question to ask.
             use_knowledge_graph: Build and use knowledge graph with entity
                                  extraction (default True).
-            force_reindex: If True, re-process even if cached
+            force_reindex: If True, re-process even if cached.
+            skeleton: Optional pre-built skeleton index (BYOD).
+            kv_store: Optional pre-built KV store (BYOD).
+            knowledge_graph: Optional pre-built knowledge graph (BYOD).
             
         Returns:
             Answer string from the navigator
             
         Example:
             answer = client.ask("contract.pdf", "What are the payment terms?")
+            
+            # BYOD:
+            answer = client.ask(
+                question="What are the terms?",
+                skeleton=my_skeleton,
+                kv_store=my_kv_store,
+            )
         """
+        # BYOD path: delegate to query()
+        if skeleton is not None and kv_store is not None:
+            result = self.query(
+                question,
+                skeleton=skeleton,
+                kv_store=kv_store,
+                knowledge_graph=knowledge_graph,
+            )
+            return result.get("answer", "No answer found.")
+
+        if document is None:
+            raise ValueError(
+                "Provide either 'document' or both 'skeleton' and 'kv_store'."
+            )
+
         # Delegate to ask_advanced which supports knowledge graph via RLMNavigator
         result = self.ask_advanced(
             document=document,
@@ -418,10 +618,40 @@ class RNSRClient:
         Returns:
             KnowledgeGraph with extracted entities and relationships.
         """
-        # Check cache first
+        # Check in-memory cache first
         if cache_key in self._kg_cache:
             logger.debug("using_cached_knowledge_graph", key=cache_key)
             return self._kg_cache[cache_key]
+
+        # Check for a persisted KG on disk
+        kg_path: Path | None = None
+        if self.cache_dir and cache_key:
+            kg_path = self.cache_dir / cache_key / "knowledge_graph.db"
+            if kg_path.exists():
+                try:
+                    kg = KnowledgeGraph(str(kg_path))
+                    # Quick staleness check: compare entity count > 0
+                    # (a more rigorous check could compare node counts)
+                    stats = kg.get_stats()
+                    entity_count = stats.get("entity_count", 0)
+                    if entity_count > 0:
+                        logger.info(
+                            "loaded_persistent_kg",
+                            key=cache_key,
+                            entities=entity_count,
+                            path=str(kg_path),
+                        )
+                        self._kg_cache[cache_key] = kg
+                        return kg
+                    # Empty KG file — rebuild
+                    logger.debug("persistent_kg_empty", key=cache_key)
+                except Exception as exc:
+                    logger.warning(
+                        "persistent_kg_load_failed",
+                        key=cache_key,
+                        error=str(exc),
+                    )
+                    # Fall through to rebuild
 
         from concurrent.futures import ThreadPoolExecutor, as_completed
         from rnsr.extraction import extract_entities_and_relationships
@@ -430,8 +660,13 @@ class RNSRClient:
             extract_entities_and_relationships_batch,
         )
 
-        # Create new knowledge graph (in-memory for now)
-        kg = KnowledgeGraph(":memory:")
+        # Create new knowledge graph — file-backed when cache_dir is set
+        if kg_path:
+            kg_path.parent.mkdir(parents=True, exist_ok=True)
+            kg = KnowledgeGraph(str(kg_path))
+            logger.info("creating_persistent_kg", path=str(kg_path))
+        else:
+            kg = KnowledgeGraph(":memory:")
 
         # -----------------------------------------------------------------
         # Build ancestor breadcrumb + subject context for each node.
@@ -455,7 +690,7 @@ class RNSRClient:
             container = skeleton.get(container_id)
             if not container or not container.child_ids:
                 # Leaf node — return its own content
-                return (kv_store.get(container_id) or "")[:400]
+                return kv_store.get(container_id) or ""
 
             # Look for a child with a header containing "personal", "info",
             # or just take the first child with substantial content.
@@ -467,13 +702,13 @@ class RNSRClient:
                 if "personal" in h_lower or "info" in h_lower or "name" in h_lower:
                     content = kv_store.get(child_id) or ""
                     if len(content) > 50:
-                        return content[:400]
+                        return content
 
             # Fallback: first child with enough content
             for child_id in container.child_ids:
                 content = kv_store.get(child_id) or ""
                 if len(content) > 50:
-                    return content[:400]
+                    return content
 
             return ""
 
@@ -524,7 +759,7 @@ class RNSRClient:
                         else:
                             content = kv_store.get(first_child_id) or ""
                             if len(content) > 50:
-                                subject_hint = content[:400]
+                                subject_hint = content
 
                     # Strategy 2: If this is a top-level section (e.g.
                     # EDUCATION HISTORY under Form 80 Data), find the
@@ -843,8 +1078,9 @@ class RNSRClient:
     
     def ask_advanced(
         self,
-        document: str | Path,
-        question: str,
+        document: str | Path | None = None,
+        question: str = "",
+        *,
         use_rlm: bool = True,
         use_knowledge_graph: bool = True,
         enable_pre_filtering: bool = True,
@@ -852,6 +1088,10 @@ class RNSRClient:
         max_recursion_depth: int = 3,
         force_reindex: bool = False,
         metadata: dict[str, Any] | None = None,
+        skeleton: dict[str, SkeletonNode] | None = None,
+        kv_store: KVStore | None = None,
+        knowledge_graph: KnowledgeGraph | None = None,
+        tables: list | None = None,
     ) -> dict[str, Any]:
         """
         Advanced Q&A using the full RLM Navigator with Knowledge Graph.
@@ -862,13 +1102,17 @@ class RNSRClient:
         - Pre-filtering with keyword extraction before LLM calls
         - Deep recursive sub-LLM calls (configurable depth)
         
+        Supports BYOD: pass ``skeleton``, ``kv_store``, and optionally
+        ``knowledge_graph`` to skip document ingestion and indexing entirely.
+        
         Args:
-            document: Path to PDF file.
+            document: Path to PDF file (optional when using BYOD).
             question: Question to ask.
             use_rlm: Use RLM Navigator (True) or standard navigator (False).
             use_knowledge_graph: Build and use knowledge graph with entity 
                                  extraction. This significantly improves accuracy
                                  by giving the navigator entity awareness.
+                                 Ignored when ``knowledge_graph`` is provided.
             enable_pre_filtering: Use keyword filtering before ToT evaluation.
             enable_verification: Verify answers with strict critic loop.
                                 Note: Set to False by default as this can be
@@ -876,6 +1120,10 @@ class RNSRClient:
             max_recursion_depth: Max depth for recursive sub-LLM calls.
             force_reindex: Re-process even if cached.
             metadata: Optional metadata (e.g., multiple choice options).
+            skeleton: Optional pre-built skeleton index (BYOD).
+            kv_store: Optional pre-built KV store (BYOD).
+            knowledge_graph: Optional pre-built knowledge graph (BYOD).
+            tables: Optional detected tables (BYOD).
             
         Returns:
             Full result dictionary with answer, confidence, trace.
@@ -895,66 +1143,97 @@ class RNSRClient:
                 "What is the liability cap?",
                 enable_verification=True,
             )
+            
+            # BYOD: bring your own indexes
+            result = client.ask_advanced(
+                question="What are the terms?",
+                skeleton=my_skeleton,
+                kv_store=my_kv_store,
+                knowledge_graph=my_kg,
+            )
         """
-        doc_path = Path(document)
-        if not doc_path.exists():
-            raise FileNotFoundError(f"Document not found: {doc_path}")
-        
-        # Get cache key for this document
-        cache_key = self._get_cache_key(doc_path)
-        
-        # Get or create index
-        skeleton, kv_store = self._get_or_create_index(doc_path, force_reindex)
-        
+        # -----------------------------------------------------------------
+        # Resolve skeleton / kv_store / knowledge_graph
+        # Either from the document path or from BYOD arguments.
+        # -----------------------------------------------------------------
+        byod = skeleton is not None and kv_store is not None
+        cache_key: str | None = None
+
+        if byod:
+            # BYOD path — caller provides the data structures directly
+            _skeleton = skeleton
+            _kv_store = kv_store
+            _kg = knowledge_graph
+            _tables = tables or []
+            logger.info(
+                "ask_advanced_byod",
+                nodes=len(_skeleton),
+                has_kg=_kg is not None,
+            )
+        elif document is not None:
+            doc_path = Path(document)
+            if not doc_path.exists():
+                raise FileNotFoundError(f"Document not found: {doc_path}")
+
+            cache_key = self._get_cache_key(doc_path)
+            _skeleton, _kv_store = self._get_or_create_index(doc_path, force_reindex)
+            _tables = tables or self._tables_cache.get(cache_key, [])
+            _kg = knowledge_graph  # May be None; built below if needed
+        else:
+            raise ValueError(
+                "Provide either 'document' or both 'skeleton' and 'kv_store'."
+            )
+
         if use_rlm:
             from rnsr.agent.rlm_navigator import RLMNavigator, RLMConfig
             
-            # Build knowledge graph if enabled (key to benchmark performance)
-            knowledge_graph = None
-            if use_knowledge_graph:
-                knowledge_graph = self._get_or_create_knowledge_graph(
+            # Build knowledge graph if enabled and not already provided
+            if _kg is None and use_knowledge_graph and not byod and cache_key:
+                _kg = self._get_or_create_knowledge_graph(
                     cache_key=cache_key,
-                    skeleton=skeleton,
-                    kv_store=kv_store,
-                    doc_id=doc_path.name,
+                    skeleton=_skeleton,
+                    kv_store=_kv_store,
+                    doc_id=Path(document).name if document else "document",
                 )
             
-            # Create navigator key for caching
-            nav_key = f"{cache_key}_rlm_{use_knowledge_graph}_{enable_verification}"
+            # Create navigator key for caching (only when using doc path)
+            nav_key = (
+                f"{cache_key}_rlm_{use_knowledge_graph}_{enable_verification}"
+                if cache_key
+                else None
+            )
             
             # Get or create navigator (reuse for multiple queries on same doc)
-            if nav_key not in self._navigator_cache or force_reindex:
+            if nav_key and nav_key in self._navigator_cache and not force_reindex:
+                navigator = self._navigator_cache[nav_key]
+                logger.debug("using_cached_navigator", key=nav_key)
+            else:
                 config = RLMConfig(
                     max_recursion_depth=max_recursion_depth,
                     enable_pre_filtering=enable_pre_filtering,
                     enable_verification=enable_verification,
                 )
                 
-                # Get detected tables for SQL-like queries during navigation
-                tables = self._tables_cache.get(cache_key, [])
-                
                 navigator = RLMNavigator(
-                    skeleton=skeleton,
-                    kv_store=kv_store,
-                    knowledge_graph=knowledge_graph,
+                    skeleton=_skeleton,
+                    kv_store=_kv_store,
+                    knowledge_graph=_kg,
                     config=config,
-                    tables=tables,
+                    tables=_tables,
                 )
                 
                 # Use cached LLM function for performance and consistency
                 navigator.set_llm_function(_get_cached_llm_fn())
                 
-                self._navigator_cache[nav_key] = navigator
+                if nav_key:
+                    self._navigator_cache[nav_key] = navigator
                 
                 logger.info(
                     "rlm_navigator_created",
                     cache_key=cache_key,
-                    use_knowledge_graph=use_knowledge_graph,
+                    use_knowledge_graph=_kg is not None,
                     enable_verification=enable_verification,
                 )
-            else:
-                navigator = self._navigator_cache[nav_key]
-                logger.debug("using_cached_navigator", key=nav_key)
             
             # Run the navigation
             result = navigator.navigate(question, metadata=metadata)
@@ -962,9 +1241,82 @@ class RNSRClient:
             return result
         else:
             # Use standard navigator (simpler, no knowledge graph)
-            result = run_navigator(question, skeleton, kv_store, metadata=metadata)
+            result = run_navigator(question, _skeleton, _kv_store, metadata=metadata)
             return result
     
+    def ask_cross_document(
+        self,
+        documents: list[str | Path],
+        question: str,
+        *,
+        store_path: str | Path | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """
+        Ask a question that spans multiple documents.
+        
+        Uses the CrossDocNavigator to decompose the question, resolve
+        entities across documents, navigate each one, and synthesise a
+        combined answer.
+        
+        Args:
+            documents: List of PDF file paths.
+            question: The cross-document question.
+            store_path: Optional path for the workspace document store.
+                        Defaults to ``<cache_dir>/cross_doc_store`` or a
+                        temporary directory.
+            metadata: Optional metadata for the navigator.
+            
+        Returns:
+            Result dictionary with answer, documents_used, entities_involved.
+            
+        Example:
+            result = client.ask_cross_document(
+                ["contract_v1.pdf", "contract_v2.pdf"],
+                "What terms changed between the two contracts?",
+            )
+            print(result["answer"])
+        """
+        import tempfile
+
+        # Resolve store path
+        if store_path:
+            _store_path = Path(store_path)
+        elif self.cache_dir:
+            _store_path = self.cache_dir / "cross_doc_store"
+        else:
+            _store_path = Path(tempfile.mkdtemp(prefix="rnsr_xdoc_"))
+
+        store = DocumentStore(_store_path)
+
+        # Add documents
+        doc_ids: list[str] = []
+        for doc in documents:
+            doc_path = Path(doc)
+            if not doc_path.exists():
+                logger.warning("cross_doc_skip_missing", path=str(doc_path))
+                continue
+            doc_id = store.add_document(doc_path)
+            doc_ids.append(doc_id)
+
+        if not doc_ids:
+            return {"answer": "No valid documents provided.", "documents_used": [], "entities_involved": []}
+
+        # Build workspace KG and link entities
+        store.build_workspace_kg(doc_ids=doc_ids)
+        store.link_entities_across_documents(doc_ids=doc_ids)
+
+        # Query across documents
+        result = store.query_cross_document(question, doc_ids=doc_ids)
+
+        logger.info(
+            "cross_doc_query_complete",
+            question=question[:80],
+            documents=len(doc_ids),
+            documents_used=result.get("documents_used", []),
+        )
+        return result
+
     def ask_vision(
         self,
         document: str | Path,

@@ -117,7 +117,7 @@ class EntityExtractor:
         self,
         llm: Any | None = None,
         min_content_length: int = 50,
-        max_content_length: int = 8000,
+        max_content_length: int | None = None,
         enable_type_learning: bool = True,
         learned_type_min_count: int = 2,
         suppress_deprecation_warning: bool = False,
@@ -136,7 +136,8 @@ class EntityExtractor:
         Args:
             llm: LLM instance to use. If None, uses get_llm().
             min_content_length: Minimum content length to process.
-            max_content_length: Maximum content length per extraction call.
+            max_content_length: Optional max content length per extraction call.
+                Defaults to ``None`` (no truncation — modern LLMs handle full sections).
             enable_type_learning: Whether to learn new entity types.
             learned_type_min_count: Minimum occurrences before a learned type
                                     is included in extraction prompts.
@@ -197,10 +198,11 @@ class EntityExtractor:
             logger.debug("using_cached_entities", node_id=node_id)
             return result
         
-        # Truncate content if too long
-        if len(content) > self.max_content_length:
+        # Truncate content only if an explicit cap was set
+        if self.max_content_length and len(content) > self.max_content_length:
+            original_len = len(content)
             content = content[:self.max_content_length] + "..."
-            result.warnings.append(f"Content truncated from {len(content)} chars")
+            result.warnings.append(f"Content truncated from {original_len} chars")
         
         try:
             entities = self._extract_with_llm(
@@ -274,8 +276,9 @@ class EntityExtractor:
             learned_types_section=learned_types_section,
         )
         
-        # Call LLM
-        response = self.llm.complete(prompt)
+        # Call LLM (prefer JSON mode for structured output)
+        _complete_fn = getattr(self.llm, "complete_json", None) or self.llm.complete
+        response = _complete_fn(prompt)
         response_text = str(response) if not isinstance(response, str) else response
         
         # Parse JSON from response

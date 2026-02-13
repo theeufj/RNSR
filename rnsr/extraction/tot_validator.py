@@ -255,20 +255,21 @@ class TotEntityValidator:
         # Format candidates for prompt
         candidates_formatted = "\n".join([
             f"[{i + batch_offset}] Text: \"{c.text}\" | Type Hint: {c.candidate_type} | "
-            f"Context: \"...{c.context[:100]}...\""
+            f"Context: \"...{c.context}...\""
             for i, c in enumerate(candidates)
         ])
         
         prompt = TOT_ENTITY_VALIDATION_PROMPT.format(
             section_header=section_header,
-            section_content=section_content[:2500],
+            section_content=section_content,
             candidates_formatted=candidates_formatted,
             selection_threshold=self.selection_threshold,
             rejection_threshold=self.rejection_threshold,
         )
         
         try:
-            response = self.llm.complete(prompt)
+            _complete_fn = getattr(self.llm, "complete_json", None) or self.llm.complete
+            response = _complete_fn(prompt)
             response_text = str(response) if not isinstance(response, str) else response
             
             return self._parse_validation_response(response_text, len(candidates), batch_offset)
@@ -423,16 +424,16 @@ class TotEntityValidator:
                 if node_id != current_node_id:
                     sections.append({
                         "header": node.header or "(no header)",
-                        "content": (node.content or "")[:500],
+                        "content": node.content or "",
                     })
             
             if hasattr(node, 'children'):
-                for child in node.children[:5]:  # Limit children
+                for child in node.children:
                     collect_sections(child, current_depth + 1)
         
         collect_sections(document_tree.root, 0)
         
-        return sections[:10]  # Limit total sections
+        return sections
     
     def _resolve_single_candidate(
         self,
@@ -454,13 +455,14 @@ class TotEntityValidator:
         prompt = TOT_CONTEXT_GATHERING_PROMPT.format(
             candidate_text=candidate.text,
             type_hint=candidate.candidate_type,
-            original_section=candidate.context[:200],
+            original_section=candidate.context,
             related_sections=sections_text,
             candidate_id=candidate_id,
         )
         
         try:
-            response = llm.complete(prompt)
+            _complete_fn = getattr(llm, "complete_json", None) or llm.complete
+            response = _complete_fn(prompt)
             response_text = str(response) if not isinstance(response, str) else response
             
             # Parse response

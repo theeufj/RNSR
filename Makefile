@@ -9,7 +9,7 @@ else
     PYTHON := $(VENV)/bin/python
 endif
 
-.PHONY: help demo test test-fast test-cov lint format install clean venv update switch
+.PHONY: help demo test test-fast test-cov lint format install clean venv update switch benchmark-timeline benchmark-contradiction benchmark-features
 
 # Default target
 help:
@@ -23,6 +23,9 @@ help:
 	@echo "  benchmark         Run performance benchmarks"
 	@echo "  benchmark-compare Compare RNSR vs baselines (small doc)"
 	@echo "  benchmark-large   Compare on LARGE doc (shows RNSR advantage)"
+	@echo "  benchmark-timeline     Run timeline benchmark (LexTime + synthetic)"
+	@echo "  benchmark-contradiction Run contradiction detection benchmark"
+	@echo "  benchmark-features     Run both timeline + contradiction benchmarks"
 	@echo ""
 	@echo "Testing:"
 	@echo "  test          Run all tests"
@@ -95,6 +98,30 @@ benchmark-large:
 	@echo "   This demonstrates RNSR's advantage on documents too large for context"
 	@echo ""
 	$(PYTHON) scripts/compare_benchmarks.py --large
+
+# Run timeline benchmark (LexTime + synthetic PDFs)
+benchmark-timeline:
+	@echo "📊 Running Timeline Benchmark..."
+	@echo "   Tier 1: Synthetic PDF ground truth"
+	@echo "   Tier 2: LexTime temporal ordering (514 instances)"
+	@echo ""
+	$(PYTHON) -c "from rnsr.benchmarks.timeline_bench import run_timeline_benchmark; import json; r = run_timeline_benchmark(); print(json.dumps(r, indent=2, default=str))"
+
+# Run contradiction detection benchmark
+benchmark-contradiction:
+	@echo "📊 Running Contradiction Benchmark..."
+	@echo "   Single-doc: Greenfield Annual Report (5 known contradictions)"
+	@echo "   Cross-doc: Expert Reports A/B + Incident Report (6 known contradictions)"
+	@echo ""
+	$(PYTHON) -c "from rnsr.benchmarks.contradiction_bench import run_contradiction_benchmark; import json; r = run_contradiction_benchmark(); print(json.dumps(r, indent=2, default=str))"
+
+# Run both feature benchmarks (timeline + contradiction)
+benchmark-features:
+	@echo "📊 Running Feature Benchmarks (Timeline + Contradiction)..."
+	@echo ""
+	@$(MAKE) benchmark-timeline
+	@echo ""
+	@$(MAKE) benchmark-contradiction
 
 # Compare with your own PDF
 benchmark-compare-pdf:

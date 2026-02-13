@@ -408,7 +408,7 @@ class RLMEntityExtractor:
         # Generate code prompt
         extraction_prompt = RLM_EXTRACTION_PROMPT.format(
             header=header,
-            content_preview=content[:2000],
+            content_preview=content,
             content_length=len(content),
         )
         prompt = f"{RLM_ENTITY_EXTRACTION_SYSTEM}\n\n{extraction_prompt}"
@@ -459,15 +459,16 @@ class RLMEntityExtractor:
                 "id": i,
                 "text": c.get("text", ""),
                 "type": c.get("type", "UNKNOWN"),
-                "context": c.get("context", "")[:100] if c.get("context") else "",
+                "context": c.get("context", "") if c.get("context") else "",
             }
-            for i, c in enumerate(candidates[:30])  # Limit
+            for i, c in enumerate(candidates)
         ], indent=2)
         
         prompt = RLM_VALIDATION_PROMPT.format(candidates_json=candidates_json)
         
         try:
-            response = llm.complete(prompt)
+            _complete_fn = getattr(llm, "complete_json", None) or llm.complete
+            response = _complete_fn(prompt)
             response_text = str(response) if not isinstance(response, str) else response
             
             # Parse validation response

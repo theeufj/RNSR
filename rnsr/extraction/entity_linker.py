@@ -694,7 +694,8 @@ class EntityLinker:
             )
             
             try:
-                response = llm.complete(prompt)
+                _complete_fn = getattr(llm, "complete_json", None) or llm.complete
+                response = _complete_fn(prompt)
                 response_text = str(response) if not isinstance(response, str) else response
                 
                 result = self._parse_disambiguation_response(response_text)

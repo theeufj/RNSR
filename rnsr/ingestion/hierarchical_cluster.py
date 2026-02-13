@@ -413,11 +413,13 @@ Return ONLY the title, nothing else."""
         if os.getenv("GOOGLE_API_KEY"):
             try:
                 from google import genai
+                from google.genai import types as _gentypes
                 
                 client = genai.Client()
                 response = client.models.generate_content(
                     model="gemini-2.0-flash",
                     contents=prompt,
+                    config=_gentypes.GenerateContentConfig(temperature=0.0),
                 )
                 if response.text is not None:
                     header = response.text.strip().strip('"').strip("'")
@@ -436,7 +438,7 @@ Return ONLY the title, nothing else."""
                     model="gpt-4o-mini",
                     messages=[{"role": "user", "content": prompt}],
                     max_tokens=30,
-                    temperature=0.3,
+                    temperature=0.0,
                 )
                 content = response.choices[0].message.content
                 if content is not None:

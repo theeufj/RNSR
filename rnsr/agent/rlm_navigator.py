@@ -1871,9 +1871,9 @@ Generate 2-3 SIMPLE patterns, one per line:"""
             logger.info(
                 "llm_search_patterns_generated",
                 query=query,
-                patterns=patterns[:5],
+                patterns=patterns[:10],
             )
-            return patterns[:5]  # Max 5 patterns
+            return patterns[:10]  # Generous pattern limit
         except Exception as e:
             logger.warning("llm_pattern_generation_failed", error=str(e))
             return []
@@ -1950,8 +1950,9 @@ Generate 2-3 SIMPLE patterns, one per line:"""
         
         # Step 4: Include sibling sections for context completeness
         # If we found section 4.2 and 4.3, also include 4.1 (same parent)
+        max_candidates = max(self.config.top_k * 2, 10)  # At least 10 candidates
         sibling_results = {}
-        for result in search_results[:5]:  # Check top 5 matches
+        for result in search_results[:max_candidates]:  # Check top matches for siblings
             node_id = result["node_id"]
             node = self.skeleton.get(node_id)
             if node and node.parent_id:
@@ -1992,11 +1993,10 @@ Generate 2-3 SIMPLE patterns, one per line:"""
         
         # Take top-ranked sections - use higher limit to include siblings
         # We process more candidates but limit actual findings stored
-        max_candidates = max(self.config.top_k * 2, 10)  # At least 10 candidates
         top_sections = search_results[:max_candidates]
         
         findings_stored = 0
-        max_findings = 5  # Allow more findings to include siblings
+        max_findings = max(self.config.top_k * 3, 15)  # Scale with config
         for result in top_sections:
             node_id = result["node_id"]
             header = result["header"]
@@ -2044,7 +2044,7 @@ Generate 2-3 SIMPLE patterns, one per line:"""
                         state.visited_nodes.append(child_id)
                     if child_pointer not in state.variables:
                         state.variables.append(child_pointer)
-                        state.context += f"\n{child_pointer}: {child_content[:500]}"
+                        state.context += f"\n{child_pointer}: {child_content}"
                     
                     findings_stored += 1
                     logger.info(
@@ -2087,7 +2087,7 @@ Generate 2-3 SIMPLE patterns, one per line:"""
                 state.visited_nodes.append(node_id)
             if pointer_name not in state.variables:
                 state.variables.append(pointer_name)
-                state.context += f"\n{pointer_name}: {content[:500]}"
+                state.context += f"\n{pointer_name}: {content}"
             
             logger.info(
                 "deterministic_finding_stored",
@@ -2583,17 +2583,44 @@ JSON only:"""
         
         # Collect all variable content, labelling each with its real
         # section header so the LLM can cite by section name.
+        # Also extract explicit paragraph numbers from the content so the
+        # LLM can cite them accurately instead of guessing.
         contents = []
         for pointer in state.variables:
             content = self.variable_store.resolve(pointer)
             if content:
                 # Resolve the original section header from the skeleton
                 section_label = pointer
-                stored = self.variable_store.metadata.get(pointer)
+                stored = self.variable_store._metadata.get(pointer)
                 if stored:
                     node = self.skeleton.get(stored.source_node_id)
                     if node:
-                        section_label = f"Section: {node.header}"
+                        # Clean header: strip leading paragraph numbers that
+                        # leaked into the header text (e.g. "11 In particular…")
+                        clean_hdr = re.sub(
+                            r"^\s*\[?\d{1,4}\]?[\.\)\s]+", "", node.header
+                        ).strip()
+                        if not clean_hdr:
+                            clean_hdr = node.header.strip()
+                        # Truncate overly long headers
+                        if len(clean_hdr) > 80:
+                            clean_hdr = clean_hdr[:77] + "..."
+                        section_label = f"Section: {clean_hdr}"
+
+                # Extract explicit paragraph/numbered markers from content.
+                # Common legal formats: "11  text", "[11] text", "11. text"
+                # Limit to 1-3 digits to avoid matching years (2012, etc.)
+                para_nums: list[str] = []
+                for m in re.finditer(
+                    r"(?:^|\n)\s*\[?(\d{1,3})\]?(?:\.|\s{2,})", content
+                ):
+                    num = m.group(1)
+                    if num not in para_nums:
+                        para_nums.append(num)
+
+                if para_nums:
+                    section_label += f"  [contains ¶{', ¶'.join(para_nums)}]"
+
                 contents.append(f"=== {section_label} ===\n{content}")
         
         context_text = "\n\n".join(contents)
@@ -2652,8 +2679,19 @@ STRICT GROUNDING RULES:
 5. Do NOT paraphrase or infer beyond what is explicitly stated
 6. Be comprehensive - use all relevant information from the sections
 7. When asked "who is X" — look for names, dates of birth, nationalities, and other identifying information in the sections
-8. When referencing where information comes from, cite the section name shown in the === Section: ... === headers above (e.g. "According to the 'Liability Clause' section...")
-9. Do NOT invent paragraph numbers, page numbers, or citation markers (like P11, P48, [1]) that are not explicitly in the source text
+
+CITATION RULES:
+- Each section is labelled  === Section: <header>  [contains ¶N, ¶M, ...] ===
+  The "[contains ¶N, ¶M]" tag lists paragraph numbers that actually appear
+  in that section's text. Use ONLY those numbers when citing paragraphs.
+- When referencing content, cite the section header and, if applicable, the
+  exact paragraph number from the [contains …] tag.
+  Example: (Section: "Liability Clause", ¶46)
+- If a section has NO [contains …] tag, do NOT cite any paragraph number
+  for that section — cite only the section header.
+- NEVER guess, infer, or calculate a paragraph number. If a paragraph
+  number does not appear in a [contains …] tag, you must NOT cite it.
+- NEVER add citation markers like P11, P48, (P12), [1], etc.
 
 Question: {state.question}
 

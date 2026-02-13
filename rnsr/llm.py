@@ -25,6 +25,8 @@ Usage:
 
 from __future__ import annotations
 
+import hashlib
+import json as _json
 import os
 import time
 from enum import Enum
@@ -166,6 +168,109 @@ def detect_provider() -> LLMProvider:
     )
 
 
+class CachedLLM:
+    """Wraps any LLM with a disk-based response cache for deterministic re-runs.
+
+    Enable via ``RNSR_LLM_CACHE=true`` (default: off).
+    Cache directory defaults to ``.rnsr_cache/llm`` but can be set with
+    ``RNSR_LLM_CACHE_DIR``.
+    """
+
+    def __init__(self, llm: Any, cache_dir: Path | None = None, model_tag: str = ""):
+        self._llm = llm
+        self._model_tag = model_tag
+        self._cache_dir = cache_dir or Path(
+            os.getenv("RNSR_LLM_CACHE_DIR", ".rnsr_cache/llm")
+        )
+        self._cache_dir.mkdir(parents=True, exist_ok=True)
+
+    # -- helpers ---------------------------------------------------------------
+
+    def _cache_key(self, prompt: str, extra: str = "") -> str:
+        """Deterministic hash from prompt + model tag + any extra discriminator."""
+        blob = f"{self._model_tag}|{extra}|{prompt}"
+        return hashlib.sha256(blob.encode()).hexdigest()
+
+    def _read(self, key: str) -> str | None:
+        cache_file = self._cache_dir / f"{key}.txt"
+        if cache_file.exists():
+            return cache_file.read_text(encoding="utf-8")
+        return None
+
+    def _write(self, key: str, value: str) -> None:
+        cache_file = self._cache_dir / f"{key}.txt"
+        cache_file.write_text(value, encoding="utf-8")
+
+    # -- public interface (mirrors LLM methods) --------------------------------
+
+    def complete(self, prompt: str, **kwargs: Any) -> str:
+        key = self._cache_key(prompt, extra="complete")
+        cached = self._read(key)
+        if cached is not None:
+            logger.debug("llm_cache_hit", key=key[:12])
+            return cached
+        result = str(self._llm.complete(prompt, **kwargs))
+        self._write(key, result)
+        return result
+
+    def complete_json(self, prompt: str, **kwargs: Any) -> str:
+        """Cache-aware JSON completion (see ``complete_json`` on providers)."""
+        key = self._cache_key(prompt, extra="complete_json")
+        cached = self._read(key)
+        if cached is not None:
+            logger.debug("llm_cache_hit", key=key[:12])
+            return cached
+        # Delegate to underlying LLM (may or may not have complete_json)
+        fn = getattr(self._llm, "complete_json", self._llm.complete)
+        result = str(fn(prompt, **kwargs))
+        self._write(key, result)
+        return result
+
+    def complete_with_image(self, prompt: str, image_bytes: bytes, **kwargs: Any) -> str:
+        # Images are large; include a hash of image bytes in the key
+        img_hash = hashlib.sha256(image_bytes).hexdigest()[:16]
+        key = self._cache_key(prompt, extra=f"image|{img_hash}")
+        cached = self._read(key)
+        if cached is not None:
+            logger.debug("llm_cache_hit", key=key[:12])
+            return cached
+        result = str(self._llm.complete_with_image(prompt, image_bytes, **kwargs))
+        self._write(key, result)
+        return result
+
+    def chat(self, messages: Any, **kwargs: Any) -> Any:
+        msgs_str = _json.dumps(messages, default=str)
+        key = self._cache_key(msgs_str, extra="chat")
+        cached = self._read(key)
+        if cached is not None:
+            logger.debug("llm_cache_hit", key=key[:12])
+            return cached
+        result = self._llm.chat(messages, **kwargs)
+        self._write(key, str(result))
+        return result
+
+    def clear_cache(self) -> int:
+        """Remove all cached responses.  Returns the number of files removed."""
+        count = 0
+        for f in self._cache_dir.glob("*.txt"):
+            f.unlink()
+            count += 1
+        logger.info("llm_cache_cleared", files_removed=count)
+        return count
+
+    def __getattr__(self, name: str) -> Any:
+        """Forward unknown attributes to the wrapped LLM."""
+        return getattr(self._llm, name)
+
+
+def _maybe_wrap_cache(llm: Any, model_tag: str = "") -> Any:
+    """Optionally wrap *llm* with :class:`CachedLLM` when caching is enabled."""
+    if os.getenv("RNSR_LLM_CACHE", "").lower() in ("1", "true", "yes"):
+        logger.info("llm_cache_enabled", model_tag=model_tag)
+        return CachedLLM(llm, model_tag=model_tag)
+    return llm
+
+
 def get_llm(
     provider: LLMProvider = LLMProvider.AUTO,
     model: str | None = None,
@@ -197,13 +302,13 @@ def get_llm(
     primary_llm = _get_raw_llm(provider, model, **kwargs)
     
     if not enable_fallback:
-        return primary_llm
+        return _maybe_wrap_cache(primary_llm, model_tag=model or "")
     
     # Build fallback chain
     fallback_providers = get_available_fallback_providers(provider)
     if not fallback_providers:
         logger.debug("no_fallback_providers_available", primary=provider.value)
-        return primary_llm
+        return _maybe_wrap_cache(primary_llm, model_tag=model or "")
     
     logger.debug(
         "llm_with_fallback_configured",
@@ -211,12 +316,13 @@ def get_llm(
         fallbacks=[p.value for p in fallback_providers],
     )
     
-    return ResilientLLMWrapper(
+    llm = ResilientLLMWrapper(
         primary_llm=primary_llm,
         primary_provider=provider,
         fallback_providers=fallback_providers,
         **kwargs,
     )
+    return _maybe_wrap_cache(llm, model_tag=model or "")
 
 
 def _get_raw_llm(provider: LLMProvider, model: str, **kwargs: Any) -> Any:
@@ -421,7 +527,26 @@ class ResilientLLMWrapper:
     def complete(self, prompt: str, **kwargs: Any) -> Any:
         """Complete a prompt with fallback support."""
         return self._call_with_fallback("complete", prompt, **kwargs)
-    
+
+    def complete_json(self, prompt: str, **kwargs: Any) -> Any:
+        """JSON-mode completion with fallback support.
+
+        Falls back to regular ``complete()`` if the underlying LLM does not
+        expose ``complete_json``.
+        """
+        # Try JSON-specific path first
+        for provider, llm in self._get_available_llms():
+            if hasattr(llm, "complete_json"):
+                try:
+                    return llm.complete_json(prompt, **kwargs)
+                except Exception as e:
+                    if is_rate_limit_error(e):
+                        self._mark_rate_limited(provider)
+                        continue
+                    raise
+        # No provider had complete_json or all were rate-limited; fall back
+        return self.complete(prompt, **kwargs)
+
     def complete_with_image(self, prompt: str, image_bytes: bytes, **kwargs: Any) -> Any:
         """Complete a prompt with an image (multimodal) with fallback support.
 
@@ -468,9 +593,9 @@ class ResilientLLMWrapper:
 
 
 def _get_openai_llm(model: str, **kwargs: Any) -> Any:
-    """Get OpenAI LLM instance."""
+    """Get OpenAI LLM instance with ``complete_json`` support."""
     try:
-        from llama_index.llms.openai import OpenAI
+        from llama_index.llms.openai import OpenAI as _OpenAI
     except ImportError:
         raise ImportError(
             "OpenAI LLM not installed. "
@@ -481,8 +606,34 @@ def _get_openai_llm(model: str, **kwargs: Any) -> Any:
     if "temperature" not in kwargs:
         kwargs["temperature"] = 0.0
     
+    # Add seed for best-effort determinism (configurable via env var)
+    _seed = int(os.getenv("RNSR_LLM_SEED", "42"))
+    if "seed" not in kwargs:
+        kwargs["seed"] = _seed
+    
     logger.debug("initializing_llm", provider="openai", model=model)
-    return OpenAI(model=model, **kwargs)
+
+    class _OpenAIWithJson(_OpenAI):
+        """Thin subclass that adds ``complete_json()`` using JSON mode."""
+
+        def complete_json(self, prompt: str, **kw: Any) -> str:
+            """Complete expecting a JSON response (uses OpenAI JSON mode)."""
+            try:
+                from openai import OpenAI as _RawOpenAI
+                client = _RawOpenAI()
+                resp = client.chat.completions.create(
+                    model=self.model,
+                    messages=[{"role": "user", "content": prompt}],
+                    temperature=0.0,
+                    seed=_seed,
+                    response_format={"type": "json_object"},
+                )
+                return resp.choices[0].message.content or ""
+            except Exception:
+                # Fallback: regular completion
+                return str(self.complete(prompt, **kw))
+
+    return _OpenAIWithJson(model=model, **kwargs)
 
 
 def _get_anthropic_llm(model: str, **kwargs: Any) -> Any:
@@ -500,7 +651,19 @@ def _get_anthropic_llm(model: str, **kwargs: Any) -> Any:
         kwargs["temperature"] = 0.0
     
     logger.debug("initializing_llm", provider="anthropic", model=model)
-    return Anthropic(model=model, **kwargs)
+
+    class _AnthropicWithJson(Anthropic):
+        """Thin subclass adding soft ``complete_json`` for Anthropic."""
+
+        def complete_json(self, prompt: str, **kw: Any) -> str:
+            """Anthropic has no native JSON mode; we append an instruction."""
+            json_prompt = (
+                prompt + "\n\nIMPORTANT: Respond ONLY with valid JSON. "
+                "No markdown fences, no commentary."
+            )
+            return str(self.complete(json_prompt, **kw))
+
+    return _AnthropicWithJson(model=model, **kwargs)
 
 
 def _get_gemini_llm(model: str, **kwargs: Any) -> Any:
@@ -544,9 +707,11 @@ def _get_gemini_llm(model: str, **kwargs: Any) -> Any:
                 self.client = genai.Client(api_key=api_key)
                 self.model_name = model_name
                 self.fallback_model = "gemini-3-flash-preview"
-                # Temperature 0 for deterministic outputs
+                # Temperature 0 + seed for deterministic outputs
+                _seed = int(os.getenv("RNSR_LLM_SEED", "42"))
                 self.generation_config = types.GenerateContentConfig(
                     temperature=temperature,
+                    seed=_seed,
                 )
             
             @retry(
@@ -577,7 +742,40 @@ def _get_gemini_llm(model: str, **kwargs: Any) -> Any:
                         config=self.generation_config,
                     )
                     return response.text or ""
-            
+
+            @retry(
+                stop=stop_after_attempt(5),
+                wait=wait_exponential(multiplier=1, min=2, max=30),
+                retry=retry_if_exception_type(RETRY_EXCEPTIONS),
+            )
+            def complete_json(self, prompt: str, **kw: Any) -> str:
+                """Complete expecting a JSON response (uses Gemini JSON mode)."""
+                json_config = types.GenerateContentConfig(
+                    temperature=self.generation_config.temperature,
+                    seed=self.generation_config.seed,
+                    response_mime_type="application/json",
+                )
+                try:
+                    response = self.client.models.generate_content(
+                        model=self.model_name,
+                        contents=prompt,
+                        config=json_config,
+                    )
+                    return response.text or ""
+                except RETRY_EXCEPTIONS as e:
+                    logger.warning(
+                        "primary_llm_overloaded_using_fallback",
+                        primary=self.model_name,
+                        fallback=self.fallback_model,
+                        error=str(e),
+                    )
+                    response = self.client.models.generate_content(
+                        model=self.fallback_model,
+                        contents=prompt,
+                        config=json_config,
+                    )
+                    return response.text or ""
+
             @retry(
                 stop=stop_after_attempt(5),
                 wait=wait_exponential(multiplier=1, min=2, max=30),
@@ -696,6 +894,14 @@ def _get_gemini_llm(model: str, **kwargs: Any) -> Any:
                             error=str(e)
                         )
                         return self.fallback.complete(prompt, **kw)
+
+                def complete_json(self, prompt: str, **kw: Any) -> str:
+                    """Soft JSON mode for legacy LlamaIndex Gemini path."""
+                    json_prompt = (
+                        prompt + "\n\nIMPORTANT: Respond ONLY with valid JSON. "
+                        "No markdown fences, no commentary."
+                    )
+                    return str(self.complete(json_prompt, **kw))
 
                 def complete_with_image(self, prompt: str, image_bytes: bytes, **kw: Any) -> str:
                     """Multimodal via the new google-genai SDK (bypass LlamaIndex)."""

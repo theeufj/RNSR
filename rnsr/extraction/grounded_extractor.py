@@ -431,18 +431,19 @@ class GroundedEntityExtractor:
                 "id": idx,
                 "text": c.text,
                 "type_hint": c.candidate_type,
-                "context": c.context[:150],
+                "context": c.context,
             }
             for idx, c in enumerate(candidates)
         ], indent=2)
         
         prompt = CLASSIFICATION_PROMPT.format(
-            content=content[:3000],  # Limit content size
+            content=content,
             candidates_json=candidates_json,
         )
         
         try:
-            response = self.llm.complete(prompt)
+            _complete_fn = getattr(self.llm, "complete_json", None) or self.llm.complete
+            response = _complete_fn(prompt)
             response_text = str(response) if not isinstance(response, str) else response
             
             # Parse classifications
@@ -648,12 +649,13 @@ class GroundedEntityExtractor:
             return []
         
         prompt = SUPPLEMENTARY_PROMPT.format(
-            content=content[:2000],
+            content=content,
             existing_entities=", ".join(existing_names) if existing_names else "None",
         )
         
         try:
-            response = llm.complete(prompt)
+            _complete_fn = getattr(llm, "complete_json", None) or llm.complete
+            response = _complete_fn(prompt)
             response_text = str(response) if not isinstance(response, str) else response
             
             # Parse response

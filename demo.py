@@ -63,11 +63,16 @@ if _gradio_major < 6:
 # =============================================================================
 # RNSR imports
 # =============================================================================
-from rnsr import RNSRClient, ingest_document, build_skeleton_index
+from rnsr import RNSRClient, ingest_document, build_skeleton_index, DocumentStore
 from rnsr.models import DocumentTree, DocumentNode
 from rnsr.indexing import KVStore
 from rnsr.indexing.knowledge_graph import KnowledgeGraph, InMemoryKnowledgeGraph
 from rnsr.extraction.models import Entity, EntityType
+from rnsr.extraction.timeline_extractor import extract_timeline, format_timeline
+from rnsr.analysis.contradiction_detector import (
+    detect_document_contradictions,
+    detect_cross_document_contradictions,
+)
 
 
 # =============================================================================
@@ -84,6 +89,9 @@ class SessionState:
         self.chat_history: list = []
         self.entities: list[Entity] = []
         self.extraction_stats: dict[str, Any] = {}
+        # Multi-document state
+        self.multi_docs: list[dict[str, Any]] = []   # [{id, title, path}]
+        self.document_store: DocumentStore | None = None
 
 
 state = SessionState()
@@ -614,6 +622,337 @@ def search_entities(query: str) -> str:
 
 
 # =============================================================================
+# Multi-document helpers
+# =============================================================================
+def _get_or_create_store() -> DocumentStore:
+    """Lazily create the multi-document store."""
+    if state.document_store is None:
+        state.document_store = DocumentStore(".rnsr_multi_doc_store")
+    return state.document_store
+
+
+def add_multi_documents(files, progress=gr.Progress()):
+    """Add one or more PDFs to the multi-document store."""
+    if not files:
+        return "Upload PDFs to add them to the workspace.", _multi_doc_list(), _multi_doc_dropdown_choices()
+
+    store = _get_or_create_store()
+    added = 0
+    for fp in files:
+        try:
+            file_path = fp if isinstance(fp, str) else fp
+            progress((added + 0.5) / len(files), desc=f"Indexing {Path(file_path).name}…")
+            doc_id = store.add_document(file_path)
+            info = store.get_document_info(doc_id)
+            state.multi_docs.append({
+                "id": doc_id,
+                "title": info.title if info else Path(file_path).stem,
+                "path": str(file_path),
+            })
+            added += 1
+        except Exception as e:
+            pass  # Already exists or other error
+
+    progress(1.0, desc="Done")
+    msg = f"Added **{added}** document(s). Total: **{len(store)}** in workspace."
+    return msg, _multi_doc_list(), _multi_doc_dropdown_choices()
+
+
+def _multi_doc_list() -> str:
+    """Build a markdown list of documents in the workspace."""
+    store = _get_or_create_store()
+    docs = store.list_documents()
+    if not docs:
+        return "No documents in workspace yet."
+    lines = [f"### Workspace ({len(docs)} documents)\n"]
+    for d in docs:
+        lines.append(f"- **{d['title']}** (`{d['id']}`) — {d['node_count']} sections")
+    return "\n".join(lines)
+
+
+def clear_workspace():
+    """Remove all documents from the multi-document store."""
+    store = _get_or_create_store()
+    if len(store) == 0:
+        return "Workspace is already empty.", _multi_doc_list(), _multi_doc_dropdown_choices()
+    count = store.clear_all()
+    state.multi_docs.clear()
+    return (
+        f"Cleared **{count}** document(s). Workspace is now empty.",
+        _multi_doc_list(),
+        _multi_doc_dropdown_choices(),
+    )
+
+
+def remove_single_document(doc_label: str):
+    """Remove a single document from the workspace by its dropdown label."""
+    if not doc_label:
+        return "Select a document to remove.", _multi_doc_list(), _multi_doc_dropdown_choices()
+
+    # Extract doc_id from label format "Title (doc_id)"
+    doc_id = doc_label.rsplit("(", 1)[-1].rstrip(")")
+    store = _get_or_create_store()
+    info = store.get_document_info(doc_id)
+    title = info.title if info else doc_id
+
+    removed = store.remove_document(doc_id)
+    if removed:
+        state.multi_docs = [d for d in state.multi_docs if d.get("id") != doc_id]
+        return (
+            f"Removed **{title}**. Total: **{len(store)}** in workspace.",
+            _multi_doc_list(),
+            _multi_doc_dropdown_choices(),
+        )
+    return "Document not found.", _multi_doc_list(), _multi_doc_dropdown_choices()
+
+
+def _multi_doc_dropdown_choices() -> dict:
+    """Return a Gradio update dict for the document-remove dropdown."""
+    store = _get_or_create_store()
+    docs = store.list_documents()
+    choices = [f"{d['title']} ({d['id']})" for d in docs]
+    if _gradio_major >= 6:
+        return gr.Dropdown(choices=choices, value=None)
+    return gr.update(choices=choices, value=None)
+
+
+def build_multi_kg(progress=gr.Progress()):
+    """Build the workspace KG and link entities across all documents."""
+    store = _get_or_create_store()
+    if len(store) == 0:
+        return "Add documents to the workspace first."
+
+    progress(0.2, desc="Building workspace knowledge graph…")
+    try:
+        kg = store.build_workspace_kg()
+    except Exception as e:
+        return f"**Error building KG:** {e}"
+
+    progress(0.7, desc="Linking entities across documents…")
+    try:
+        links = store.link_entities_across_documents()
+    except Exception as e:
+        links = []
+
+    stats = kg.get_stats()
+    progress(1.0, desc="Done")
+    return (
+        f"### Workspace Knowledge Graph\n\n"
+        f"| Metric | Value |\n|--------|-------|\n"
+        f"| Entities | {stats.get('entity_count', 0)} |\n"
+        f"| Relationships | {stats.get('relationship_count', 0)} |\n"
+        f"| Cross-doc links | {len(links)} |\n"
+    )
+
+
+def cross_doc_query(question: str, progress=gr.Progress()):
+    """Ask a question across all documents in the workspace."""
+    store = _get_or_create_store()
+    if len(store) == 0:
+        return "Add documents to the workspace first."
+    if not question.strip():
+        return "Enter a question."
+
+    progress(0.3, desc="Querying across documents…")
+    try:
+        result = store.query_cross_document(question)
+        progress(1.0, desc="Done")
+        answer = result.get("answer", "No answer.")
+        docs_used = result.get("documents_used", [])
+        entities = result.get("entities_involved", [])
+        parts = [answer]
+        if docs_used:
+            parts.append(f"\n\n*Documents used: {', '.join(docs_used)}*")
+        if entities:
+            parts.append(f"\n*Entities: {', '.join(entities)}*")
+        return "\n".join(parts)
+    except Exception as e:
+        import traceback
+        return f"**Error:** {e}\n```\n{traceback.format_exc()}\n```"
+
+
+def get_timeline_view(progress=gr.Progress()):
+    """Extract and display a timeline from the current document's KG."""
+    if not state.knowledge_graph:
+        return "Process a document with entity extraction first."
+
+    progress(0.5, desc="Extracting timeline…")
+    try:
+        events = extract_timeline(state.knowledge_graph)
+        progress(1.0, desc="Done")
+        if not events:
+            return "No temporal events found in the document."
+
+        # Build markdown timeline
+        dated = [e for e in events if e.date_parsed is not None]
+        undated = [e for e in events if e.date_parsed is None]
+
+        lines = [f"## Timeline ({len(events)} events)\n"]
+        if dated:
+            lines.append("### Dated Events\n")
+            for ev in dated:
+                date_label = ev.date_parsed.strftime("%d %b %Y") if ev.date_parsed else ev.date_str
+                lines.append(f"- **{date_label}** — {ev.description}")
+                if ev.entities_involved:
+                    lines.append(f"  - *Entities: {', '.join(ev.entities_involved)}*")
+        if undated:
+            lines.append("\n### Undated Events\n")
+            for ev in undated:
+                lines.append(f"- **{ev.date_str}** — {ev.description}")
+
+        return "\n".join(lines)
+    except Exception as e:
+        import traceback
+        return f"**Error:** {e}\n```\n{traceback.format_exc()}\n```"
+
+
+def get_contradiction_view(progress=gr.Progress()):
+    """Detect contradictions in the current document."""
+    if not state.knowledge_graph or not state.skeleton or not state.kv_store:
+        return "Process a document with entity extraction first."
+
+    progress(0.5, desc="Detecting contradictions…")
+    try:
+        contradictions = detect_document_contradictions(
+            kg=state.knowledge_graph,
+            skeleton=state.skeleton,
+            kv_store=state.kv_store,
+        )
+        progress(1.0, desc="Done")
+        if not contradictions:
+            return "No contradictions detected in this document."
+
+        lines = [f"## Potential Contradictions ({len(contradictions)} found)\n"]
+        for i, c in enumerate(contradictions, 1):
+            conf_pct = f"{c.confidence:.0%}"
+            lines.append(f"### {i}. [{c.type.upper()}] — {conf_pct} confidence\n")
+            lines.append(f"**Claim 1** ({c.source_1}):\n> {c.claim_1}\n")
+            lines.append(f"**Claim 2** ({c.source_2}):\n> {c.claim_2}\n")
+            if c.explanation:
+                lines.append(f"*{c.explanation}*\n")
+        return "\n".join(lines)
+    except Exception as e:
+        import traceback
+        return f"**Error:** {e}\n```\n{traceback.format_exc()}\n```"
+
+
+def get_cross_doc_timeline_view(progress=gr.Progress()):
+    """Extract a timeline from the workspace-wide knowledge graph."""
+    store = _get_or_create_store()
+    if len(store) == 0:
+        return "Add documents to the workspace first."
+
+    progress(0.3, desc="Loading workspace KG…")
+    try:
+        kg = store.get_workspace_kg()
+    except Exception as e:
+        return f"**Error loading workspace KG:** {e}"
+
+    stats = kg.get_stats()
+    if stats.get("entity_count", 0) == 0:
+        return (
+            "The workspace knowledge graph is empty. "
+            "Click **Build & Link Entities** first to populate it."
+        )
+
+    progress(0.6, desc="Extracting timeline…")
+    try:
+        events = extract_timeline(kg)
+        progress(1.0, desc="Done")
+        if not events:
+            return "No temporal events found across the workspace documents."
+
+        dated = [e for e in events if e.date_parsed is not None]
+        undated = [e for e in events if e.date_parsed is None]
+
+        lines = [f"## Cross-Document Timeline ({len(events)} events)\n"]
+        if dated:
+            lines.append("### Dated Events\n")
+            for ev in dated:
+                date_label = ev.date_parsed.strftime("%d %b %Y") if ev.date_parsed else ev.date_str
+                doc_tag = f" *[{ev.doc_id}]*" if ev.doc_id else ""
+                lines.append(f"- **{date_label}** — {ev.description}{doc_tag}")
+                if ev.entities_involved:
+                    lines.append(f"  - *Entities: {', '.join(ev.entities_involved)}*")
+        if undated:
+            lines.append("\n### Undated Events\n")
+            for ev in undated:
+                doc_tag = f" *[{ev.doc_id}]*" if ev.doc_id else ""
+                lines.append(f"- **{ev.date_str}** — {ev.description}{doc_tag}")
+
+        return "\n".join(lines)
+    except Exception as e:
+        import traceback
+        return f"**Error:** {e}\n```\n{traceback.format_exc()}\n```"
+
+
+def get_cross_doc_contradiction_view(progress=gr.Progress()):
+    """Detect contradictions across all documents in the workspace."""
+    store = _get_or_create_store()
+    if len(store) == 0:
+        return "Add documents to the workspace first."
+
+    progress(0.2, desc="Loading workspace KG…")
+    try:
+        kg = store.get_workspace_kg()
+    except Exception as e:
+        return f"**Error loading workspace KG:** {e}"
+
+    stats = kg.get_stats()
+    if stats.get("entity_count", 0) == 0:
+        return (
+            "The workspace knowledge graph is empty. "
+            "Click **Build & Link Entities** first to populate it."
+        )
+
+    progress(0.4, desc="Loading document indexes…")
+    doc_tuples: list[tuple[str, dict, Any]] = []
+    for doc_info in store.list_documents():
+        doc_id = doc_info["id"]
+        index_result = store.get_document(doc_id)
+        if index_result is not None:
+            skeleton, kv_store = index_result[0], index_result[1]
+            doc_tuples.append((doc_id, skeleton, kv_store))
+
+    if len(doc_tuples) < 2:
+        return "Need at least 2 documents in the workspace to detect cross-document contradictions."
+
+    progress(0.5, desc="Initialising LLM for semantic analysis…")
+    try:
+        from rnsr.llm import get_llm
+        _llm = get_llm()
+        def _llm_fn(prompt: str) -> str:
+            result = _llm.complete(prompt)
+            return str(result)
+    except Exception:
+        _llm_fn = None  # fall back to heuristic-only
+
+    progress(0.6, desc="Detecting contradictions across documents…")
+    try:
+        contradictions = detect_cross_document_contradictions(
+            kg=kg,
+            documents=doc_tuples,
+            llm_fn=_llm_fn,
+        )
+        progress(1.0, desc="Done")
+        if not contradictions:
+            return "No cross-document contradictions detected."
+
+        lines = [f"## Cross-Document Contradictions ({len(contradictions)} found)\n"]
+        for i, c in enumerate(contradictions, 1):
+            conf_pct = f"{c.confidence:.0%}"
+            lines.append(f"### {i}. [{c.type.upper()}] — {conf_pct} confidence\n")
+            lines.append(f"**Claim 1** ({c.source_1}):\n> {c.claim_1}\n")
+            lines.append(f"**Claim 2** ({c.source_2}):\n> {c.claim_2}\n")
+            if c.explanation:
+                lines.append(f"*{c.explanation}*\n")
+        return "\n".join(lines)
+    except Exception as e:
+        import traceback
+        return f"**Error:** {e}\n```\n{traceback.format_exc()}\n```"
+
+
+# =============================================================================
 # Build the Gradio app
 # =============================================================================
 EXAMPLE_QUESTIONS = [
@@ -829,6 +1168,88 @@ def create_demo():
                         search_btn = gr.Button("Search", size="sm")
                         search_md = gr.Markdown("")
 
+            # ============================
+            # TAB 5 — Timeline
+            # ============================
+            with gr.TabItem("📅 Timeline", id="tab-timeline"):
+                gr.Markdown(
+                    "#### Chronological Timeline\n"
+                    "Automatically extracts dates and temporal events from the "
+                    "knowledge graph. Process a document with entity extraction first."
+                )
+                timeline_btn = gr.Button("Extract Timeline", variant="primary")
+                timeline_md = gr.Markdown("*Click 'Extract Timeline' after processing a document.*")
+
+            # ============================
+            # TAB 6 — Contradictions
+            # ============================
+            with gr.TabItem("⚡ Contradictions", id="tab-contradictions"):
+                gr.Markdown(
+                    "#### Contradiction Detection\n"
+                    "Scans for conflicting claims within the document using "
+                    "the knowledge graph, heuristics, and (optionally) LLM analysis."
+                )
+                contradiction_btn = gr.Button("Detect Contradictions", variant="primary")
+                contradiction_md = gr.Markdown("*Click 'Detect Contradictions' after processing a document.*")
+
+            # ============================
+            # TAB 7 — Multi-Document
+            # ============================
+            with gr.TabItem("📚 Multi-Document", id="tab-multi"):
+                gr.Markdown(
+                    "#### Multi-Document Workspace\n"
+                    "Upload multiple PDFs, build a workspace-wide knowledge graph, "
+                    "and ask questions that span across documents."
+                )
+                with gr.Row():
+                    with gr.Column(scale=1, min_width=300):
+                        gr.Markdown("##### Add Documents")
+                        multi_file_input = gr.File(
+                            label="Upload PDFs",
+                            file_types=[".pdf"],
+                            type="filepath",
+                            file_count="multiple",
+                        )
+                        multi_add_btn = gr.Button("Add to Workspace", variant="primary")
+                        multi_status = gr.Markdown("No documents in workspace yet.")
+                        multi_doc_list = gr.Markdown(_multi_doc_list())
+
+                        gr.Markdown("---")
+                        gr.Markdown("##### Manage Documents")
+                        multi_remove_dropdown = gr.Dropdown(
+                            label="Select document",
+                            choices=[],
+                            interactive=True,
+                        )
+                        with gr.Row():
+                            multi_remove_btn = gr.Button("Remove Selected", variant="secondary")
+                            multi_clear_btn = gr.Button("Clear Workspace", variant="stop")
+
+                        gr.Markdown("---")
+                        gr.Markdown("##### Build Workspace KG")
+                        multi_kg_btn = gr.Button("Build & Link Entities", variant="secondary")
+                        multi_kg_status = gr.Markdown("")
+
+                    with gr.Column(scale=2, min_width=450):
+                        gr.Markdown("##### Cross-Document Query")
+                        multi_question = gr.Textbox(
+                            placeholder="Ask a question that spans all uploaded documents…",
+                            show_label=False,
+                            lines=2,
+                        )
+                        multi_ask_btn = gr.Button("Ask Across Documents", variant="primary")
+                        multi_answer = gr.Markdown("*Add documents and build the workspace KG, then ask a question.*")
+
+                        gr.Markdown("---")
+                        gr.Markdown("##### Cross-Document Timeline")
+                        multi_timeline_btn = gr.Button("Extract Cross-Doc Timeline", variant="secondary")
+                        multi_timeline_md = gr.Markdown("*Build the workspace KG first, then extract a timeline.*")
+
+                        gr.Markdown("---")
+                        gr.Markdown("##### Cross-Document Contradictions")
+                        multi_contradiction_btn = gr.Button("Detect Cross-Doc Contradictions", variant="secondary")
+                        multi_contradiction_md = gr.Markdown("*Build the workspace KG first, then detect contradictions.*")
+
         # ---- Footer ----
         gr.Markdown(
             "<footer>"
@@ -886,6 +1307,40 @@ def create_demo():
         refresh_rel_btn.click(fn=get_relationships_visualization, inputs=[], outputs=[rels_md])
         search_btn.click(fn=search_entities, inputs=[search_input], outputs=[search_md])
         search_input.submit(fn=search_entities, inputs=[search_input], outputs=[search_md])
+
+        # --- Timeline ---
+        timeline_btn.click(fn=get_timeline_view, inputs=[], outputs=[timeline_md])
+
+        # --- Contradictions ---
+        contradiction_btn.click(fn=get_contradiction_view, inputs=[], outputs=[contradiction_md])
+
+        # --- Multi-Document ---
+        multi_add_btn.click(
+            fn=add_multi_documents,
+            inputs=[multi_file_input],
+            outputs=[multi_status, multi_doc_list, multi_remove_dropdown],
+        )
+        multi_clear_btn.click(
+            fn=clear_workspace,
+            inputs=[],
+            outputs=[multi_status, multi_doc_list, multi_remove_dropdown],
+        )
+        multi_remove_btn.click(
+            fn=remove_single_document,
+            inputs=[multi_remove_dropdown],
+            outputs=[multi_status, multi_doc_list, multi_remove_dropdown],
+        )
+        multi_kg_btn.click(fn=build_multi_kg, inputs=[], outputs=[multi_kg_status])
+        multi_ask_btn.click(fn=cross_doc_query, inputs=[multi_question], outputs=[multi_answer])
+        multi_question.submit(fn=cross_doc_query, inputs=[multi_question], outputs=[multi_answer])
+        multi_timeline_btn.click(fn=get_cross_doc_timeline_view, inputs=[], outputs=[multi_timeline_md])
+        multi_contradiction_btn.click(fn=get_cross_doc_contradiction_view, inputs=[], outputs=[multi_contradiction_md])
+
+        # --- On-load: populate multi-doc dropdown with existing docs ---
+        def _init_multi_doc_dropdown():
+            return _multi_doc_dropdown_choices()
+
+        demo.load(fn=_init_multi_doc_dropdown, inputs=[], outputs=[multi_remove_dropdown])
 
     demo._rnsr_theme = theme
     demo._rnsr_css = css

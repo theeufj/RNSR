@@ -648,7 +648,7 @@ class RLMUnifiedExtractor:
             result.warnings.append("No LLM available")
             return result
 
-        content_preview = content[:3000]
+        content_preview = content
         ac = ancestor_context or ""
 
         prompt = f"""Extract entities and relationships from this document section.
@@ -678,23 +678,32 @@ CRITICAL RULES:
 Return JSON in this exact format:
 {{
   "entities": [
-    {{"name": "ACTUAL PERSON NAME not a label", "type": "person|organization|location|date|document|monetary_value|percentage|duration|legal_term|technical_term|qualification|contact_info", "evidence": "exact text snippet"}}
+    {{"name": "ACTUAL PERSON NAME not a label", "type": "person|organization|location|date|event|document|monetary_value|percentage|duration|legal_term|technical_term|qualification|contact_info", "evidence": "exact text snippet"}}
   ],
   "relationships": [
-    {{"source": "Entity A name", "target": "Entity B name", "type": "belongs_to|employed_at|born_in|spouse_of|child_of|issued_by|has_qualification|located_in|has_contact|has_date|affiliated_with|party_to|references|mentions|traveled_to|other", "evidence": "exact text snippet"}}
+    {{"source": "Entity A name", "target": "Entity B name", "type": "belongs_to|employed_at|born_in|spouse_of|child_of|issued_by|has_qualification|located_in|has_contact|has_date|temporal_before|temporal_after|affiliated_with|party_to|references|mentions|traveled_to|other", "evidence": "exact text snippet"}}
   ]
 }}
+
+TIMELINE RULES:
+5. For every date mentioned, create a "date" entity AND a "has_date" relationship
+   from the thing that happened to the date.  Put what happened in the "evidence" field.
+6. When events are described in sequence (A happened before B), also add
+   "temporal_before" relationships between the event entities.
+7. For significant occurrences (approvals, filings, completions, decisions),
+   create an "event" entity with the event description as the name.
 
 JSON only:"""
 
         try:
-            response = llm.complete(prompt)
+            # Use JSON-mode completion when available for structured output
+            _complete_fn = getattr(llm, "complete_json", None) or llm.complete
+            response = _complete_fn(prompt)
             response_text = str(response).strip()
 
-            # Strip markdown code fences if present
+            # Strip markdown code fences if present (fallback path)
             if response_text.startswith("```"):
                 lines = response_text.split("\n")
-                # Remove first and last lines (```json and ```)
                 lines = [l for l in lines if not l.strip().startswith("```")]
                 response_text = "\n".join(lines)
 
@@ -839,7 +848,7 @@ JSON only:"""
         
         extraction_prompt = RLM_UNIFIED_EXTRACTION_PROMPT.format(
             header=header,
-            content_preview=content[:3000],
+            content_preview=content,
             content_length=len(content),
             ancestor_context=ancestor_context,
         )
@@ -896,103 +905,174 @@ JSON only:"""
         
         return {"success": False, "error": "Max attempts exceeded"}
     
+    # Maximum items per ToT validation batch.  All items are processed
+    # across multiple LLM calls — nothing is silently dropped.
+    _TOT_ENTITY_BATCH = 20
+    _TOT_REL_BATCH = 15
+
     def _tot_validate(
         self,
         entities: list[dict],
         relationships: list[dict],
         content: str,
     ) -> dict[str, list[dict]]:
-        """Validate with Tree of Thoughts."""
+        """Validate with Tree of Thoughts.
+
+        Entities and relationships are processed in batches so that
+        every item is validated regardless of count.
+        """
+        # Collect all validations across batches
+        all_entity_validations: dict[int, dict] = {}
+        all_rel_validations: dict[int, dict] = {}
+
+        # --- Batch entities + relationships together ---
+        ent_batches = max(1, (len(entities) + self._TOT_ENTITY_BATCH - 1) // self._TOT_ENTITY_BATCH)
+        rel_batches = max(1, (len(relationships) + self._TOT_REL_BATCH - 1) // self._TOT_REL_BATCH)
+        num_batches = max(ent_batches, rel_batches)
+
         llm = self._get_llm()
-        
-        entities_json = json.dumps([
-            {"id": i, "text": e.get("text", ""), "type": e.get("type", ""), "confidence": e.get("confidence", 0.5)}
-            for i, e in enumerate(entities[:20])
-        ], indent=2)
-        
-        relationships_json = json.dumps([
-            {"id": i, "source": r.get("source_text", ""), "target": r.get("target_text", ""), 
-             "type": r.get("type", ""), "evidence": r.get("evidence", "")[:100]}
-            for i, r in enumerate(relationships[:15])
-        ], indent=2)
-        
-        prompt = RLM_TOT_VALIDATION_PROMPT.format(
-            entities_json=entities_json,
-            relationships_json=relationships_json,
-            content_preview=content[:2000],
-        )
-        
+
+        for batch_idx in range(num_batches):
+            ent_start = batch_idx * self._TOT_ENTITY_BATCH
+            ent_end = ent_start + self._TOT_ENTITY_BATCH
+            ent_slice = entities[ent_start:ent_end]
+
+            rel_start = batch_idx * self._TOT_REL_BATCH
+            rel_end = rel_start + self._TOT_REL_BATCH
+            rel_slice = relationships[rel_start:rel_end]
+
+            if not ent_slice and not rel_slice:
+                continue
+
+            entities_json = json.dumps([
+                {"id": i, "text": e.get("text", ""), "type": e.get("type", ""), "confidence": e.get("confidence", 0.5)}
+                for i, e in enumerate(ent_slice)
+            ], indent=2)
+
+            relationships_json = json.dumps([
+                {"id": i, "source": r.get("source_text", ""), "target": r.get("target_text", ""),
+                 "type": r.get("type", ""), "evidence": (r.get("evidence", "") or "")[:200]}
+                for i, r in enumerate(rel_slice)
+            ], indent=2)
+
+            prompt = RLM_TOT_VALIDATION_PROMPT.format(
+                entities_json=entities_json,
+                relationships_json=relationships_json,
+                content_preview=content,
+            )
+
+            data = self._parse_tot_response(llm, prompt)
+            if data is None:
+                # On parse failure, accept everything in this batch
+                for local_i in range(len(ent_slice)):
+                    all_entity_validations[ent_start + local_i] = {"valid": True, "probability": 0.5}
+                for local_i in range(len(rel_slice)):
+                    all_rel_validations[rel_start + local_i] = {"valid": True, "probability": 0.5}
+                continue
+
+            # Map local batch indices back to global indices
+            for v in data.get("entity_validations", []):
+                local_id = v.get("id", -1)
+                if 0 <= local_id < len(ent_slice):
+                    all_entity_validations[ent_start + local_id] = v
+
+            for v in data.get("relationship_validations", []):
+                local_id = v.get("id", -1)
+                if 0 <= local_id < len(rel_slice):
+                    all_rel_validations[rel_start + local_id] = v
+
+        # --- Apply validations to all items ---
+        validated_entities = []
+        for i, entity in enumerate(entities):
+            validation = all_entity_validations.get(i, {})
+            if validation.get("valid", True) and validation.get("probability", 0.5) >= self.tot_selection_threshold:
+                entity["type"] = validation.get("type", entity.get("type", "OTHER"))
+                entity["canonical_name"] = validation.get("canonical_name", entity.get("canonical_name", entity.get("text", "")))
+                entity["confidence"] = validation.get("probability", entity.get("confidence", 0.5))
+                entity["tot_reasoning"] = validation.get("reasoning", "")
+                validated_entities.append(entity)
+
+        validated_relationships = []
+        for i, rel in enumerate(relationships):
+            validation = all_rel_validations.get(i, {})
+            if validation.get("valid", True) and validation.get("probability", 0.5) >= self.tot_selection_threshold:
+                rel["type"] = validation.get("type", rel.get("type", "MENTIONS"))
+                rel["confidence"] = validation.get("probability", rel.get("confidence", 0.5))
+                rel["tot_reasoning"] = validation.get("reasoning", "")
+                validated_relationships.append(rel)
+
+        return {"entities": validated_entities, "relationships": validated_relationships}
+
+    @staticmethod
+    def _parse_tot_response(llm: Any, prompt: str) -> dict | None:
+        """Send a ToT prompt and parse the JSON response, returning *None* on failure."""
         try:
-            response = llm.complete(prompt)
+            _complete_fn = getattr(llm, "complete_json", None) or llm.complete
+            response = _complete_fn(prompt)
             response_text = str(response) if not isinstance(response, str) else response
-            
-            # Clean response - remove markdown code blocks if present
+
+            # Clean response — remove markdown code blocks if present
             response_text = re.sub(r'^```json\s*', '', response_text, flags=re.MULTILINE)
             response_text = re.sub(r'^```\s*$', '', response_text, flags=re.MULTILINE)
             response_text = response_text.strip()
-            
-            # Parse JSON - try multiple strategies
-            data = None
-            
+
             # Strategy 1: Direct parse
             try:
-                data = json.loads(response_text)
+                return json.loads(response_text)
             except json.JSONDecodeError:
                 pass
-            
+
             # Strategy 2: Extract JSON object
-            if data is None:
-                json_match = re.search(r'\{[\s\S]*\}', response_text)
-                if json_match:
-                    try:
-                        data = json.loads(json_match.group())
-                    except json.JSONDecodeError:
-                        pass
-            
-            # Strategy 3: Try to fix common issues
-            if data is None:
-                # Try fixing trailing commas, missing quotes, etc.
-                fixed = re.sub(r',(\s*[}\]])', r'\1', response_text)
+            json_match = re.search(r'\{[\s\S]*\}', response_text)
+            if json_match:
                 try:
-                    data = json.loads(fixed)
+                    return json.loads(json_match.group())
                 except json.JSONDecodeError:
                     pass
-            
-            if data is None:
-                logger.debug("tot_json_parse_failed", response_preview=response_text[:200])
-                return {"entities": entities, "relationships": relationships}
-            
-            # Apply validations
-            entity_validations = {v["id"]: v for v in data.get("entity_validations", [])}
-            relationship_validations = {v["id"]: v for v in data.get("relationship_validations", [])}
-            
-            # Filter and update entities
-            validated_entities = []
-            for i, entity in enumerate(entities):
-                validation = entity_validations.get(i, {})
-                if validation.get("valid", True) and validation.get("probability", 0.5) >= self.tot_selection_threshold:
-                    entity["type"] = validation.get("type", entity.get("type", "OTHER"))
-                    entity["canonical_name"] = validation.get("canonical_name", entity.get("canonical_name", entity.get("text", "")))
-                    entity["confidence"] = validation.get("probability", entity.get("confidence", 0.5))
-                    entity["tot_reasoning"] = validation.get("reasoning", "")
-                    validated_entities.append(entity)
-            
-            # Filter and update relationships
-            validated_relationships = []
-            for i, rel in enumerate(relationships):
-                validation = relationship_validations.get(i, {})
-                if validation.get("valid", True) and validation.get("probability", 0.5) >= self.tot_selection_threshold:
-                    rel["type"] = validation.get("type", rel.get("type", "MENTIONS"))
-                    rel["confidence"] = validation.get("probability", rel.get("confidence", 0.5))
-                    rel["tot_reasoning"] = validation.get("reasoning", "")
-                    validated_relationships.append(rel)
-            
-            return {"entities": validated_entities, "relationships": validated_relationships}
-            
+
+            # Strategy 3: Fix common issues (trailing commas)
+            fixed = re.sub(r',(\s*[}\]])', r'\1', response_text)
+            try:
+                return json.loads(fixed)
+            except json.JSONDecodeError:
+                pass
+
+            logger.debug("tot_json_parse_failed", response_preview=response_text[:200])
+            return None
         except Exception as e:
             logger.warning("tot_validation_failed", error=str(e))
-            return {"entities": entities, "relationships": relationships}
+            return None
     
+    @staticmethod
+    def _text_is_grounded(name: str, content: str) -> bool:
+        """Check whether *name* (or a close normalised variant) appears in *content*.
+
+        Used by Layer 4 source-grounding to verify that an entity extracted
+        by the LLM actually exists in the source text rather than being
+        hallucinated.
+        """
+        if not name or not content:
+            return False
+        name_lower = name.lower().strip()
+        content_lower = content.lower()
+        # Direct substring
+        if name_lower in content_lower:
+            return True
+        # Normalise whitespace / punctuation
+        import re as _re
+        normalised_name = _re.sub(r"[\s,.\-]+", " ", name_lower).strip()
+        normalised_content = _re.sub(r"[\s,.\-]+", " ", content_lower)
+        if normalised_name in normalised_content:
+            return True
+        # Check individual significant words (3+ chars) — if >=60% hit we
+        # consider it grounded (handles slight LLM rephrasing).
+        words = [w for w in normalised_name.split() if len(w) >= 3]
+        if words:
+            hits = sum(1 for w in words if w in normalised_content)
+            if hits / len(words) >= 0.6:
+                return True
+        return False
+
     def _candidates_to_entities(
         self,
         candidates: list[dict],
@@ -1002,7 +1082,14 @@ JSON only:"""
         page_num: int | None,
     ) -> list[Entity]:
         """Convert candidates to Entity objects."""
+        import os as _os
+
+        require_grounding = _os.getenv(
+            "RNSR_REQUIRE_GROUNDING", ""
+        ).lower() in ("1", "true", "yes")
+
         entities = []
+        filtered_count = 0
         
         for candidate in candidates:
             if not candidate.get("text"):
@@ -1010,6 +1097,25 @@ JSON only:"""
             
             entity_type = self._map_entity_type(candidate.get("type", "OTHER"))
             
+            # --- Layer 4: source grounding check ---
+            has_span = candidate.get("start") is not None
+            if has_span:
+                grounded = True
+            else:
+                # No span — check whether the entity name appears in the
+                # source content (common for JSON-mode extractions).
+                name = candidate.get("canonical_name", candidate.get("text", ""))
+                grounded = self._text_is_grounded(name, content)
+
+            if require_grounding and not grounded:
+                filtered_count += 1
+                logger.debug(
+                    "entity_filtered_ungrounded",
+                    text=candidate.get("text", "")[:60],
+                    node_id=node_id,
+                )
+                continue
+
             mention = Mention(
                 node_id=node_id,
                 doc_id=doc_id,
@@ -1025,7 +1131,7 @@ JSON only:"""
             
             metadata = {
                 "rlm_extracted": True,
-                "grounded": candidate.get("start") is not None,
+                "grounded": grounded,
                 "tot_validated": "tot_reasoning" in candidate,
             }
             
@@ -1044,6 +1150,14 @@ JSON only:"""
                 source_doc_id=doc_id,
             )
             entities.append(entity)
+
+        if filtered_count:
+            logger.info(
+                "entities_filtered_by_grounding",
+                node_id=node_id,
+                filtered=filtered_count,
+                kept=len(entities),
+            )
         
         return entities
     
@@ -1057,12 +1171,16 @@ JSON only:"""
         """Convert candidates to Relationship objects."""
         relationships = []
         
-        # Build entity lookup
-        entity_by_text = {}
+        # Build entity lookup — also track grounded entity names for
+        # relationship-level grounding inference.
+        entity_by_text: dict[str, str] = {}
+        grounded_entity_ids: set[str] = set()
         for entity in entities:
             entity_by_text[entity.canonical_name.lower()] = entity.id
             for alias in entity.aliases:
                 entity_by_text[alias.lower()] = entity.id
+            if entity.metadata.get("grounded"):
+                grounded_entity_ids.add(entity.id)
         
         for candidate in candidates:
             rel_type = self._map_relationship_type(candidate.get("type", "MENTIONS"))
@@ -1077,9 +1195,18 @@ JSON only:"""
             source_type = "entity" if source_id in [e.id for e in entities] else "text"
             target_type = "entity" if target_id in [e.id for e in entities] else "text"
             
+            # --- Layer 4: relationship grounding ---
+            # A relationship is grounded if it has a span OR both of its
+            # endpoint entities are grounded.
+            has_span = candidate.get("start") is not None
+            grounded = has_span or (
+                source_id in grounded_entity_ids
+                and target_id in grounded_entity_ids
+            )
+            
             metadata = {
                 "rlm_extracted": True,
-                "grounded": candidate.get("start") is not None,
+                "grounded": grounded,
                 "tot_validated": "tot_reasoning" in candidate,
             }
             
@@ -1485,7 +1612,7 @@ def extract_entities_and_relationships_batch(
         block += f"Header: {header}\n"
         if ancestor_context:
             block += f"{ancestor_context}\n"
-        block += f"Content:\n{content[:2000]}\n"
+        block += f"Content:\n{content}\n"
         section_blocks.append(block)
 
     combined_content = "\n".join(section_blocks)

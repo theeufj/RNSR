@@ -80,6 +80,10 @@ from rnsr.benchmarks.tatqa_bench import TATQALoader
 from rnsr.benchmarks.qasper_bench import QASPERLoader
 from rnsr.benchmarks.docvqa_bench import DocVQALoader, _compute_anls
 
+# Feature benchmarks (timeline + contradiction)
+from rnsr.benchmarks.timeline_bench import TimelineBenchLoader
+from rnsr.benchmarks.contradiction_bench import ContradictionBenchLoader
+
 __all__ = [
     # Performance
     "PerformanceBenchmark",
@@ -127,4 +131,7 @@ __all__ = [
     "QASPERLoader",
     "DocVQALoader",
     "_compute_anls",
+    # Feature benchmarks
+    "TimelineBenchLoader",
+    "ContradictionBenchLoader",
 ]

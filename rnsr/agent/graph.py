@@ -396,29 +396,23 @@ def _is_trivial_summary(node: SkeletonNode) -> bool:
 def _content_preview_from_kv(
     node: SkeletonNode,
     kv_store: Any,
-    max_children: int = 5,
-    words_per_child: int = 50,
-    max_total_chars: int = 500,
+    words_per_child: int = 100,
 ) -> str:
-    """
-    Build a 'Content preview' string from raw KV store content for this node's children.
-    No summary field is used; only first N words of stored content. No LLM involved.
+    """Build a content preview from KV store content for this node's children.
+
+    All children are included.  Each child contributes the first
+    *words_per_child* words so the preview remains readable without
+    silently dropping sections.
     """
     if not node.child_ids or not kv_store:
         return ""
     parts = []
-    total_len = 0
-    for child_id in node.child_ids[:max_children]:
-        if total_len >= max_total_chars:
-            break
+    for child_id in node.child_ids:
         content = kv_store.get(child_id) or ""
         words = content.split()[:words_per_child]
         snippet = " ".join(words) if words else ""
         if snippet:
-            if total_len + len(snippet) + 3 > max_total_chars:  # +3 for " | "
-                snippet = snippet[: max_total_chars - total_len - 3]
             parts.append(snippet)
-            total_len += len(snippet) + 3
     if not parts:
         return ""
     return "Content preview: " + " | ".join(parts)
@@ -2654,12 +2648,12 @@ def process_pending_questions(
         context_parts.append(f"[{node.header}]\n{current_content}")
     
     # Add children summaries
-    for child_id in node.child_ids[:5]:  # Limit to 5 children
+    for child_id in node.child_ids:
         child = skeleton.get(child_id)
         if child:
             child_content = kv_store.get(child_id)
             if child_content:
-                context_parts.append(f"[{child.header}]\n{child_content[:2000]}")
+                context_parts.append(f"[{child.header}]\n{child_content}")
     
     context = "\n\n---\n\n".join(context_parts)
     

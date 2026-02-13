@@ -175,26 +175,6 @@ RNSR combines neural and symbolic approaches to achieve accurate document unders
 
 ## Installation
 
-### From PyPI (recommended)
-
-```bash
-# Lightweight install (no torch — fast, small)
-pip install rnsr
-
-# With vision features (LayoutLM, torch, torchvision)
-pip install "rnsr[vision]"
-
-# With a specific LLM provider
-pip install "rnsr[openai]"       # OpenAI
-pip install "rnsr[anthropic]"    # Anthropic
-pip install "rnsr[gemini]"       # Google Gemini
-
-# Everything
-pip install "rnsr[all]"
-```
-
-### From Source (for development)
-
 ```bash
 # Clone the repository
 git clone https://github.com/theeufj/RNSR.git
@@ -211,6 +191,9 @@ pip install -e ".[all]"
 pip install -e ".[openai]"      # OpenAI only
 pip install -e ".[anthropic]"   # Anthropic only
 pip install -e ".[gemini]"      # Google Gemini only
+
+# With vision features (LayoutLM, torch, torchvision)
+pip install -e ".[vision]"
 ```
 
 ## Quick Start
@@ -1194,9 +1177,8 @@ Switching to: feature/byod-multi-doc
 
 ## Requirements
 
-- Python 3.10+
+- Python 3.9+
 - At least one LLM API key (OpenAI, Anthropic, or Gemini)
-- **Note:** `pip install rnsr` is lightweight (~20 MB). Vision features (LayoutLM, torch) are optional via `pip install "rnsr[vision]"`.
 
 ## License
 

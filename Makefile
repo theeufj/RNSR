@@ -9,7 +9,7 @@ else
     PYTHON := $(VENV)/bin/python
 endif
 
-.PHONY: help demo test test-fast test-cov lint format install clean venv update switch benchmark-timeline benchmark-contradiction benchmark-features
+.PHONY: help demo test test-fast test-cov lint format install clean venv update switch benchmark-timeline benchmark-contradiction benchmark-features benchmark-financebench
 
 # Default target
 help:
@@ -26,6 +26,7 @@ help:
 	@echo "  benchmark-timeline     Run timeline benchmark (LexTime + synthetic)"
 	@echo "  benchmark-contradiction Run contradiction detection benchmark"
 	@echo "  benchmark-features     Run both timeline + contradiction benchmarks"
+	@echo "  benchmark-financebench Run FinanceBench subset (15 Qs, ~3-4 hrs)"
 	@echo ""
 	@echo "Testing:"
 	@echo "  test          Run all tests"
@@ -122,6 +123,14 @@ benchmark-features:
 	@$(MAKE) benchmark-timeline
 	@echo ""
 	@$(MAKE) benchmark-contradiction
+
+# Run FinanceBench subset (15 questions across 15 SEC filings — takes ~3-4 hours)
+benchmark-financebench:
+	@echo "📊 Running FinanceBench Subset (15 questions, 15 SEC filings)..."
+	@echo "   This downloads 10-K/10-Q PDFs, ingests, builds KG, and answers."
+	@echo "   Expect ~15-20 min per question. Results saved to benchmark_results/"
+	@echo ""
+	$(PYTHON) run_financebench_subset.py
 
 # Compare with your own PDF
 benchmark-compare-pdf:

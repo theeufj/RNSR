@@ -687,14 +687,14 @@ graph LR
 ```mermaid
 flowchart TD
     A["📄 PDF Input"] --> B["Font Histogram Analysis"]
-    B --> C["Header Classification\n(H1 / H2 / H3)"]
+    B --> C["Header Classification<br>(H1 / H2 / H3)"]
     C --> D{"Multiple Documents?"}
     D -->|"Yes (page-number resets)"| E["Split into Sub-Documents"]
     D -->|No| F["Build Hierarchical Tree"]
     E --> F
-    F --> G["Skeleton Index\n(lightweight summaries)"]
-    F --> H["KV Store\n(full section content)"]
-    F --> I["Table Detection\n& Parsing"]
+    F --> G["Skeleton Index<br>(lightweight summaries)"]
+    F --> H["KV Store<br>(full section content)"]
+    F --> I["Table Detection<br>& Parsing"]
 
     style A fill:#e1f5fe
     style F fill:#fff3e0
@@ -707,15 +707,15 @@ flowchart TD
 
 ```mermaid
 flowchart LR
-    Q["❓ Question"] --> CL["Clarify\nambiguity?"]
-    CL --> PF["Pre-Filter\n(keyword scan)"]
-    PF --> NAV["RLM Tree\nNavigation"]
-    NAV --> SYN["Synthesise\nAnswer"]
-    SYN --> SR["Self-Reflect\n& Critique"]
-    SR --> VER["Verify\n(optional)"]
-    VER --> A["✅ Answer +\nProvenance"]
+    Q["❓ Question"] --> CL["Clarify<br>ambiguity?"]
+    CL --> PF["Pre-Filter<br>(keyword scan)"]
+    PF --> NAV["RLM Tree<br>Navigation"]
+    NAV --> SYN["Synthesise<br>Answer"]
+    SYN --> SR["Self-Reflect<br>& Critique"]
+    SR --> VER["Verify<br>(optional)"]
+    VER --> A["✅ Answer +<br>Provenance"]
 
-    NAV -->|"complex query"| SUB["Sub-LLM\nRecursion"]
+    NAV -->|"complex query"| SUB["Sub-LLM<br>Recursion"]
     SUB --> NAV
 
     style Q fill:#e1f5fe
@@ -730,22 +730,22 @@ knows *whose* data it is extracting (e.g. the primary applicant's passport).
 
 ```mermaid
 flowchart TD
-    DOC["🌳 Document Tree"] --> SPLIT["Split into\nSkeleton Nodes"]
-    SPLIT --> CTX["Build Ancestor Context\nper Node"]
-    CTX --> POOL["ThreadPool\n(8 workers)"]
+    DOC["🌳 Document Tree"] --> SPLIT["Split into<br>Skeleton Nodes"]
+    SPLIT --> CTX["Build Ancestor Context<br>per Node"]
+    CTX --> POOL["ThreadPool<br>(8 workers)"]
 
     subgraph PER_NODE ["Per-Node Extraction"]
         direction TB
-        ANC["📍 Ancestor Breadcrumb\n+ Subject Hint"] --> LLM["LLM Writes\nExtraction Code"]
-        LLM --> EXEC["Execute on\nDOC_VAR"]
-        EXEC --> TOT["ToT Validation\n(probability scores)"]
-        TOT --> ENT["Entities &\nRelationships"]
+        ANC["📍 Ancestor Breadcrumb<br>+ Subject Hint"] --> LLM["LLM Writes<br>Extraction Code"]
+        LLM --> EXEC["Execute on<br>DOC_VAR"]
+        EXEC --> TOT["ToT Validation<br>(probability scores)"]
+        TOT --> ENT["Entities &<br>Relationships"]
     end
 
     POOL --> PER_NODE
     PER_NODE --> MERGE["Merge Results"]
     MERGE --> KG["🧠 Knowledge Graph"]
-    MERGE --> LEARN["📚 Learn New Types\n(~/.rnsr/)"]
+    MERGE --> LEARN["📚 Learn New Types<br>(~/.rnsr/)"]
 
     style DOC fill:#e1f5fe
     style KG fill:#f3e5f5
@@ -773,12 +773,12 @@ loop that improves with use.
 
 ```mermaid
 flowchart LR
-    EXT["Extraction\nResult"] --> CHK{"Type matches\ncanonical?"}
+    EXT["Extraction<br>Result"] --> CHK{"Type matches<br>canonical?"}
     CHK -->|Yes| KG["Knowledge Graph"]
-    CHK -->|No → OTHER| REC["Record in\nRegistry"]
-    REC --> AUTO["Auto-Suggest\nCanonical Mapping"]
-    AUTO --> JSON["💾 ~/.rnsr/\nlearned_*.json"]
-    JSON -->|"Next extraction"| PROMPT["Inject into\nLLM Prompt"]
+    CHK -->|No → OTHER| REC["Record in<br>Registry"]
+    REC --> AUTO["Auto-Suggest<br>Canonical Mapping"]
+    AUTO --> JSON["💾 ~/.rnsr/<br>learned_*.json"]
+    JSON -->|"Next extraction"| PROMPT["Inject into<br>LLM Prompt"]
     PROMPT --> EXT
 
     style JSON fill:#fce4ec
@@ -797,18 +797,18 @@ Traditional RAG splits documents into chunks, embeds them, and retrieves based o
 
 ```mermaid
 flowchart TD
-    Q["❓ Query"] --> REPL["NavigationREPL\n(document as environment)"]
+    Q["❓ Query"] --> REPL["NavigationREPL<br>(document as environment)"]
 
     subgraph LOOP ["Iterative Code-Generation Loop"]
         direction TB
-        REPL --> GEN["LLM Generates\nPython Code"]
-        GEN --> RUN["Execute Code\n(search_tree, navigate_to, …)"]
+        REPL --> GEN["LLM Generates<br>Python Code"]
+        GEN --> RUN["Execute Code<br>(search_tree, navigate_to, …)"]
         RUN --> FIND["Store Findings"]
         FIND -->|"Need more info"| REPL
-        FIND -->|"ready_to_synthesize()"| VAL["ToT Validation\n(probability scores)"]
+        FIND -->|"ready_to_synthesize()"| VAL["ToT Validation<br>(probability scores)"]
     end
 
-    VAL --> ANS["✅ Grounded Answer\n+ Citations"]
+    VAL --> ANS["✅ Grounded Answer<br>+ Citations"]
 
     style Q fill:#e1f5fe
     style ANS fill:#e8f5e9
@@ -862,8 +862,8 @@ flowchart TD
 
 ```mermaid
 graph TD
-    CLIENT["client.py\nHigh-Level API"]
-    DS["document_store.py\nMulti-Doc Workspace"]
+    CLIENT["client.py<br>High-Level API"]
+    DS["document_store.py<br>Multi-Doc Workspace"]
 
     subgraph INGESTION ["ingestion/"]
         P["pipeline.py"]
@@ -904,7 +904,7 @@ graph TD
         QC["query_clarifier.py"]
     end
 
-    LLM["llm.py\nMulti-Provider Abstraction"]
+    LLM["llm.py<br>Multi-Provider Abstraction"]
 
     CLIENT --> INGESTION
     CLIENT --> INDEXING

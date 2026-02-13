@@ -29,24 +29,25 @@ RESULTS_FILE = Path("benchmark_results/financebench_results.json")
 MAX_QUESTIONS = int(os.getenv("FINBENCH_MAX", "15"))
 
 # Hand-picked diverse subset: idx in HF dataset
-# Covers: 3M, AMD, American Express, Boeing, Best Buy, CVS, J&J, PepsiCo,
-#          Pfizer, Verizon, MGM, AES, Amcor, Adobe, Activision
+# Ordered smallest-first (8-K/earnings before 10-K) for faster initial results.
+# Covers: J&J, MGM, Pfizer, AES, Activision, Amcor, AMD, AmEx, Best Buy,
+#          CVS, PepsiCo, Verizon, Boeing, 3M
 SELECTED_INDICES = [
-    0,    # 3M 2018 10K - capex extraction (metrics)
-    2,    # 3M 2022 10K - capital intensity (logical reasoning)
-    8,    # Activision 2019 10K - fixed asset turnover (numerical)
+    # --- Verified working links, ordered by expected doc size ---
+    130,  # Pfizer 2021 10K - PPNE growth (extraction)
     15,   # AES 2022 10K - restructuring costs (extraction)
+    8,    # Activision 2019 10K - fixed asset turnover (numerical)
     23,   # Amcor 2023 10K - quick ratio (numerical + logical)
     31,   # AMD 2022 10K - liquidity / quick ratio (logical)
     38,   # AmEx 2022 10K - debt securities (extraction)
     50,   # Best Buy 2023 10K - gross margin consistency (logical)
     76,   # CVS 2022 10K - capital intensity (logical)
     85,   # J&J 2022 10K - high growth assessment (logical)
-    90,   # J&J 2023 8K - discontinued operation (extraction)
-    106,  # MGM 2022 Q4 earnings - EBITDAR region (extraction)
     120,  # PepsiCo 2022 10K - geographies (extraction)
-    130,  # Pfizer 2021 10K - PPNE growth (extraction)
     144,  # Verizon 2022 10K - liquidity / quick ratio (logical)
+    0,    # 3M 2018 10K - capex extraction (metrics)
+    2,    # 3M 2022 10K - capital intensity (logical reasoning)
+    # NOTE: idx 90 (J&J 8K) and 106 (MGM earnings) have dead PDF links
 ]
 
 

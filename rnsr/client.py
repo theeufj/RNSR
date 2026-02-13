@@ -690,7 +690,7 @@ class RNSRClient:
             container = skeleton.get(container_id)
             if not container or not container.child_ids:
                 # Leaf node — return its own content
-                return (kv_store.get(container_id) or "")[:400]
+                return kv_store.get(container_id) or ""
 
             # Look for a child with a header containing "personal", "info",
             # or just take the first child with substantial content.
@@ -702,13 +702,13 @@ class RNSRClient:
                 if "personal" in h_lower or "info" in h_lower or "name" in h_lower:
                     content = kv_store.get(child_id) or ""
                     if len(content) > 50:
-                        return content[:400]
+                        return content
 
             # Fallback: first child with enough content
             for child_id in container.child_ids:
                 content = kv_store.get(child_id) or ""
                 if len(content) > 50:
-                    return content[:400]
+                    return content
 
             return ""
 
@@ -759,7 +759,7 @@ class RNSRClient:
                         else:
                             content = kv_store.get(first_child_id) or ""
                             if len(content) > 50:
-                                subject_hint = content[:400]
+                                subject_hint = content
 
                     # Strategy 2: If this is a top-level section (e.g.
                     # EDUCATION HISTORY under Form 80 Data), find the

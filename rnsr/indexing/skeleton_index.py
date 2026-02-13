@@ -39,25 +39,26 @@ logger = structlog.get_logger(__name__)
 
 def generate_summary(
     content: str,
-    max_words: int = 100,
+    max_words: int | None = None,
     child_headers: list[str] | None = None,
 ) -> str:
-    """
-    Generate a summary for a node's content.
-    
+    """Generate a summary for a node's content.
+
     For **parent / group nodes** with children, produces a table-of-contents
     style summary listing child section headers.  This gives ToT far better
     signal than the first 100 words of (possibly empty) group content.
-    
-    For **leaf nodes**, uses an extractive approach (first *max_words* words)
-    to preserve key facts, entities, and concrete details.
-    
+
+    For **leaf nodes**, returns the full content so that no facts are lost.
+    An optional *max_words* cap can be passed for callers that need a
+    shorter preview, but the default (``None``) preserves everything.
+
     Args:
         content: Full text content.
-        max_words: Maximum words in summary.
+        max_words: Optional word cap for the summary.  ``None`` (default)
+            returns the full content.
         child_headers: Optional list of child-node headers.  When provided
             (and non-empty), the summary becomes a table-of-contents.
-        
+
     Returns:
         Summary text.
     """
@@ -68,17 +69,14 @@ def generate_summary(
 
     if not content:
         return ""
-    
+
+    if max_words is None:
+        return content
+
     words = content.split()
-    
     if len(words) <= max_words:
         return content
-    
-    # EXTRACTIVE SUMMARY: Take first max_words to preserve:
-    # - Opening sentences (often contain key context)
-    # - Named entities (people, places, concepts)
-    # - Concrete facts (numbers, dates, specific actions)
-    # This gives ToT better signal than arbitrary truncation
+
     return " ".join(words[:max_words]) + "..."
 
 

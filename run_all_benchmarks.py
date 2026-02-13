@@ -6,11 +6,13 @@ Runs RNSR against multiple standard benchmarks to prove generalization
 beyond FinanceBench. Produces a combined report with per-benchmark metrics.
 
 Benchmarks:
-1. FinanceBench  — Financial document QA (baseline: 100% accuracy)
-2. MultiHiertt   — Multi-step hierarchical table reasoning (ACL 2022)
-3. TAT-QA        — Tabular + textual financial QA (ACL 2021)
-4. QASPER        — Scientific paper QA (NAACL 2021)
-5. DocVQA        — Visual document understanding (WACV 2021)
+1. FinanceBench    — Financial document QA (baseline: 100% accuracy)
+2. MultiHiertt     — Multi-step hierarchical table reasoning (ACL 2022)
+3. TAT-QA          — Tabular + textual financial QA (ACL 2021)
+4. QASPER          — Scientific paper QA (NAACL 2021)
+5. DocVQA          — Visual document understanding (WACV 2021)
+6. Timeline        — Temporal ordering of legal events (LexTime, EMNLP 2025)
+7. Contradiction   — Contradiction detection (single-doc + cross-doc)
 
 Usage:
     # Run all benchmarks (10 samples each for quick validation)
@@ -390,7 +392,7 @@ def run_benchmark_suite(
     from rnsr.benchmarks.evaluation_suite import RNSRBenchmarkAdapter
     from rnsr.benchmarks.standard_benchmarks import LLMJudgeEvaluator
 
-    all_benchmarks = ["financebench", "multihiertt", "tatqa", "qasper", "docvqa"]
+    all_benchmarks = ["financebench", "multihiertt", "tatqa", "qasper", "docvqa", "timeline", "contradiction"]
     selected = benchmarks or all_benchmarks
 
     report = CombinedReport(
@@ -572,6 +574,12 @@ def _load_dataset(name: str, max_samples: int | None = None) -> Any:
     elif name == "docvqa":
         from rnsr.benchmarks.docvqa_bench import DocVQALoader
         return DocVQALoader.load(max_samples=max_samples)
+    elif name == "timeline":
+        from rnsr.benchmarks.timeline_bench import TimelineBenchLoader
+        return TimelineBenchLoader.load(max_samples=max_samples)
+    elif name == "contradiction":
+        from rnsr.benchmarks.contradiction_bench import ContradictionBenchLoader
+        return ContradictionBenchLoader.load(max_samples=max_samples)
     else:
         raise ValueError(f"Unknown benchmark: {name}")
 
@@ -598,7 +606,7 @@ Examples:
     parser.add_argument(
         "--benchmarks",
         nargs="+",
-        choices=["financebench", "multihiertt", "tatqa", "qasper", "docvqa"],
+        choices=["financebench", "multihiertt", "tatqa", "qasper", "docvqa", "timeline", "contradiction"],
         help="Benchmarks to run (default: all)",
     )
     parser.add_argument(

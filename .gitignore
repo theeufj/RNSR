@@ -70,9 +70,15 @@ dmypy.json
 benchmark_results/
 *.db
 
+# Downloaded benchmark datasets
+rnsr/benchmarks/data/lextime/
+rnsr/benchmarks/data/financebench/
+
 # RNSR cache directories
 .rnsr_cache/
 .rnsr_demo_cache/
+.rnsr_multi_doc_store/
+.rnsr_test_store/
 
 # Huggingface cache (large model files)
 .cache/

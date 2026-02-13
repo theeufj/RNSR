@@ -511,7 +511,7 @@ Question: {task['sub_query']}
 Focus on: {', '.join(entity_names)}
 
 Content:
-{chr(10).join(f'--- Section ---{chr(10)}{e}' for e in evidence[:5])}
+{chr(10).join(f'--- Section ---{chr(10)}{e}' for e in evidence)}
 
 Answer:"""
             
@@ -520,7 +520,7 @@ Answer:"""
             except Exception as e:
                 answer = f"Error synthesizing: {str(e)}"
         else:
-            answer = "\n\n".join(evidence[:3])
+            answer = "\n\n".join(evidence)
         
         return DocumentResult(
             doc_id=doc_id,

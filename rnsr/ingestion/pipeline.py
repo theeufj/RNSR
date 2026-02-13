@@ -661,8 +661,8 @@ def extract_entities_from_tree(
     tree: DocumentTree,
     doc_id: str | None = None,
     extract_relationships: bool = True,
-    max_nodes: int = 100,
-    sample_strategy: str = "important",
+    max_nodes: int | None = None,
+    sample_strategy: str = "all",
 ) -> dict:
     """
     Extract entities and relationships from an ingested document tree.
@@ -677,9 +677,12 @@ def extract_entities_from_tree(
         tree: The ingested DocumentTree.
         doc_id: Document ID (defaults to tree.id).
         extract_relationships: Whether to also extract relationships.
-        max_nodes: Maximum nodes to process (for large documents).
-        sample_strategy: How to select nodes - "important" (headers first), 
-                        "uniform" (evenly spaced), or "all" (process all).
+        max_nodes: Optional cap on nodes to process.  Defaults to ``None``
+            (process every node).  Set to a positive integer to limit
+            extraction for very large documents.
+        sample_strategy: How to select nodes when *max_nodes* triggers —
+            ``"all"`` (default, process every node), ``"important"``
+            (headers first), or ``"uniform"`` (evenly spaced).
         
     Returns:
         Dictionary containing:
@@ -715,8 +718,8 @@ def extract_entities_from_tree(
     # Collect all nodes for processing
     all_nodes = _collect_nodes(tree.root, doc_id)
     
-    # Sample nodes if too many
-    if sample_strategy != "all" and len(all_nodes) > max_nodes:
+    # Sample nodes if a cap is set and exceeded
+    if max_nodes is not None and sample_strategy != "all" and len(all_nodes) > max_nodes:
         nodes_to_process = _sample_nodes(all_nodes, max_nodes, sample_strategy)
         logger.info(
             "entity_extraction_sampling",

@@ -216,26 +216,27 @@ class RelationshipValidator:
         # Format entities
         entities_formatted = "\n".join([
             f"- [{e.id}] {e.canonical_name} ({e.type.value})"
-            for e in entities[:20]  # Limit
+            for e in entities
         ]) if entities else "(no entities)"
         
         # Format candidates
         candidates_formatted = "\n".join([
             f"[{i + batch_offset}] {c.source_text} --[{c.relationship_type}]--> {c.target_text}\n"
-            f"    Evidence: \"{c.evidence[:100]}...\"\n"
+            f"    Evidence: \"{c.evidence}\"\n"
             f"    Pattern: {c.pattern_name}, Confidence: {c.confidence:.2f}"
             for i, c in enumerate(candidates)
         ])
         
         prompt = TOT_RELATIONSHIP_VALIDATION_PROMPT.format(
             section_header=section_header,
-            section_content=section_content[:2000],
+            section_content=section_content,
             entities_formatted=entities_formatted,
             candidates_formatted=candidates_formatted,
         )
         
         try:
-            response = self.llm.complete(prompt)
+            _complete_fn = getattr(self.llm, "complete_json", None) or self.llm.complete
+            response = _complete_fn(prompt)
             response_text = str(response) if not isinstance(response, str) else response
             
             return self._parse_validation_response(response_text, len(candidates), batch_offset)

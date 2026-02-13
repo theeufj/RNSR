@@ -634,7 +634,7 @@ def _get_or_create_store() -> DocumentStore:
 def add_multi_documents(files, progress=gr.Progress()):
     """Add one or more PDFs to the multi-document store."""
     if not files:
-        return "Upload PDFs to add them to the workspace.", _multi_doc_list()
+        return "Upload PDFs to add them to the workspace.", _multi_doc_list(), _multi_doc_dropdown_choices()
 
     store = _get_or_create_store()
     added = 0
@@ -655,7 +655,7 @@ def add_multi_documents(files, progress=gr.Progress()):
 
     progress(1.0, desc="Done")
     msg = f"Added **{added}** document(s). Total: **{len(store)}** in workspace."
-    return msg, _multi_doc_list()
+    return msg, _multi_doc_list(), _multi_doc_dropdown_choices()
 
 
 def _multi_doc_list() -> str:
@@ -668,6 +668,52 @@ def _multi_doc_list() -> str:
     for d in docs:
         lines.append(f"- **{d['title']}** (`{d['id']}`) — {d['node_count']} sections")
     return "\n".join(lines)
+
+
+def clear_workspace():
+    """Remove all documents from the multi-document store."""
+    store = _get_or_create_store()
+    if len(store) == 0:
+        return "Workspace is already empty.", _multi_doc_list(), _multi_doc_dropdown_choices()
+    count = store.clear_all()
+    state.multi_docs.clear()
+    return (
+        f"Cleared **{count}** document(s). Workspace is now empty.",
+        _multi_doc_list(),
+        _multi_doc_dropdown_choices(),
+    )
+
+
+def remove_single_document(doc_label: str):
+    """Remove a single document from the workspace by its dropdown label."""
+    if not doc_label:
+        return "Select a document to remove.", _multi_doc_list(), _multi_doc_dropdown_choices()
+
+    # Extract doc_id from label format "Title (doc_id)"
+    doc_id = doc_label.rsplit("(", 1)[-1].rstrip(")")
+    store = _get_or_create_store()
+    info = store.get_document_info(doc_id)
+    title = info.title if info else doc_id
+
+    removed = store.remove_document(doc_id)
+    if removed:
+        state.multi_docs = [d for d in state.multi_docs if d.get("id") != doc_id]
+        return (
+            f"Removed **{title}**. Total: **{len(store)}** in workspace.",
+            _multi_doc_list(),
+            _multi_doc_dropdown_choices(),
+        )
+    return "Document not found.", _multi_doc_list(), _multi_doc_dropdown_choices()
+
+
+def _multi_doc_dropdown_choices() -> dict:
+    """Return a Gradio update dict for the document-remove dropdown."""
+    store = _get_or_create_store()
+    docs = store.list_documents()
+    choices = [f"{d['title']} ({d['id']})" for d in docs]
+    if _gradio_major >= 6:
+        return gr.Dropdown(choices=choices, value=None)
+    return gr.update(choices=choices, value=None)
 
 
 def build_multi_kg(progress=gr.Progress()):
@@ -1166,7 +1212,18 @@ def create_demo():
                         )
                         multi_add_btn = gr.Button("Add to Workspace", variant="primary")
                         multi_status = gr.Markdown("No documents in workspace yet.")
-                        multi_doc_list = gr.Markdown("")
+                        multi_doc_list = gr.Markdown(_multi_doc_list())
+
+                        gr.Markdown("---")
+                        gr.Markdown("##### Manage Documents")
+                        multi_remove_dropdown = gr.Dropdown(
+                            label="Select document",
+                            choices=[],
+                            interactive=True,
+                        )
+                        with gr.Row():
+                            multi_remove_btn = gr.Button("Remove Selected", variant="secondary")
+                            multi_clear_btn = gr.Button("Clear Workspace", variant="stop")
 
                         gr.Markdown("---")
                         gr.Markdown("##### Build Workspace KG")
@@ -1261,13 +1318,29 @@ def create_demo():
         multi_add_btn.click(
             fn=add_multi_documents,
             inputs=[multi_file_input],
-            outputs=[multi_status, multi_doc_list],
+            outputs=[multi_status, multi_doc_list, multi_remove_dropdown],
+        )
+        multi_clear_btn.click(
+            fn=clear_workspace,
+            inputs=[],
+            outputs=[multi_status, multi_doc_list, multi_remove_dropdown],
+        )
+        multi_remove_btn.click(
+            fn=remove_single_document,
+            inputs=[multi_remove_dropdown],
+            outputs=[multi_status, multi_doc_list, multi_remove_dropdown],
         )
         multi_kg_btn.click(fn=build_multi_kg, inputs=[], outputs=[multi_kg_status])
         multi_ask_btn.click(fn=cross_doc_query, inputs=[multi_question], outputs=[multi_answer])
         multi_question.submit(fn=cross_doc_query, inputs=[multi_question], outputs=[multi_answer])
         multi_timeline_btn.click(fn=get_cross_doc_timeline_view, inputs=[], outputs=[multi_timeline_md])
         multi_contradiction_btn.click(fn=get_cross_doc_contradiction_view, inputs=[], outputs=[multi_contradiction_md])
+
+        # --- On-load: populate multi-doc dropdown with existing docs ---
+        def _init_multi_doc_dropdown():
+            return _multi_doc_dropdown_choices()
+
+        demo.load(fn=_init_multi_doc_dropdown, inputs=[], outputs=[multi_remove_dropdown])
 
     demo._rnsr_theme = theme
     demo._rnsr_css = css

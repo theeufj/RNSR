@@ -593,11 +593,9 @@ class ProvenanceTracker:
             return []
         
         # Build prompt with top citations
-        top_citations = citations[:5]  # Limit to avoid token overflow
-        
         quotes_text = "\n".join([
-            f"[{i+1}] {c.quote[:200]}"
-            for i, c in enumerate(top_citations)
+            f"[{i+1}] {c.quote}"
+            for i, c in enumerate(citations)
         ])
         
         prompt = f"""Analyze these quotes for contradictions:
@@ -630,10 +628,10 @@ If no contradictions, respond: {{"contradictions": []}}"""
                 idx1 = c.get("quote_1", 1) - 1
                 idx2 = c.get("quote_2", 2) - 1
                 
-                if 0 <= idx1 < len(top_citations) and 0 <= idx2 < len(top_citations):
+                if 0 <= idx1 < len(citations) and 0 <= idx2 < len(citations):
                     contradictions.append(Contradiction(
-                        citation_1_id=top_citations[idx1].id,
-                        citation_2_id=top_citations[idx2].id,
+                        citation_1_id=citations[idx1].id,
+                        citation_2_id=citations[idx2].id,
                         type=ContradictionType(c.get("type", "partial")),
                         description=c.get("explanation", ""),
                         confidence=0.7,

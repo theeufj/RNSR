@@ -612,7 +612,7 @@ Respond with JSON only:"""
         # Sort by page number
         relevant.sort()
         
-        return relevant[:10]  # Limit to 10 most relevant pages
+        return relevant  # Return all relevant pages
     
     def _analyze_selected_pages(
         self,

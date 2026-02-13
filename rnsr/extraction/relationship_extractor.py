@@ -135,7 +135,7 @@ class RelationshipExtractor:
         self,
         llm: Any | None = None,
         min_content_length: int = 50,
-        max_content_length: int = 8000,
+        max_content_length: int | None = None,
         suppress_deprecation_warning: bool = False,
     ):
         # Emit deprecation warning
@@ -152,7 +152,8 @@ class RelationshipExtractor:
         Args:
             llm: LLM instance to use. If None, uses get_llm().
             min_content_length: Minimum content length to process.
-            max_content_length: Maximum content length per extraction call.
+            max_content_length: Optional max content length per extraction call.
+                Defaults to ``None`` (no truncation).
         """
         self.llm = llm or get_llm()
         self.min_content_length = min_content_length
@@ -199,8 +200,8 @@ class RelationshipExtractor:
             logger.debug("using_cached_relationships", node_id=node_id)
             return self._cache[cache_key]
         
-        # Truncate content if too long
-        if len(content) > self.max_content_length:
+        # Truncate content only if an explicit cap was set
+        if self.max_content_length and len(content) > self.max_content_length:
             content = content[:self.max_content_length] + "..."
         
         try:
@@ -274,8 +275,9 @@ class RelationshipExtractor:
             entities_json=entities_json,
         )
         
-        # Call LLM
-        response = self.llm.complete(prompt)
+        # Call LLM (prefer JSON mode for structured output)
+        _complete_fn = getattr(self.llm, "complete_json", None) or self.llm.complete
+        response = _complete_fn(prompt)
         response_text = str(response) if not isinstance(response, str) else response
         
         # Parse JSON from response

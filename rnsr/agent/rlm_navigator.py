@@ -1871,9 +1871,9 @@ Generate 2-3 SIMPLE patterns, one per line:"""
             logger.info(
                 "llm_search_patterns_generated",
                 query=query,
-                patterns=patterns[:5],
+                patterns=patterns[:10],
             )
-            return patterns[:5]  # Max 5 patterns
+            return patterns[:10]  # Generous pattern limit
         except Exception as e:
             logger.warning("llm_pattern_generation_failed", error=str(e))
             return []
@@ -1950,8 +1950,9 @@ Generate 2-3 SIMPLE patterns, one per line:"""
         
         # Step 4: Include sibling sections for context completeness
         # If we found section 4.2 and 4.3, also include 4.1 (same parent)
+        max_candidates = max(self.config.top_k * 2, 10)  # At least 10 candidates
         sibling_results = {}
-        for result in search_results[:5]:  # Check top 5 matches
+        for result in search_results[:max_candidates]:  # Check top matches for siblings
             node_id = result["node_id"]
             node = self.skeleton.get(node_id)
             if node and node.parent_id:
@@ -1992,11 +1993,10 @@ Generate 2-3 SIMPLE patterns, one per line:"""
         
         # Take top-ranked sections - use higher limit to include siblings
         # We process more candidates but limit actual findings stored
-        max_candidates = max(self.config.top_k * 2, 10)  # At least 10 candidates
         top_sections = search_results[:max_candidates]
         
         findings_stored = 0
-        max_findings = 5  # Allow more findings to include siblings
+        max_findings = max(self.config.top_k * 3, 15)  # Scale with config
         for result in top_sections:
             node_id = result["node_id"]
             header = result["header"]
@@ -2044,7 +2044,7 @@ Generate 2-3 SIMPLE patterns, one per line:"""
                         state.visited_nodes.append(child_id)
                     if child_pointer not in state.variables:
                         state.variables.append(child_pointer)
-                        state.context += f"\n{child_pointer}: {child_content[:500]}"
+                        state.context += f"\n{child_pointer}: {child_content}"
                     
                     findings_stored += 1
                     logger.info(
@@ -2087,7 +2087,7 @@ Generate 2-3 SIMPLE patterns, one per line:"""
                 state.visited_nodes.append(node_id)
             if pointer_name not in state.variables:
                 state.variables.append(pointer_name)
-                state.context += f"\n{pointer_name}: {content[:500]}"
+                state.context += f"\n{pointer_name}: {content}"
             
             logger.info(
                 "deterministic_finding_stored",

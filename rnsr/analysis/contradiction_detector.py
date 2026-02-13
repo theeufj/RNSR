@@ -160,10 +160,12 @@ def _check_numeric_conflict(text_a: str, text_b: str) -> str | None:
     cleaned_a = _strip_noise_numbers(text_a)
     cleaned_b = _strip_noise_numbers(text_b)
 
-    # Only extract numbers that look like quantities / values (at least 2 digits
-    # or a dollar/percentage sign)
-    nums_a = set(re.findall(r"\$[\d,]+\.?\d*|\b\d{2,}(?:\.\d+)?%?\b", cleaned_a))
-    nums_b = set(re.findall(r"\$[\d,]+\.?\d*|\b\d{2,}(?:\.\d+)?%?\b", cleaned_b))
+    # Extract numbers that look like quantities / values (at least 2 digits
+    # or a dollar/percentage sign).  Supports comma-formatted numbers like
+    # 3,200 and dollar amounts like $127.4.
+    _NUM_PATTERN = r"\$[\d,]+\.?\d*|\b\d{1,3}(?:,\d{3})+(?:\.\d+)?%?\b|\b\d{2,}(?:\.\d+)?%?\b"
+    nums_a = set(re.findall(_NUM_PATTERN, cleaned_a))
+    nums_b = set(re.findall(_NUM_PATTERN, cleaned_b))
 
     if not nums_a or not nums_b:
         return None
@@ -311,13 +313,16 @@ def _extract_key_claims(
     skeleton: dict[str, Any],
     kv_store: Any,
     doc_id: str | None,
-    max_claims: int = 50,
 ) -> list[_Claim]:
-    """Extract meaningful claim sentences from each section.
+    """Extract one claim per section using the **full** section content.
 
-    Improved over the original: takes up to the first two substantive
-    sentences per section (instead of just one) and prepends the section
-    header so subject-gating works better.
+    Earlier versions split sections into individual sentences and capped
+    at 2-5 per section.  That caused contradictions buried in later
+    sentences to be silently dropped.  Using the complete section text
+    guarantees every fact is available for comparison.
+
+    The section header is prepended so that subject-gating
+    (``_texts_share_subject``) can use it as additional signal.
     """
     claims: list[_Claim] = []
     for node_id, node in skeleton.items():
@@ -325,26 +330,15 @@ def _extract_key_claims(
         if len(content.strip()) < 30:
             continue
         header = getattr(node, "header", node_id)
-        sentences = re.split(r"[.!?]\s+", content[:600])
-        added = 0
-        for sent in sentences:
-            sent = sent.strip()
-            if len(sent) > 20:
-                # Prefix with header for better subject matching
-                claim_text = f"{header}\n{sent}"
-                claims.append(
-                    _Claim(
-                        text=claim_text,
-                        section=header,
-                        node_id=node_id,
-                        doc_id=doc_id or "",
-                    )
-                )
-                added += 1
-                if added >= 2:
-                    break
-        if len(claims) >= max_claims:
-            break
+        claim_text = f"{header}\n{content}"
+        claims.append(
+            _Claim(
+                text=claim_text,
+                section=header,
+                node_id=node_id,
+                doc_id=doc_id or "",
+            )
+        )
     return claims
 
 
@@ -401,26 +395,36 @@ def _heuristic_pairwise(
                 )
 
 
+_LLM_CLAIM_BATCH = 30  # Claims per LLM call — all claims are processed across batches
+
+
 def _llm_semantic_check(
     claims: list[_Claim],
     llm_fn: Any,
     out: list[FactContradiction],
     max_pairs: int,
 ) -> None:
-    """Use an LLM to detect semantic contradictions."""
+    """Use an LLM to detect semantic contradictions.
+
+    All claims are processed in batches of ``_LLM_CLAIM_BATCH``
+    so that no claims are silently dropped.
+    """
     import json as _json
 
-    # Take the most important claims (first N)
-    top_claims = claims[:20]
-    if len(top_claims) < 2:
+    if len(claims) < 2:
         return
 
-    claims_text = "\n".join(
-        f"{i+1}. [{c.section}] {c.text[:200]}"
-        for i, c in enumerate(top_claims)
-    )
+    for batch_start in range(0, len(claims), _LLM_CLAIM_BATCH):
+        batch = claims[batch_start:batch_start + _LLM_CLAIM_BATCH]
+        if len(batch) < 2:
+            continue
 
-    prompt = f"""Analyze the following claims from a document and identify any contradictions.
+        claims_text = "\n".join(
+            f"{i+1}. [{c.section}] {c.text}"
+            for i, c in enumerate(batch)
+        )
+
+        prompt = f"""Analyze the following claims from a document and identify any contradictions.
 Return a JSON array of contradictions. If none exist, return an empty array.
 
 Claims:
@@ -429,39 +433,46 @@ Claims:
 Return ONLY valid JSON (no markdown, no extra text):
 [{{"claim_1_index": 1, "claim_2_index": 3, "type": "direct|numeric|temporal|semantic", "explanation": "brief reason"}}]"""
 
-    try:
-        raw = llm_fn(prompt)
-        # Parse JSON from response
-        match = re.search(r"\[.*\]", raw, re.DOTALL)
-        if not match:
-            return
-        results = _json.loads(match.group(0))
-        for item in results:
-            idx1 = item.get("claim_1_index", 0) - 1
-            idx2 = item.get("claim_2_index", 0) - 1
-            if 0 <= idx1 < len(top_claims) and 0 <= idx2 < len(top_claims):
-                out.append(
-                    FactContradiction(
-                        claim_1=top_claims[idx1].text,
-                        claim_2=top_claims[idx2].text,
-                        source_1=top_claims[idx1].section,
-                        source_2=top_claims[idx2].section,
-                        type=item.get("type", "semantic"),
-                        confidence=0.7,
-                        explanation=item.get("explanation", ""),
+        try:
+            raw = llm_fn(prompt)
+            match = re.search(r"\[.*\]", raw, re.DOTALL)
+            if not match:
+                continue
+            results = _json.loads(match.group(0))
+            for item in results:
+                idx1 = item.get("claim_1_index", 0) - 1
+                idx2 = item.get("claim_2_index", 0) - 1
+                if 0 <= idx1 < len(batch) and 0 <= idx2 < len(batch):
+                    out.append(
+                        FactContradiction(
+                            claim_1=batch[idx1].text,
+                            claim_2=batch[idx2].text,
+                            source_1=batch[idx1].section,
+                            source_2=batch[idx2].section,
+                            type=item.get("type", "semantic"),
+                            confidence=0.7,
+                            explanation=item.get("explanation", ""),
+                        )
                     )
-                )
-    except Exception as exc:
-        logger.debug("llm_contradiction_check_failed", error=str(exc))
+        except Exception as exc:
+            logger.debug("llm_contradiction_check_failed", error=str(exc))
 
 
 def _deduplicate(items: list[FactContradiction]) -> list[FactContradiction]:
-    """Remove duplicate contradictions (same pair of claims)."""
+    """Remove duplicate contradictions (same pair of claims).
+
+    Uses a hash of the full claim text to avoid false deduplication
+    when two distinct contradictions happen to share a common prefix.
+    """
+    import hashlib
+
     seen: set[str] = set()
     unique: list[FactContradiction] = []
     for c in items:
-        key = f"{c.claim_1[:50]}|{c.claim_2[:50]}"
-        rev_key = f"{c.claim_2[:50]}|{c.claim_1[:50]}"
+        h1 = hashlib.sha256(c.claim_1.encode()).hexdigest()[:16]
+        h2 = hashlib.sha256(c.claim_2.encode()).hexdigest()[:16]
+        key = f"{h1}|{h2}"
+        rev_key = f"{h2}|{h1}"
         if key not in seen and rev_key not in seen:
             seen.add(key)
             unique.append(c)
@@ -487,13 +498,14 @@ def _structure_parallel_cross_doc(
     llm_fn: Any | None,
     out: list[FactContradiction],
     header_threshold: float = 0.70,
-    max_section_chars: int = 800,
 ) -> None:
     """Find sections with similar headers across documents and compare them.
 
     For example, if two expert reports both have a section called "Diagnosis",
     we extract the content from each and ask the LLM (or use heuristics) to
     find conflicts.  This is vastly more targeted than comparing random claims.
+
+    Full section content is used — no arbitrary character limits.
     """
     import json as _json
 
@@ -510,7 +522,7 @@ def _structure_parallel_cross_doc(
             if len(content.strip()) < 40:
                 continue
             header = getattr(node, "header", node_id)
-            sections.append((doc_id, node_id, header, content[:max_section_chars]))
+            sections.append((doc_id, node_id, header, content))
 
     # Match sections with similar headers across different documents
     matched_pairs: list[tuple[_SectionInfo, _SectionInfo]] = []
@@ -529,11 +541,13 @@ def _structure_parallel_cross_doc(
         matched_section_pairs=len(matched_pairs),
     )
 
-    # Use LLM if available, else heuristic
+    # Always run heuristic for numeric/negation detection, then layer
+    # LLM on top for semantic contradictions.  This ensures numeric
+    # conflicts (e.g. GAF 45 vs 62) are never missed even when the LLM
+    # focuses on the headline diagnosis contradiction.
+    _compare_parallel_sections_heuristic(matched_pairs, out)
     if llm_fn:
         _compare_parallel_sections_llm(matched_pairs, llm_fn, out)
-    else:
-        _compare_parallel_sections_heuristic(matched_pairs, out)
 
 
 def _compare_parallel_sections_heuristic(
@@ -548,8 +562,8 @@ def _compare_parallel_sections_heuristic(
         neg = _check_negation(content_1, content_2)
         if neg:
             out.append(FactContradiction(
-                claim_1=content_1[:300],
-                claim_2=content_2[:300],
+                claim_1=content_1,
+                claim_2=content_2,
                 source_1=f"[{doc_id_1}] {header_1}",
                 source_2=f"[{doc_id_2}] {header_2}",
                 type="direct",
@@ -560,8 +574,8 @@ def _compare_parallel_sections_heuristic(
         num = _check_numeric_conflict(content_1, content_2)
         if num:
             out.append(FactContradiction(
-                claim_1=content_1[:300],
-                claim_2=content_2[:300],
+                claim_1=content_1,
+                claim_2=content_2,
                 source_1=f"[{doc_id_1}] {header_1}",
                 source_2=f"[{doc_id_2}] {header_2}",
                 type="numeric",
@@ -575,7 +589,10 @@ def _compare_parallel_sections_llm(
     llm_fn: Any,
     out: list[FactContradiction],
 ) -> None:
-    """LLM comparison of parallel sections (much higher quality)."""
+    """LLM comparison of parallel sections (much higher quality).
+
+    Full section content is sent to the LLM — no arbitrary truncation.
+    """
     import json as _json
 
     # Batch up to 5 pairs per LLM call to bound cost
@@ -588,10 +605,10 @@ def _compare_parallel_sections_llm(
             doc_id_2, _, header_2, content_2 = s2
             comparisons.append(
                 f"--- Pair {idx} ---\n"
-                f"SECTION A [Doc: {doc_id_1[:12]}, Header: {header_1}]:\n"
-                f"{content_1[:500]}\n\n"
-                f"SECTION B [Doc: {doc_id_2[:12]}, Header: {header_2}]:\n"
-                f"{content_2[:500]}\n"
+                f"SECTION A [Doc: {doc_id_1}, Header: {header_1}]:\n"
+                f"{content_1}\n\n"
+                f"SECTION B [Doc: {doc_id_2}, Header: {header_2}]:\n"
+                f"{content_2}\n"
             )
 
         prompt = (
@@ -625,8 +642,8 @@ def _compare_parallel_sections_llm(
                 doc_id_1, _, header_1, _ = s1
                 doc_id_2, _, header_2, _ = s2
                 out.append(FactContradiction(
-                    claim_1=item.get("claim_a_summary", s1[3][:200]),
-                    claim_2=item.get("claim_b_summary", s2[3][:200]),
+                    claim_1=item.get("claim_a_summary", s1[3]),
+                    claim_2=item.get("claim_b_summary", s2[3]),
                     source_1=f"[{doc_id_1}] {header_1}",
                     source_2=f"[{doc_id_2}] {header_2}",
                     type=item.get("type", "semantic"),
@@ -669,7 +686,7 @@ def _entity_centric_cross_doc(
             if len(content.strip()) < 30:
                 continue
             header = getattr(node, "header", node_id)
-            node_map[node_id] = (header, content[:600])
+            node_map[node_id] = (header, content)
         doc_content[doc_id] = node_map
 
     # For each entity in the KG, find which documents mention it
@@ -766,7 +783,7 @@ def _compare_entity_passages_heuristic(
     doc_ids: list[str],
     out: list[FactContradiction],
 ) -> None:
-    """Heuristic entity-centric comparison."""
+    """Heuristic entity-centric comparison (negation + numeric)."""
     for i, d1 in enumerate(doc_ids):
         for d2 in doc_ids[i + 1:]:
             for p1 in by_doc[d1]:
@@ -774,13 +791,26 @@ def _compare_entity_passages_heuristic(
                     neg = _check_negation(p1[3], p2[3])
                     if neg:
                         out.append(FactContradiction(
-                            claim_1=p1[3][:300],
-                            claim_2=p2[3][:300],
+                            claim_1=p1[3],
+                            claim_2=p2[3],
                             source_1=f"[{d1}] {p1[2]}",
                             source_2=f"[{d2}] {p2[2]}",
                             type="direct",
                             confidence=0.70,
                             explanation=f"Entity '{entity_name}' — {neg}",
+                        ))
+                        continue
+
+                    num = _check_numeric_conflict(p1[3], p2[3])
+                    if num:
+                        out.append(FactContradiction(
+                            claim_1=p1[3],
+                            claim_2=p2[3],
+                            source_1=f"[{d1}] {p1[2]}",
+                            source_2=f"[{d2}] {p2[2]}",
+                            type="numeric",
+                            confidence=0.60,
+                            explanation=f"Entity '{entity_name}' — {num}",
                         ))
 
 
@@ -801,11 +831,11 @@ def _compare_entity_passages_llm(
     for doc_id in doc_ids:
         passages = by_doc[doc_id]
         combined = "\n".join(
-            f"[{p[2]}]: {p[3][:300]}"
-            for p in passages[:4]  # max 4 sections per doc
+            f"[{p[2]}]: {p[3]}"
+            for p in passages
         )
         doc_summaries.append(
-            f"DOCUMENT {len(doc_summaries)+1} [{doc_id[:12]}]:\n{combined}"
+            f"DOCUMENT {len(doc_summaries)+1} [{doc_id}]:\n{combined}"
         )
         doc_id_map.append(doc_id)
         header_map.append(passages[0][2] if passages else "")
@@ -948,8 +978,8 @@ def _relationship_divergence_cross_doc(
                         neg = _check_negation(r1.evidence, r2.evidence)
                         if neg:
                             out.append(FactContradiction(
-                                claim_1=r1.evidence[:300],
-                                claim_2=r2.evidence[:300],
+                                claim_1=r1.evidence,
+                                claim_2=r2.evidence,
                                 source_1=f"[{d1}] KG: {entity.canonical_name} → {rel_type}",
                                 source_2=f"[{d2}] KG: {entity.canonical_name} → {rel_type}",
                                 type="direct",
@@ -1028,24 +1058,34 @@ def _llm_semantic_check_cross_doc(
     out: list[FactContradiction],
     max_pairs: int,
 ) -> None:
-    """Use an LLM to detect semantic contradictions across documents."""
+    """Use an LLM to detect semantic contradictions across documents.
+
+    All claims are processed in batches — no arbitrary cap.
+    """
     import json as _json
 
-    # Take claims from different documents (interleave)
-    top_claims = claims[:30]
-    if len(top_claims) < 2:
+    if len(claims) < 2:
         return
 
-    doc_ids_present = {c.doc_id for c in top_claims}
+    doc_ids_present = {c.doc_id for c in claims}
     if len(doc_ids_present) < 2:
         return
 
-    claims_text = "\n".join(
-        f"{i+1}. [Doc: {c.doc_id} | {c.section}] {c.text[:200]}"
-        for i, c in enumerate(top_claims)
-    )
+    for batch_start in range(0, len(claims), _LLM_CLAIM_BATCH):
+        batch = claims[batch_start:batch_start + _LLM_CLAIM_BATCH]
+        if len(batch) < 2:
+            continue
 
-    prompt = f"""Analyze the following claims from MULTIPLE documents and identify contradictions BETWEEN documents.
+        # Ensure the batch has claims from at least 2 documents
+        if len({c.doc_id for c in batch}) < 2:
+            continue
+
+        claims_text = "\n".join(
+            f"{i+1}. [Doc: {c.doc_id} | {c.section}] {c.text}"
+            for i, c in enumerate(batch)
+        )
+
+        prompt = f"""Analyze the following claims from MULTIPLE documents and identify contradictions BETWEEN documents.
 Only flag contradictions where two DIFFERENT documents make conflicting statements.
 Return a JSON array of contradictions. If none exist, return an empty array.
 
@@ -1055,30 +1095,30 @@ Claims:
 Return ONLY valid JSON (no markdown, no extra text):
 [{{"claim_1_index": 1, "claim_2_index": 3, "type": "direct|numeric|temporal|semantic", "explanation": "brief reason"}}]"""
 
-    try:
-        raw = llm_fn(prompt)
-        match = re.search(r"\[.*\]", raw, re.DOTALL)
-        if not match:
-            return
-        results = _json.loads(match.group(0))
-        for item in results:
-            idx1 = item.get("claim_1_index", 0) - 1
-            idx2 = item.get("claim_2_index", 0) - 1
-            if 0 <= idx1 < len(top_claims) and 0 <= idx2 < len(top_claims):
-                c1, c2 = top_claims[idx1], top_claims[idx2]
-                out.append(
-                    FactContradiction(
-                        claim_1=c1.text,
-                        claim_2=c2.text,
-                        source_1=f"[{c1.doc_id}] {c1.section}",
-                        source_2=f"[{c2.doc_id}] {c2.section}",
-                        type=item.get("type", "semantic"),
-                        confidence=0.7,
-                        explanation=item.get("explanation", ""),
+        try:
+            raw = llm_fn(prompt)
+            match = re.search(r"\[.*\]", raw, re.DOTALL)
+            if not match:
+                continue
+            results = _json.loads(match.group(0))
+            for item in results:
+                idx1 = item.get("claim_1_index", 0) - 1
+                idx2 = item.get("claim_2_index", 0) - 1
+                if 0 <= idx1 < len(batch) and 0 <= idx2 < len(batch):
+                    c1, c2 = batch[idx1], batch[idx2]
+                    out.append(
+                        FactContradiction(
+                            claim_1=c1.text,
+                            claim_2=c2.text,
+                            source_1=f"[{c1.doc_id}] {c1.section}",
+                            source_2=f"[{c2.doc_id}] {c2.section}",
+                            type=item.get("type", "semantic"),
+                            confidence=0.7,
+                            explanation=item.get("explanation", ""),
+                        )
                     )
-                )
-    except Exception as exc:
-        logger.debug("llm_cross_doc_contradiction_check_failed", error=str(exc))
+        except Exception as exc:
+            logger.debug("llm_cross_doc_contradiction_check_failed", error=str(exc))
 
 
 def detect_cross_document_contradictions(
@@ -1141,7 +1181,7 @@ def detect_cross_document_contradictions(
     # ------------------------------------------------------------------
     all_claims: list[_Claim] = []
     for doc_id, skeleton, kv_store in documents:
-        doc_claims = _extract_key_claims(skeleton, kv_store, doc_id, max_claims=30)
+        doc_claims = _extract_key_claims(skeleton, kv_store, doc_id)
         all_claims.extend(doc_claims)
 
     if len(all_claims) >= 2:

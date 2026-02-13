@@ -278,6 +278,30 @@ class DocumentStore:
         logger.info("document_removed", doc_id=doc_id)
         return True
     
+    def clear_all(self) -> int:
+        """
+        Remove all documents and reset the catalog.
+        
+        Returns:
+            Number of documents removed
+        """
+        doc_ids = list(self._catalog.keys())
+        for doc_id in doc_ids:
+            index_path = self.store_path / doc_id
+            delete_index(index_path)
+        
+        # Also remove the workspace KG if it exists
+        kg_path = self.store_path / "workspace_kg.db"
+        if kg_path.exists():
+            kg_path.unlink()
+        
+        count = len(self._catalog)
+        self._catalog.clear()
+        self._save_catalog()
+        
+        logger.info("store_cleared", documents_removed=count)
+        return count
+    
     def get_document(
         self,
         doc_id: str,

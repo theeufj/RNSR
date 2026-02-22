@@ -508,6 +508,57 @@ print(f"Documents used: {result['documents_used']}")
 
 The demo UI includes a **Multi-Document** tab where you can upload multiple PDFs, build the workspace KG, and run cross-document queries interactively.
 
+### Batch Ingestion
+
+Ingest an entire folder of documents (or a list of files) into a `DocumentStore` in one call:
+
+```python
+from rnsr import DocumentStore
+
+store = DocumentStore("./my_store/")
+
+# Ingest all PDFs in a folder
+result = store.batch_ingest("./contracts/")
+
+# Recurse into subdirectories
+result = store.batch_ingest("./contracts/", recursive=True)
+
+# Ingest a specific list of files
+result = store.batch_ingest([
+    "report_q1.pdf",
+    "report_q2.pdf",
+    "report_q3.pdf",
+])
+
+# Parallel ingestion with KG build
+result = store.batch_ingest(
+    "./contracts/",
+    recursive=True,
+    max_workers=4,
+    build_kg=True,      # build workspace KG + entity linking after ingestion
+    skip_existing=True,  # skip files already in the catalog
+)
+
+print(f"{result.succeeded}/{result.total} ingested in {result.elapsed_seconds:.1f}s")
+print(f"Skipped: {result.skipped}, Failed: {result.failed}")
+```
+
+The same functionality is available from the command line:
+
+```bash
+# Flat folder
+python -m rnsr batch-ingest ./docs/
+
+# Recursive with parallel workers
+python -m rnsr batch-ingest ./docs/ --recursive --workers 4
+
+# Explicit file list
+python -m rnsr batch-ingest file1.pdf file2.pdf file3.pdf
+
+# Custom store path, glob pattern, and KG build
+python -m rnsr batch-ingest ./docs/ -s ./my_store/ -g "*.pdf" --build-kg
+```
+
 ### Bring Your Own Data (BYOD)
 
 For maximum flexibility, you can build indexes externally and pass them into RNSR:

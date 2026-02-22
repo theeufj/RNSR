@@ -27,10 +27,12 @@ from __future__ import annotations
 import hashlib
 import json
 import shutil
+import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field, asdict
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Iterator
+from typing import Any, Callable, Iterator
 
 import structlog
 
@@ -62,6 +64,31 @@ class DocumentInfo:
     
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
+
+
+@dataclass
+class BatchProgress:
+    """Progress update emitted after each file during batch ingestion."""
+
+    completed: int
+    total: int
+    current_file: str
+    doc_id: str | None
+    status: str  # "success" | "skipped" | "error"
+    error: str | None = None
+
+
+@dataclass
+class BatchResult:
+    """Aggregate result of a batch ingestion run."""
+
+    total: int
+    succeeded: int
+    skipped: int
+    failed: int
+    doc_ids: list[str] = field(default_factory=list)
+    errors: list[dict[str, str]] = field(default_factory=list)
+    elapsed_seconds: float = 0.0
 
 
 class DocumentStore:
@@ -254,6 +281,190 @@ class DocumentStore:
         
         return doc_id
     
+    def batch_ingest(
+        self,
+        sources: str | Path | list[str | Path],
+        recursive: bool = False,
+        glob_pattern: str = "*.pdf",
+        metadata: dict[str, Any] | None = None,
+        skip_existing: bool = True,
+        max_workers: int = 1,
+        build_kg: bool = False,
+        on_progress: Callable[[BatchProgress], None] | None = None,
+    ) -> BatchResult:
+        """
+        Ingest multiple documents in batch.
+
+        Accepts a folder path, a list of file paths, or a single file path.
+        Each file is ingested independently so one failure does not abort the
+        rest of the batch.
+
+        Args:
+            sources: Directory path, single file path, or list of file paths.
+            recursive: When *sources* is a directory, recurse into
+                subdirectories.
+            glob_pattern: Glob used to discover files inside a directory
+                (default ``"*.pdf"``).
+            metadata: Metadata dict applied to every ingested document.
+            skip_existing: Skip files whose generated doc_id is already in the
+                catalog.
+            max_workers: Number of parallel ingestion workers.  Set to 1 for
+                sequential processing.
+            build_kg: If ``True``, call :meth:`build_workspace_kg` and
+                :meth:`link_entities_across_documents` after ingestion.
+            on_progress: Optional callback invoked after each file is
+                processed.
+
+        Returns:
+            A :class:`BatchResult` summarising the run.
+
+        Example::
+
+            result = store.batch_ingest("./contracts/", recursive=True)
+            print(f"{result.succeeded}/{result.total} documents ingested")
+        """
+        files = self._resolve_sources(sources, recursive, glob_pattern)
+
+        if not files:
+            logger.warning("batch_ingest_no_files", sources=str(sources))
+            return BatchResult(total=0, succeeded=0, skipped=0, failed=0)
+
+        logger.info(
+            "batch_ingest_start",
+            total_files=len(files),
+            max_workers=max_workers,
+        )
+
+        start = time.monotonic()
+        succeeded = 0
+        skipped = 0
+        failed = 0
+        doc_ids: list[str] = []
+        errors: list[dict[str, str]] = []
+        completed = 0
+
+        def _ingest_one(file_path: Path) -> tuple[str, str | None, str | None]:
+            """Returns (status, doc_id_or_none, error_or_none)."""
+            fpath = Path(file_path)
+            candidate_id = hashlib.md5(
+                f"{fpath.name}_{fpath.stat().st_size}".encode()
+            ).hexdigest()[:12]
+
+            if skip_existing and candidate_id in self._catalog:
+                return ("skipped", candidate_id, None)
+
+            try:
+                doc_id = self.add_document(
+                    fpath, doc_id=candidate_id, metadata=metadata
+                )
+                return ("success", doc_id, None)
+            except Exception as exc:
+                return ("error", None, str(exc))
+
+        if max_workers <= 1:
+            for fpath in files:
+                status, doc_id, error = _ingest_one(fpath)
+                completed += 1
+                if status == "success":
+                    succeeded += 1
+                    doc_ids.append(doc_id)  # type: ignore[arg-type]
+                elif status == "skipped":
+                    skipped += 1
+                else:
+                    failed += 1
+                    errors.append({"file": str(fpath), "error": error or ""})
+
+                if on_progress:
+                    on_progress(BatchProgress(
+                        completed=completed,
+                        total=len(files),
+                        current_file=str(fpath),
+                        doc_id=doc_id,
+                        status=status,
+                        error=error,
+                    ))
+        else:
+            with ThreadPoolExecutor(max_workers=max_workers) as pool:
+                future_to_path = {
+                    pool.submit(_ingest_one, fp): fp for fp in files
+                }
+                for future in as_completed(future_to_path):
+                    fpath = future_to_path[future]
+                    status, doc_id, error = future.result()
+                    completed += 1
+                    if status == "success":
+                        succeeded += 1
+                        doc_ids.append(doc_id)  # type: ignore[arg-type]
+                    elif status == "skipped":
+                        skipped += 1
+                    else:
+                        failed += 1
+                        errors.append({"file": str(fpath), "error": error or ""})
+
+                    if on_progress:
+                        on_progress(BatchProgress(
+                            completed=completed,
+                            total=len(files),
+                            current_file=str(fpath),
+                            doc_id=doc_id,
+                            status=status,
+                            error=error,
+                        ))
+
+        elapsed = time.monotonic() - start
+
+        result = BatchResult(
+            total=len(files),
+            succeeded=succeeded,
+            skipped=skipped,
+            failed=failed,
+            doc_ids=doc_ids,
+            errors=errors,
+            elapsed_seconds=round(elapsed, 2),
+        )
+
+        logger.info(
+            "batch_ingest_complete",
+            total=result.total,
+            succeeded=result.succeeded,
+            skipped=result.skipped,
+            failed=result.failed,
+            elapsed=result.elapsed_seconds,
+        )
+
+        if build_kg and doc_ids:
+            logger.info("batch_ingest_building_kg", doc_count=len(doc_ids))
+            self.build_workspace_kg(doc_ids=doc_ids)
+            self.link_entities_across_documents(doc_ids=doc_ids)
+
+        return result
+
+    @staticmethod
+    def _resolve_sources(
+        sources: str | Path | list[str | Path],
+        recursive: bool,
+        glob_pattern: str,
+    ) -> list[Path]:
+        """Normalise *sources* into a flat list of file paths."""
+        if isinstance(sources, (str, Path)):
+            source_path = Path(sources)
+            if source_path.is_dir():
+                pattern = f"**/{glob_pattern}" if recursive else glob_pattern
+                return sorted(source_path.glob(pattern))
+            if source_path.is_file():
+                return [source_path]
+            return []
+
+        resolved: list[Path] = []
+        for s in sources:
+            p = Path(s)
+            if p.is_dir():
+                pattern = f"**/{glob_pattern}" if recursive else glob_pattern
+                resolved.extend(sorted(p.glob(pattern)))
+            elif p.is_file():
+                resolved.append(p)
+        return resolved
+
     def remove_document(self, doc_id: str) -> bool:
         """
         Remove a document from the store.

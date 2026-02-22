@@ -4,6 +4,7 @@ RNSR CLI - Command Line Interface
 Usage:
     python -m rnsr ingest document.pdf
     python -m rnsr query "What are the payment terms?"
+    python -m rnsr batch-ingest ./docs/ --recursive --store ./my_store/
 """
 
 from __future__ import annotations
@@ -123,6 +124,60 @@ def cmd_query(args):
             print(f"  [{entry['node_type']}] {entry['action']}")
 
 
+def cmd_batch_ingest(args):
+    """Batch-ingest documents from folders or file lists into a DocumentStore."""
+    from rnsr.document_store import DocumentStore, BatchProgress
+
+    store = DocumentStore(args.store)
+
+    sources = args.sources
+    if len(sources) == 1:
+        sources = sources[0]
+
+    def _on_progress(p: BatchProgress) -> None:
+        tag = {"success": "+", "skipped": "~", "error": "!"}[p.status]
+        name = Path(p.current_file).name
+        print(f"  [{tag}] ({p.completed}/{p.total}) {name}", end="")
+        if p.status == "error":
+            print(f"  -- {p.error}", end="")
+        print()
+
+    print(f"Store: {args.store}")
+    print(f"Sources: {args.sources}")
+    if args.recursive:
+        print(f"Recursive: yes")
+    print(f"Glob: {args.glob}")
+    print(f"Workers: {args.workers}")
+    print("-" * 50)
+
+    result = store.batch_ingest(
+        sources=sources,
+        recursive=args.recursive,
+        glob_pattern=args.glob,
+        skip_existing=args.skip_existing,
+        max_workers=args.workers,
+        build_kg=args.build_kg,
+        on_progress=_on_progress,
+    )
+
+    print("-" * 50)
+    print(f"Total:     {result.total}")
+    print(f"Succeeded: {result.succeeded}")
+    print(f"Skipped:   {result.skipped}")
+    print(f"Failed:    {result.failed}")
+    print(f"Elapsed:   {result.elapsed_seconds:.1f}s")
+
+    if result.errors:
+        print(f"\nErrors:")
+        for err in result.errors:
+            print(f"  {err['file']}: {err['error']}")
+
+    if result.doc_ids:
+        print(f"\nDocument IDs:")
+        for doc_id in result.doc_ids:
+            print(f"  {doc_id}")
+
+
 def cmd_benchmark(args):
     """Run benchmarks on the RNSR system."""
     from .benchmarks import BenchmarkRunner, BenchmarkConfig
@@ -187,6 +242,39 @@ def main():
     query_parser.add_argument("--max-iter", type=int, default=20, help="Max iterations")
     query_parser.add_argument("--trace", action="store_true", help="Show trace")
     
+    # Batch-ingest command
+    batch_parser = subparsers.add_parser(
+        "batch-ingest", help="Batch-ingest documents from folders or file lists"
+    )
+    batch_parser.add_argument(
+        "sources", nargs="+",
+        help="Folder path(s) or individual file path(s) to ingest",
+    )
+    batch_parser.add_argument(
+        "-s", "--store", default=".rnsr_store",
+        help="Path to DocumentStore directory (default: .rnsr_store/)",
+    )
+    batch_parser.add_argument(
+        "-r", "--recursive", action="store_true",
+        help="Recurse into subdirectories when sources are folders",
+    )
+    batch_parser.add_argument(
+        "-g", "--glob", default="*.pdf",
+        help="File glob pattern for directory scanning (default: *.pdf)",
+    )
+    batch_parser.add_argument(
+        "-w", "--workers", type=int, default=1,
+        help="Number of parallel ingestion workers (default: 1)",
+    )
+    batch_parser.add_argument(
+        "--build-kg", action="store_true",
+        help="Build workspace knowledge graph after ingestion",
+    )
+    batch_parser.add_argument(
+        "--skip-existing", action=argparse.BooleanOptionalAction, default=True,
+        help="Skip documents already in the store (default: --skip-existing)",
+    )
+
     # Benchmark command
     bench_parser = subparsers.add_parser("benchmark", help="Run benchmarks")
     bench_parser.add_argument(
@@ -232,6 +320,8 @@ def main():
         cmd_index(args)
     elif args.command == "query":
         cmd_query(args)
+    elif args.command == "batch-ingest":
+        cmd_batch_ingest(args)
     elif args.command == "benchmark":
         cmd_benchmark(args)
     else:

@@ -4,6 +4,9 @@ Run RNSR on a subset of FinanceBench questions.
 
 Picks a diverse set of questions across companies/question types,
 downloads the PDFs, runs RNSR via RNSRClient.ask(), and scores with LLM-as-judge.
+
+Ordered smallest-first (8-K → earnings → 10-Q → 10-K) so you see results fast.
+Includes a per-question timeout to prevent hanging on huge documents.
 """
 from __future__ import annotations
 
@@ -13,6 +16,7 @@ import re
 import sys
 import time
 import hashlib
+import multiprocessing
 import requests
 from pathlib import Path
 from dataclasses import dataclass, asdict
@@ -27,27 +31,32 @@ logger = structlog.get_logger()
 CACHE_DIR = Path("rnsr/benchmarks/data/financebench")
 RESULTS_FILE = Path("benchmark_results/financebench_results.json")
 MAX_QUESTIONS = int(os.getenv("FINBENCH_MAX", "15"))
+# Per-question timeout in seconds (0 = no timeout; override with env var)
+QUESTION_TIMEOUT = int(os.getenv("FINBENCH_TIMEOUT", "0"))
 
 # Hand-picked diverse subset: idx in HF dataset
-# Ordered smallest-first (8-K/earnings before 10-K) for faster initial results.
-# Covers: J&J, MGM, Pfizer, AES, Activision, Amcor, AMD, AmEx, Best Buy,
-#          CVS, PepsiCo, Verizon, Boeing, 3M
+# All links verified alive 2026-02-14.  Ordered smallest → largest doc.
+# 15 questions across 10 companies, 4 doc types (8-K, earnings, 10-Q, 10-K).
 SELECTED_INDICES = [
-    # --- Verified working links, ordered by expected doc size ---
-    130,  # Pfizer 2021 10K - PPNE growth (extraction)
-    15,   # AES 2022 10K - restructuring costs (extraction)
-    8,    # Activision 2019 10K - fixed asset turnover (numerical)
-    23,   # Amcor 2023 10K - quick ratio (numerical + logical)
-    31,   # AMD 2022 10K - liquidity / quick ratio (logical)
-    38,   # AmEx 2022 10K - debt securities (extraction)
-    50,   # Best Buy 2023 10K - gross margin consistency (logical)
-    76,   # CVS 2022 10K - capital intensity (logical)
-    85,   # J&J 2022 10K - high growth assessment (logical)
-    120,  # PepsiCo 2022 10K - geographies (extraction)
-    144,  # Verizon 2022 10K - liquidity / quick ratio (logical)
-    0,    # 3M 2018 10K - capex extraction (metrics)
-    2,    # 3M 2022 10K - capital intensity (logical reasoning)
-    # NOTE: idx 90 (J&J 8K) and 106 (MGM earnings) have dead PDF links
+    # --- 8-K filings (tiny, ~2-5 pages) ---
+    80,   # Foot Locker 8K May-2022  — board votes (extraction)
+    22,   # Amcor 8K Jul-2022        — key filing agenda (extraction)
+    125,  # PepsiCo 8K May-2023      — AGM shareholder vote outcome
+    29,   # Amcor Q4 FY2023 earnings — real change in sales (reasoning)
+    # --- Earnings releases (~5-15 pages) ---
+    128,  # PepsiCo 2023Q1 earnings  — why raise guidance (reasoning)
+    129,  # PepsiCo 2023Q1 earnings  — guidance raise amount (numerical)
+    28,   # Amcor Q4 FY2023 earnings — adj. EBITDA (numerical extraction)
+    # --- 10-Q filings (~30-80 pages) ---
+    5,    # 3M 2023Q2 10Q            — quick ratio / liquidity (domain)
+    53,   # Best Buy 2024Q2 10Q      — cash equiv. drop (extraction)
+    109,  # MGM 2023Q2 10Q           — short-term debt type (extraction)
+    94,   # JPMorgan 2021Q1 10Q      — lowest net revenue segment
+    # --- 10-K filings (~100-300 pages) ---
+    50,   # Best Buy 2023 10K        — gross margin consistency (logical)
+    8,    # Activision 2019 10K      — fixed asset turnover (numerical)
+    130,  # Pfizer 2021 10K          — PPNE growth (extraction)
+    31,   # AMD 2022 10K             — quick ratio / liquidity (logical)
 ]
 
 
@@ -66,25 +75,96 @@ class FBResult:
 
 
 # ---------------------------------------------------------------------------
+# Child-process worker (runs in separate process for timeout isolation)
+# ---------------------------------------------------------------------------
+
+
+def _run_question_in_process(pdf_path_str, question, result_queue):
+    """Worker function that runs in a child process."""
+    try:
+        from rnsr import RNSRClient
+        client = RNSRClient()
+        result = client.ask(pdf_path_str, question, use_knowledge_graph=True)
+        answer = result.get("answer", "") if isinstance(result, dict) else str(result)
+        result_queue.put(("ok", answer))
+    except Exception as e:
+        import traceback
+        result_queue.put(("error", f"{e}\n{traceback.format_exc()}"))
+
+
+# ---------------------------------------------------------------------------
 # PDF download
 # ---------------------------------------------------------------------------
+
+GITHUB_PDF_BASE = (
+    "https://raw.githubusercontent.com/patronus-ai/financebench/main/pdfs"
+)
+
+
+def _is_valid_pdf(path: Path) -> bool:
+    """Check that a file is a real PDF by inspecting its magic bytes."""
+    try:
+        with open(path, "rb") as f:
+            return f.read(5) == b"%PDF-"
+    except Exception:
+        return False
+
 
 def _download_pdf(url: str, doc_name: str) -> Path | None:
     CACHE_DIR.mkdir(parents=True, exist_ok=True)
     h = hashlib.md5(url.encode()).hexdigest()[:8]
     safe = "".join(c if c.isalnum() or c in "_-." else "_" for c in doc_name)
     path = CACHE_DIR / f"{h}_{safe}.pdf"
-    if path.exists() and path.stat().st_size > 1000:
+
+    if path.exists() and path.stat().st_size > 1000 and _is_valid_pdf(path):
         return path
-    try:
-        logger.info("downloading_pdf", doc=doc_name, url=url[:80])
-        r = requests.get(url, timeout=120)
-        r.raise_for_status()
-        path.write_bytes(r.content)
-        return path
-    except Exception as e:
-        logger.error("pdf_download_failed", doc=doc_name, error=str(e))
-        return None
+
+    # Remove any invalid cached file so we re-download
+    if path.exists():
+        logger.warning("removing_invalid_cached_pdf", path=str(path))
+        path.unlink()
+
+    urls_to_try = [
+        url,
+        f"{GITHUB_PDF_BASE}/{doc_name}.pdf",
+    ]
+
+    for attempt_url in urls_to_try:
+        try:
+            logger.info("downloading_pdf", doc=doc_name, url=attempt_url[:120])
+            r = requests.get(attempt_url, timeout=120)
+            r.raise_for_status()
+
+            content_type = r.headers.get("Content-Type", "")
+            if "html" in content_type and "pdf" not in content_type:
+                logger.warning(
+                    "skipping_non_pdf_response",
+                    doc=doc_name,
+                    content_type=content_type,
+                    url=attempt_url[:120],
+                )
+                continue
+
+            path.write_bytes(r.content)
+
+            if not _is_valid_pdf(path):
+                logger.warning(
+                    "downloaded_file_not_valid_pdf",
+                    doc=doc_name,
+                    url=attempt_url[:120],
+                )
+                path.unlink(missing_ok=True)
+                continue
+
+            logger.info("pdf_download_ok", doc=doc_name, size=path.stat().st_size)
+            return path
+
+        except Exception as e:
+            logger.warning("pdf_download_attempt_failed", doc=doc_name, error=str(e))
+            continue
+
+    logger.error("pdf_download_failed_all_sources", doc=doc_name)
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -129,12 +209,10 @@ Respond with EXACTLY this JSON:
 
 def main():
     from datasets import load_dataset
-    from rnsr import RNSRClient
     from rnsr.llm import get_llm
 
     ds = load_dataset("PatronusAI/financebench", split="train")
     llm = get_llm()
-    client = RNSRClient()
 
     indices = SELECTED_INDICES[:MAX_QUESTIONS]
     results: list[FBResult] = []
@@ -163,41 +241,68 @@ def main():
                          time_seconds=0, error="PDF download failed")
             results.append(r)
             print(f"  SKIP: PDF download failed\n")
+            _save_results(results, indices)
             continue
 
-        # Run RNSR via client
-        try:
-            t0 = time.time()
-            result = client.ask(
-                str(pdf_path),
-                question,
-                use_knowledge_graph=True,
-            )
-            elapsed = time.time() - t0
+        # Run RNSR in a child process with a hard timeout via proc.join(timeout)
+        t0 = time.time()
+        result_queue = multiprocessing.Queue()
+        proc = multiprocessing.Process(
+            target=_run_question_in_process,
+            args=(str(pdf_path), question, result_queue),
+        )
+        proc.start()
 
-            answer = result.get("answer", "") if isinstance(result, dict) else str(result)
-            correct, reasoning = _judge_answer(question, expected, answer, llm)
+        # Wait for child (timeout=None when QUESTION_TIMEOUT==0)
+        proc.join(timeout=QUESTION_TIMEOUT or None)
+        timed_out_flag = QUESTION_TIMEOUT > 0 and proc.is_alive()
+        if timed_out_flag:
+            logger.warning("killing_timed_out_child",
+                           pid=proc.pid, timeout=QUESTION_TIMEOUT)
+            proc.kill()
+            proc.join(timeout=10)
+        elapsed = time.time() - t0
 
-            r = FBResult(idx=idx, company=company, doc_name=doc_name,
-                         question=question, expected_answer=expected,
-                         rnsr_answer=answer[:500], correct=correct,
-                         judge_reasoning=reasoning, time_seconds=elapsed)
-            results.append(r)
-
-            status = "CORRECT" if correct else "WRONG"
-            print(f"  A: {answer[:120]}...")
-            print(f"  Expected: {expected[:120]}...")
-            print(f"  Judge: {status} — {reasoning[:80]}")
-            print(f"  Time: {elapsed:.1f}s\n")
-        except Exception as e:
-            import traceback
-            traceback.print_exc()
+        if timed_out_flag:
             r = FBResult(idx=idx, company=company, doc_name=doc_name,
                          question=question, expected_answer=expected,
                          rnsr_answer="", correct=False, judge_reasoning="",
-                         time_seconds=0, error=str(e)[:200])
+                         time_seconds=elapsed,
+                         error=f"Timeout after {QUESTION_TIMEOUT}s")
             results.append(r)
-            print(f"  ERROR: {str(e)[:120]}\n")
+            print(f"  TIMEOUT after {elapsed:.0f}s — skipping\n")
+        elif not result_queue.empty():
+            status_str, payload = result_queue.get_nowait()
+            if status_str == "ok":
+                answer = payload
+                correct, reasoning = _judge_answer(question, expected, answer, llm)
+
+                r = FBResult(idx=idx, company=company, doc_name=doc_name,
+                             question=question, expected_answer=expected,
+                             rnsr_answer=answer[:500], correct=correct,
+                             judge_reasoning=reasoning, time_seconds=elapsed)
+                results.append(r)
+
+                verdict = "CORRECT" if correct else "WRONG"
+                print(f"  A: {answer[:120]}...")
+                print(f"  Expected: {expected[:120]}...")
+                print(f"  Judge: {verdict} — {reasoning[:80]}")
+                print(f"  Time: {elapsed:.1f}s\n")
+            else:
+                r = FBResult(idx=idx, company=company, doc_name=doc_name,
+                             question=question, expected_answer=expected,
+                             rnsr_answer="", correct=False, judge_reasoning="",
+                             time_seconds=elapsed, error=payload[:200])
+                results.append(r)
+                print(f"  ERROR: {payload[:120]}\n")
+        else:
+            r = FBResult(idx=idx, company=company, doc_name=doc_name,
+                         question=question, expected_answer=expected,
+                         rnsr_answer="", correct=False, judge_reasoning="",
+                         time_seconds=elapsed,
+                         error="Process exited without result")
+            results.append(r)
+            print(f"  ERROR: Process exited without result\n")
 
         # Save incremental results after each question
         _save_results(results, indices)
@@ -256,4 +361,5 @@ def _print_summary(results: list[FBResult], indices: list[int]):
 
 
 if __name__ == "__main__":
+    multiprocessing.set_start_method("spawn", force=True)
     main()

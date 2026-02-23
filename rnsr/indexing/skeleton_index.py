@@ -41,12 +41,13 @@ def generate_summary(
     content: str,
     max_words: int | None = None,
     child_headers: list[str] | None = None,
+    child_contents: list[str] | None = None,
 ) -> str:
     """Generate a summary for a node's content.
 
     For **parent / group nodes** with children, produces a table-of-contents
-    style summary listing child section headers.  This gives ToT far better
-    signal than the first 100 words of (possibly empty) group content.
+    style summary listing child section headers, enriched with content
+    previews so ToT can see actual data (numbers, terms) in each branch.
 
     For **leaf nodes**, returns the full content so that no facts are lost.
     An optional *max_words* cap can be passed for callers that need a
@@ -58,13 +59,23 @@ def generate_summary(
             returns the full content.
         child_headers: Optional list of child-node headers.  When provided
             (and non-empty), the summary becomes a table-of-contents.
+        child_contents: Optional list of child content strings. When
+            provided alongside child_headers, a content preview is appended.
 
     Returns:
         Summary text.
     """
-    # Table-of-contents summary for parent nodes
     if child_headers:
         toc = ", ".join(h for h in child_headers if h)
+        # Append content previews so ToT sees real data, not just headers
+        if child_contents:
+            snippets = []
+            for cc in child_contents[:5]:
+                if cc:
+                    words = cc.split()[:30]
+                    snippets.append(" ".join(words))
+            if snippets:
+                return f"Contains: {toc} | Preview: {' ... '.join(snippets)}"
         return f"Contains: {toc}"
 
     if not content:
@@ -204,15 +215,22 @@ class SkeletonIndexBuilder:
         nodes: Dictionary of node_id -> SkeletonNode.
     """
     
-    def __init__(self, kv_store: KVStore | None = None):
+    def __init__(self, kv_store: KVStore | None = None, tables: list | None = None):
         """
         Initialize the builder.
         
         Args:
             kv_store: KV store instance. Defaults to InMemoryKVStore.
+            tables: Optional list of DetectedTable objects for table metadata.
         """
         self.kv_store = kv_store or InMemoryKVStore()
         self.nodes: dict[str, SkeletonNode] = {}
+        # Build a lookup of node_id -> tables for metadata annotation
+        self._tables_by_node: dict[str, list] = {}
+        for t in (tables or []):
+            nid = getattr(t, "node_id", None)
+            if nid:
+                self._tables_by_node.setdefault(nid, []).append(t)
         
         logger.info("skeleton_builder_initialized")
     
@@ -265,9 +283,11 @@ class SkeletonIndexBuilder:
         
         # Generate summary.
         # For parent nodes with children, produce a table-of-contents
-        # listing the child headers so ToT can make informed decisions.
+        # listing the child headers with content previews so ToT can
+        # see actual data when making branch decisions.
         child_headers = [c.header for c in node.children] if node.children else None
-        summary = generate_summary(full_content, child_headers=child_headers)
+        child_contents = [self._collect_content(c) for c in node.children] if node.children else None
+        summary = generate_summary(full_content, child_headers=child_headers, child_contents=child_contents)
         
         # Propagate node-level metadata (e.g. is_table) into the skeleton
         skel_metadata: dict[str, Any] = {
@@ -276,6 +296,15 @@ class SkeletonIndexBuilder:
         }
         if hasattr(node, "metadata") and node.metadata:
             skel_metadata.update(node.metadata)
+        
+        # Annotate with table metadata so ToT knows which sections have tables
+        node_tables = self._tables_by_node.get(node.id, [])
+        if node_tables:
+            skel_metadata["has_tables"] = True
+            skel_metadata["table_count"] = len(node_tables)
+            skel_metadata["table_headers"] = [
+                getattr(t, "headers", []) for t in node_tables
+            ]
 
         # Create skeleton node
         skeleton = SkeletonNode(
@@ -342,6 +371,7 @@ class SkeletonIndexBuilder:
 def build_skeleton_index(
     tree: DocumentTree,
     kv_store: KVStore | None = None,
+    tables: list | None = None,
 ) -> tuple[dict[str, SkeletonNode], KVStore]:
     """
     Convenience function to build a skeleton index.
@@ -349,6 +379,7 @@ def build_skeleton_index(
     Args:
         tree: Document tree to index.
         kv_store: Optional KV store (defaults to InMemoryKVStore).
+        tables: Optional list of DetectedTable objects for table metadata.
         
     Returns:
         Tuple of (skeleton_nodes dict, kv_store).
@@ -368,7 +399,7 @@ def build_skeleton_index(
                 content = kv.get(child_id)
     """
     kv_store = kv_store or InMemoryKVStore()
-    builder = SkeletonIndexBuilder(kv_store)
+    builder = SkeletonIndexBuilder(kv_store, tables=tables)
     nodes = builder.build_from_tree(tree)
     return nodes, kv_store
 

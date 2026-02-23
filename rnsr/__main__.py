@@ -267,8 +267,8 @@ def main():
         help="Number of parallel ingestion workers (default: 1)",
     )
     batch_parser.add_argument(
-        "--build-kg", action="store_true",
-        help="Build workspace knowledge graph after ingestion",
+        "--build-kg", action=argparse.BooleanOptionalAction, default=True,
+        help="Build workspace knowledge graph after ingestion (default: --build-kg)",
     )
     batch_parser.add_argument(
         "--skip-existing", action=argparse.BooleanOptionalAction, default=True,

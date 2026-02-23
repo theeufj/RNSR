@@ -289,7 +289,7 @@ class DocumentStore:
         metadata: dict[str, Any] | None = None,
         skip_existing: bool = True,
         max_workers: int = 1,
-        build_kg: bool = False,
+        build_kg: bool = True,
         on_progress: Callable[[BatchProgress], None] | None = None,
     ) -> BatchResult:
         """
@@ -310,8 +310,9 @@ class DocumentStore:
                 catalog.
             max_workers: Number of parallel ingestion workers.  Set to 1 for
                 sequential processing.
-            build_kg: If ``True``, call :meth:`build_workspace_kg` and
-                :meth:`link_entities_across_documents` after ingestion.
+            build_kg: Call :meth:`build_workspace_kg` and
+                :meth:`link_entities_across_documents` after ingestion
+                (default ``True``).
             on_progress: Optional callback invoked after each file is
                 processed.
 

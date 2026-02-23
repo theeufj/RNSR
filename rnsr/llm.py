@@ -91,6 +91,11 @@ PROVIDER_FALLBACK_CHAIN = {
 }
 
 
+# Per-request HTTP timeout in seconds.  Prevents hung connections from
+# blocking the pipeline forever.  Override with RNSR_LLM_TIMEOUT.
+REQUEST_TIMEOUT = int(os.getenv("RNSR_LLM_TIMEOUT", "120"))
+
+
 def is_rate_limit_error(error: Exception) -> bool:
     """Check if an error is a rate limit/quota error that should trigger fallback."""
     error_str = str(error).lower()
@@ -126,6 +131,27 @@ def is_rate_limit_error(error: Exception) -> bool:
     return False
 
 
+def is_connection_error(error: Exception) -> bool:
+    """Check if an error is a connection-level failure that should trigger
+    immediate fallback (no point retrying the same broken connection)."""
+    if isinstance(error, (ConnectionRefusedError, ConnectionResetError,
+                          ConnectionAbortedError, TimeoutError)):
+        return True
+    error_str = str(error).lower()
+    conn_indicators = [
+        "connection refused",
+        "connection reset",
+        "connection aborted",
+        "connection error",
+        "timed out",
+        "timeout",
+        "errno 61",
+        "errno 54",
+        "errno 104",
+    ]
+    return any(ind in error_str for ind in conn_indicators)
+
+
 def get_available_fallback_providers(primary: LLMProvider) -> list[LLMProvider]:
     """Get list of available fallback providers for a given primary provider."""
     fallbacks = []
@@ -137,19 +163,40 @@ def get_available_fallback_providers(primary: LLMProvider) -> list[LLMProvider]:
 
 def detect_provider() -> LLMProvider:
     """
-    Auto-detect LLM provider from environment variables.
-    
-    Checks for API keys in order:
-    1. GOOGLE_API_KEY -> Gemini
-    2. ANTHROPIC_API_KEY -> Anthropic
-    3. OPENAI_API_KEY -> OpenAI
-    
+    Detect LLM provider.
+
+    Priority:
+    1. Explicit ``LLM_PROVIDER`` env var (openai / anthropic / gemini)
+    2. Auto-detect from available API keys:
+       GOOGLE_API_KEY -> Gemini, ANTHROPIC_API_KEY -> Anthropic,
+       OPENAI_API_KEY -> OpenAI
+
     Returns:
         Detected LLMProvider.
-        
+
     Raises:
         ValueError: If no API key is found.
     """
+    explicit = os.getenv("LLM_PROVIDER", "").strip().lower()
+    if explicit and explicit != "auto":
+        mapping = {
+            "openai": LLMProvider.OPENAI,
+            "anthropic": LLMProvider.ANTHROPIC,
+            "gemini": LLMProvider.GEMINI,
+        }
+        if explicit in mapping:
+            prov = mapping[explicit]
+            if validate_provider(prov):
+                logger.info("provider_from_env", provider=explicit)
+                return prov
+            logger.warning(
+                "provider_env_set_but_no_key",
+                provider=explicit,
+                hint="Falling back to auto-detect",
+            )
+        else:
+            logger.warning("unknown_llm_provider_env", value=explicit)
+
     if os.getenv("GOOGLE_API_KEY"):
         logger.info("provider_detected", provider="gemini")
         return LLMProvider.GEMINI
@@ -466,7 +513,7 @@ class ResilientLLMWrapper:
         return llms
     
     def _call_with_fallback(self, method_name: str, *args: Any, **kwargs: Any) -> Any:
-        """Call a method with automatic fallback on rate limits."""
+        """Call a method with automatic fallback on rate limits and connection errors."""
         last_error = None
         
         for provider, llm in self._get_available_llms():
@@ -496,25 +543,36 @@ class ResilientLLMWrapper:
                             attempt=attempt + 1,
                             error=str(e)[:200],
                         )
-                        
                         # Mark provider as rate limited and try next
                         self._mark_rate_limited(provider, duration=60.0)
                         break  # Move to next provider
+
+                    if is_connection_error(e):
+                        logger.warning(
+                            "connection_error_fallback",
+                            provider=provider.value,
+                            attempt=attempt + 1,
+                            error=str(e)[:200],
+                        )
+                        # Connection-level failure — skip directly to next
+                        # provider rather than retrying the same broken conn.
+                        self._mark_rate_limited(provider, duration=30.0)
+                        break
+
+                    # Other errors — retry with exponential backoff
+                    if attempt < self.max_retries - 1:
+                        delay = self.retry_delay * (2 ** attempt)
+                        logger.debug(
+                            "retrying_after_error",
+                            provider=provider.value,
+                            attempt=attempt + 1,
+                            delay=delay,
+                            error=str(e)[:100],
+                        )
+                        time.sleep(delay)
                     else:
-                        # Non-rate-limit error - retry with exponential backoff
-                        if attempt < self.max_retries - 1:
-                            delay = self.retry_delay * (2 ** attempt)
-                            logger.debug(
-                                "retrying_after_error",
-                                provider=provider.value,
-                                attempt=attempt + 1,
-                                delay=delay,
-                                error=str(e)[:100],
-                            )
-                            time.sleep(delay)
-                        else:
-                            # All retries exhausted for this provider
-                            break
+                        # All retries exhausted for this provider
+                        break
         
         # All providers failed
         logger.error(
@@ -540,8 +598,17 @@ class ResilientLLMWrapper:
                 try:
                     return llm.complete_json(prompt, **kwargs)
                 except Exception as e:
-                    if is_rate_limit_error(e):
-                        self._mark_rate_limited(provider)
+                    if is_rate_limit_error(e) or is_connection_error(e):
+                        self._mark_rate_limited(
+                            provider,
+                            duration=30.0 if is_connection_error(e) else 60.0,
+                        )
+                        logger.warning(
+                            "complete_json_fallback",
+                            provider=provider.value,
+                            error_type="connection" if is_connection_error(e) else "rate_limit",
+                            error=str(e)[:200],
+                        )
                         continue
                     raise
         # No provider had complete_json or all were rate-limited; fall back
@@ -569,8 +636,11 @@ class ResilientLLMWrapper:
                 return result
             except Exception as e:
                 last_error = e
-                if is_rate_limit_error(e):
-                    self._mark_rate_limited(provider)
+                if is_rate_limit_error(e) or is_connection_error(e):
+                    self._mark_rate_limited(
+                        provider,
+                        duration=30.0 if is_connection_error(e) else 60.0,
+                    )
                     continue
                 raise
 
@@ -593,7 +663,7 @@ class ResilientLLMWrapper:
 
 
 def _get_openai_llm(model: str, **kwargs: Any) -> Any:
-    """Get OpenAI LLM instance with ``complete_json`` support."""
+    """Get OpenAI LLM instance with ``complete_json`` support and HTTP timeout."""
     try:
         from llama_index.llms.openai import OpenAI as _OpenAI
     except ImportError:
@@ -610,8 +680,15 @@ def _get_openai_llm(model: str, **kwargs: Any) -> Any:
     _seed = int(os.getenv("RNSR_LLM_SEED", "42"))
     if "seed" not in kwargs:
         kwargs["seed"] = _seed
+
+    # HTTP-level timeout so hung connections fail fast
+    if "timeout" not in kwargs:
+        kwargs["timeout"] = float(REQUEST_TIMEOUT)
+
+    if "max_tokens" not in kwargs:
+        kwargs["max_tokens"] = int(os.getenv("RNSR_MAX_OUTPUT_TOKENS", "16384"))
     
-    logger.debug("initializing_llm", provider="openai", model=model)
+    logger.debug("initializing_llm", provider="openai", model=model, timeout=REQUEST_TIMEOUT)
 
     class _OpenAIWithJson(_OpenAI):
         """Thin subclass that adds ``complete_json()`` using JSON mode."""
@@ -620,7 +697,7 @@ def _get_openai_llm(model: str, **kwargs: Any) -> Any:
             """Complete expecting a JSON response (uses OpenAI JSON mode)."""
             try:
                 from openai import OpenAI as _RawOpenAI
-                client = _RawOpenAI()
+                client = _RawOpenAI(timeout=float(REQUEST_TIMEOUT))
                 resp = client.chat.completions.create(
                     model=self.model,
                     messages=[{"role": "user", "content": prompt}],
@@ -637,7 +714,7 @@ def _get_openai_llm(model: str, **kwargs: Any) -> Any:
 
 
 def _get_anthropic_llm(model: str, **kwargs: Any) -> Any:
-    """Get Anthropic LLM instance."""
+    """Get Anthropic LLM instance with HTTP timeout."""
     try:
         from llama_index.llms.anthropic import Anthropic
     except ImportError:
@@ -649,8 +726,15 @@ def _get_anthropic_llm(model: str, **kwargs: Any) -> Any:
     # Set temperature=0 for deterministic outputs unless overridden
     if "temperature" not in kwargs:
         kwargs["temperature"] = 0.0
+
+    # HTTP-level timeout so hung connections fail fast
+    if "timeout" not in kwargs:
+        kwargs["timeout"] = float(REQUEST_TIMEOUT)
+
+    if "max_tokens" not in kwargs:
+        kwargs["max_tokens"] = int(os.getenv("RNSR_MAX_OUTPUT_TOKENS", "16384"))
     
-    logger.debug("initializing_llm", provider="anthropic", model=model)
+    logger.debug("initializing_llm", provider="anthropic", model=model, timeout=REQUEST_TIMEOUT)
 
     class _AnthropicWithJson(Anthropic):
         """Thin subclass adding soft ``complete_json`` for Anthropic."""
@@ -675,25 +759,37 @@ def _get_gemini_llm(model: str, **kwargs: Any) -> Any:
         from google import genai
         from google.genai import types
         
-        # Define exceptions to retry on
-        # If google.api_core is available (usually is with google SDKs)
+        # ------------------------------------------------------------------
+        # Exception categories for retry logic
+        #
+        # SERVER_RETRY_EXCEPTIONS: Transient server-side errors that are worth
+        #   retrying *within* the Gemini provider (e.g. 429, 503, 500).
+        #
+        # CONNECTION_EXCEPTIONS: Network-level failures (refused, reset,
+        #   timeout).  These should NOT be retried within Gemini — they need
+        #   to propagate to the ResilientLLMWrapper for cross-provider
+        #   fallback (e.g. switch to OpenAI/Anthropic).
+        # ------------------------------------------------------------------
         try:
             from google.api_core import exceptions as google_exceptions
-            RETRY_EXCEPTIONS = (
+            SERVER_RETRY_EXCEPTIONS = (
                 google_exceptions.ServiceUnavailable,
                 google_exceptions.TooManyRequests,
                 google_exceptions.InternalServerError,
                 google_exceptions.ResourceExhausted,
                 google_exceptions.Aborted,
-                ConnectionError,
-                ConnectionRefusedError,
-                TimeoutError,
-                OSError,  # Covers [Errno 61] and other socket errors
             )
         except ImportError:
-            # Fallback: Retry on any Exception that mentions overload/503/429
-            # But simpler to just retry on Exception if we can't import specific ones
-            RETRY_EXCEPTIONS = (Exception,)
+            SERVER_RETRY_EXCEPTIONS = (Exception,)
+
+        CONNECTION_EXCEPTIONS = (
+            ConnectionError,
+            ConnectionRefusedError,
+            ConnectionResetError,
+            ConnectionAbortedError,
+            TimeoutError,
+            OSError,
+        )
 
         api_key = os.getenv("GOOGLE_API_KEY")
         if not api_key:
@@ -704,7 +800,12 @@ def _get_gemini_llm(model: str, **kwargs: Any) -> Any:
             """Wrapper for google-genai to match LlamaIndex LLM interface."""
             
             def __init__(self, model_name: str, api_key: str, temperature: float = 0.0):
-                self.client = genai.Client(api_key=api_key)
+                # Configure HTTP-level timeout so hung connections fail fast
+                http_opts = types.HttpOptions(timeout=REQUEST_TIMEOUT * 1000)  # ms
+                self.client = genai.Client(
+                    api_key=api_key,
+                    http_options=http_opts,
+                )
                 self.model_name = model_name
                 self.fallback_model = "gemini-3-flash-preview"
                 # Temperature 0 + seed for deterministic outputs
@@ -712,29 +813,37 @@ def _get_gemini_llm(model: str, **kwargs: Any) -> Any:
                 self.generation_config = types.GenerateContentConfig(
                     temperature=temperature,
                     seed=_seed,
+                    max_output_tokens=int(os.getenv("RNSR_MAX_OUTPUT_TOKENS", "16384")),
+                )
+                logger.debug(
+                    "gemini_client_initialized",
+                    model=model_name,
+                    timeout_s=REQUEST_TIMEOUT,
                 )
             
             @retry(
-                stop=stop_after_attempt(5),
-                wait=wait_exponential(multiplier=1, min=2, max=30),
-                retry=retry_if_exception_type(RETRY_EXCEPTIONS),
+                stop=stop_after_attempt(3),
+                wait=wait_exponential(multiplier=1, min=2, max=15),
+                retry=retry_if_exception_type(SERVER_RETRY_EXCEPTIONS),
             )
             def complete(self, prompt: str, **kw: Any) -> str:
+                # Connection-level errors propagate immediately to
+                # ResilientLLMWrapper for cross-provider fallback.
                 try:
-                    # Try primary model first with temperature=0 for determinism
                     response = self.client.models.generate_content(
                         model=self.model_name,
                         contents=prompt,
                         config=self.generation_config,
                     )
                     return response.text or ""
-                except RETRY_EXCEPTIONS as e:
-                    # Fallback to preview model on overload/exhaustion
+                except CONNECTION_EXCEPTIONS:
+                    raise  # Let ResilientLLMWrapper handle provider switch
+                except SERVER_RETRY_EXCEPTIONS as e:
                     logger.warning(
                         "primary_llm_overloaded_using_fallback", 
                         primary=self.model_name, 
                         fallback=self.fallback_model,
-                        error=str(e)
+                        error=str(e)[:200],
                     )
                     response = self.client.models.generate_content(
                         model=self.fallback_model,
@@ -744,15 +853,16 @@ def _get_gemini_llm(model: str, **kwargs: Any) -> Any:
                     return response.text or ""
 
             @retry(
-                stop=stop_after_attempt(5),
-                wait=wait_exponential(multiplier=1, min=2, max=30),
-                retry=retry_if_exception_type(RETRY_EXCEPTIONS),
+                stop=stop_after_attempt(3),
+                wait=wait_exponential(multiplier=1, min=2, max=15),
+                retry=retry_if_exception_type(SERVER_RETRY_EXCEPTIONS),
             )
             def complete_json(self, prompt: str, **kw: Any) -> str:
                 """Complete expecting a JSON response (uses Gemini JSON mode)."""
                 json_config = types.GenerateContentConfig(
                     temperature=self.generation_config.temperature,
                     seed=self.generation_config.seed,
+                    max_output_tokens=self.generation_config.max_output_tokens,
                     response_mime_type="application/json",
                 )
                 try:
@@ -762,12 +872,14 @@ def _get_gemini_llm(model: str, **kwargs: Any) -> Any:
                         config=json_config,
                     )
                     return response.text or ""
-                except RETRY_EXCEPTIONS as e:
+                except CONNECTION_EXCEPTIONS:
+                    raise
+                except SERVER_RETRY_EXCEPTIONS as e:
                     logger.warning(
                         "primary_llm_overloaded_using_fallback",
                         primary=self.model_name,
                         fallback=self.fallback_model,
-                        error=str(e),
+                        error=str(e)[:200],
                     )
                     response = self.client.models.generate_content(
                         model=self.fallback_model,
@@ -777,9 +889,9 @@ def _get_gemini_llm(model: str, **kwargs: Any) -> Any:
                     return response.text or ""
 
             @retry(
-                stop=stop_after_attempt(5),
-                wait=wait_exponential(multiplier=1, min=2, max=30),
-                retry=retry_if_exception_type(RETRY_EXCEPTIONS),
+                stop=stop_after_attempt(3),
+                wait=wait_exponential(multiplier=1, min=2, max=15),
+                retry=retry_if_exception_type(SERVER_RETRY_EXCEPTIONS),
             )
             def complete_with_image(self, prompt: str, image_bytes: bytes, **kw: Any) -> str:
                 """Complete a prompt with an image (multimodal)."""
@@ -794,12 +906,14 @@ def _get_gemini_llm(model: str, **kwargs: Any) -> Any:
                         config=self.generation_config,
                     )
                     return response.text or ""
-                except RETRY_EXCEPTIONS as e:
+                except CONNECTION_EXCEPTIONS:
+                    raise
+                except SERVER_RETRY_EXCEPTIONS as e:
                     logger.warning(
                         "primary_llm_overloaded_using_fallback",
                         primary=self.model_name,
                         fallback=self.fallback_model,
-                        error=str(e),
+                        error=str(e)[:200],
                     )
                     response = self.client.models.generate_content(
                         model=self.fallback_model,
@@ -809,9 +923,9 @@ def _get_gemini_llm(model: str, **kwargs: Any) -> Any:
                     return response.text or ""
 
             @retry(
-                stop=stop_after_attempt(5),
-                wait=wait_exponential(multiplier=1, min=2, max=30),
-                retry=retry_if_exception_type(RETRY_EXCEPTIONS),
+                stop=stop_after_attempt(3),
+                wait=wait_exponential(multiplier=1, min=2, max=15),
+                retry=retry_if_exception_type(SERVER_RETRY_EXCEPTIONS),
             )
             def chat(self, messages: list, **kw: Any) -> str:
                 # Convert to genai format
@@ -821,20 +935,20 @@ def _get_gemini_llm(model: str, **kwargs: Any) -> Any:
                     contents.append({"role": role, "parts": [{"text": msg.get("content", "")}]})
                 
                 try:
-                    # Try primary model first with temperature=0 for determinism
                     response = self.client.models.generate_content(
                         model=self.model_name,
                         contents=contents,
                         config=self.generation_config,
                     ) 
                     return response.text or ""
-                except RETRY_EXCEPTIONS as e:
-                    # Fallback to preview model
+                except CONNECTION_EXCEPTIONS:
+                    raise
+                except SERVER_RETRY_EXCEPTIONS as e:
                     logger.warning(
                         "primary_llm_overloaded_using_fallback", 
                         primary=self.model_name, 
                         fallback=self.fallback_model,
-                        error=str(e)
+                        error=str(e)[:200],
                     )
                     response = self.client.models.generate_content(
                         model=self.fallback_model,
@@ -850,23 +964,23 @@ def _get_gemini_llm(model: str, **kwargs: Any) -> Any:
         try:
             from llama_index.llms.gemini import Gemini
             
-            # Define exceptions for legacy/llama-index path
             try:
                 from google.api_core import exceptions as google_exceptions
-                RETRY_EXCEPTIONS_LEGACY = (
+                _LEGACY_SERVER_RETRY = (
                     google_exceptions.ServiceUnavailable,
                     google_exceptions.TooManyRequests,
                     google_exceptions.InternalServerError,
                     google_exceptions.ResourceExhausted,
                     google_exceptions.Aborted,
                     google_exceptions.DeadlineExceeded,
-                    ConnectionError,
-                    ConnectionRefusedError,
-                    TimeoutError,
-                    OSError,
                 )
             except ImportError:
-                RETRY_EXCEPTIONS_LEGACY = (Exception,)
+                _LEGACY_SERVER_RETRY = (Exception,)
+
+            _LEGACY_CONN_ERRORS = (
+                ConnectionError, ConnectionRefusedError,
+                ConnectionResetError, TimeoutError, OSError,
+            )
 
             class LlamaIndexGeminiWrapper:
                 """Wrapper for llama-index Gemini to provide fallback logic."""
@@ -874,24 +988,25 @@ def _get_gemini_llm(model: str, **kwargs: Any) -> Any:
                 def __init__(self, model_name: str, **kwargs):
                     self.model_name = model_name
                     self.primary = Gemini(model=model_name, **kwargs)
-                    # Fallback to older stable model or preview
                     self.fallback_model = "models/gemini-3-flash-preview"
                     self.fallback = Gemini(model=self.fallback_model, **kwargs)
                 
                 @retry(
-                    stop=stop_after_attempt(5),
-                    wait=wait_exponential(multiplier=1, min=2, max=30),
-                    retry=retry_if_exception_type(RETRY_EXCEPTIONS_LEGACY),
+                    stop=stop_after_attempt(3),
+                    wait=wait_exponential(multiplier=1, min=2, max=15),
+                    retry=retry_if_exception_type(_LEGACY_SERVER_RETRY),
                 )
                 def complete(self, prompt: str, **kw: Any) -> Any:
                     try:
                         return self.primary.complete(prompt, **kw)
-                    except RETRY_EXCEPTIONS_LEGACY as e:
+                    except _LEGACY_CONN_ERRORS:
+                        raise  # Cross-provider fallback
+                    except _LEGACY_SERVER_RETRY as e:
                         logger.warning(
                             "primary_llm_overloaded_using_fallback", 
                             primary=self.model_name, 
                             fallback=self.fallback_model,
-                            error=str(e)
+                            error=str(e)[:200],
                         )
                         return self.fallback.complete(prompt, **kw)
 
@@ -913,7 +1028,8 @@ def _get_gemini_llm(model: str, **kwargs: Any) -> Any:
                         return self.complete(prompt, **kw)
 
                     api_key = os.getenv("GOOGLE_API_KEY")
-                    client = genai.Client(api_key=api_key)
+                    http_opts = genai_types.HttpOptions(timeout=REQUEST_TIMEOUT * 1000)
+                    client = genai.Client(api_key=api_key, http_options=http_opts)
                     image_part = genai_types.Part.from_bytes(
                         data=image_bytes, mime_type="image/png",
                     )
@@ -925,19 +1041,21 @@ def _get_gemini_llm(model: str, **kwargs: Any) -> Any:
                     return response.text or ""
 
                 @retry(
-                    stop=stop_after_attempt(5),
-                    wait=wait_exponential(multiplier=1, min=2, max=30),
-                    retry=retry_if_exception_type(RETRY_EXCEPTIONS_LEGACY),
+                    stop=stop_after_attempt(3),
+                    wait=wait_exponential(multiplier=1, min=2, max=15),
+                    retry=retry_if_exception_type(_LEGACY_SERVER_RETRY),
                 )
                 def chat(self, messages: Any, **kw: Any) -> Any:
                     try:
                         return self.primary.chat(messages, **kw)
-                    except RETRY_EXCEPTIONS_LEGACY as e:
+                    except _LEGACY_CONN_ERRORS:
+                        raise
+                    except _LEGACY_SERVER_RETRY as e:
                         logger.warning(
                             "primary_llm_overloaded_using_fallback", 
                             primary=self.model_name, 
                             fallback=self.fallback_model,
-                            error=str(e)
+                            error=str(e)[:200],
                         )
                         return self.fallback.chat(messages, **kw)
 

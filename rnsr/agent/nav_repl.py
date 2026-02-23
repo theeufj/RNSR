@@ -227,7 +227,11 @@ CATCH_ALL_HEADERS = frozenset([
 # Headers that indicate definitional sections (should be boosted)
 DEFINITIONAL_HEADERS = frozenset([
     "information", "definition", "definitions", "details", "overview",
-    "parties", "introduction", "background", "about", "summary"
+    "parties", "introduction", "background", "about", "summary",
+    # Financial statement terms
+    "balance", "sheet", "assets", "liabilities", "equity",
+    "income", "revenue", "statement", "schedule",
+    "property", "plant", "equipment", "cash", "financial",
 ])
 
 # Scoring weights
@@ -236,8 +240,8 @@ SUMMARY_MATCH_WEIGHT = 5  # Summary matches are moderately relevant
 CONTENT_MATCH_WEIGHT = 1  # Content matches (raw count, can accumulate)
 
 # Penalties and bonuses
-MAX_LENGTH_PENALTY = 0.6  # Max 60% penalty for very long content
-LENGTH_PENALTY_THRESHOLD = 5000  # Content longer than this gets penalized
+MAX_LENGTH_PENALTY = 0.3  # Max 30% penalty for very long content
+LENGTH_PENALTY_THRESHOLD = 8000  # Content longer than this gets penalized
 DEPTH_BONUS_PER_LEVEL = 0.15  # Each level deep adds 15% bonus
 CATCH_ALL_PENALTY = 0.3  # 30% penalty for catch-all headers
 
@@ -396,7 +400,6 @@ class NavigationREPL:
     _ready_to_synthesize: bool = False
     
     # Execution
-    max_search_results: int = 20
     context_window: int = 100  # Chars around match for context
     
     # LLM function for sub-queries (optional)
@@ -645,7 +648,7 @@ class NavigationREPL:
         except re.error as e:
             return [{"error": f"Invalid regex: {e}"}]
         
-        return matches[:self.max_search_results]
+        return matches
     
     def _search_children(self, pattern: str) -> list[dict[str, Any]]:
         """
@@ -714,19 +717,18 @@ class NavigationREPL:
         # Sort by specificity score (most specific first)
         results.sort(key=lambda x: x["score"], reverse=True)
         
-        return results[:self.max_search_results]
+        return results
     
-    def _search_tree(self, pattern: str, max_depth: int = 3) -> list[dict[str, Any]]:
+    def _search_tree(self, pattern: str) -> list[dict[str, Any]]:
         """
         Search the entire subtree from current position.
         
-        Breadth-first search up to max_depth levels deep.
+        Breadth-first search that exhausts the full tree.
         Returns all matching nodes sorted by relevance.
         """
         logger.info(
             "search_tree_start",
             pattern=pattern,
-            max_depth=max_depth,
             from_node=self.current_node_id,
         )
         
@@ -744,7 +746,7 @@ class NavigationREPL:
         while queue:
             node_id, depth = queue.pop(0)
             
-            if node_id in visited or depth > max_depth:
+            if node_id in visited:
                 continue
             visited.add(node_id)
             
@@ -767,7 +769,6 @@ class NavigationREPL:
             content_matches = len(regex.findall(content))
             
             if header_matches > 0 or content_matches > 0:
-                # Calculate specificity score (favors specific sections)
                 score = calculate_specificity_score(
                     header_matches=header_matches,
                     content_matches=content_matches,
@@ -782,8 +783,8 @@ class NavigationREPL:
                     "header": node.header,
                     "level": node.level,
                     "depth_from_current": depth,
-                    "matches": header_matches + content_matches,  # Raw count
-                    "score": round(score, 2),  # Specificity score for ranking
+                    "matches": header_matches + content_matches,
+                    "score": round(score, 2),
                     "path": self._get_path_to_node(node_id),
                 })
             
@@ -795,18 +796,15 @@ class NavigationREPL:
         # Sort by specificity score (most specific first)
         results.sort(key=lambda x: x["score"], reverse=True)
         
-        final_results = results[:self.max_search_results]
-        
         # Log search results
         logger.info(
             "search_tree_complete",
             pattern=pattern,
             total_matches=len(results),
-            returned=len(final_results),
-            top_results=[(r["header"][:40], r["score"], r["node_id"]) for r in final_results[:5]],
+            top_results=[(r["header"][:40], r["score"], r["node_id"]) for r in results[:5]],
         )
         
-        return final_results
+        return results
     
     def _get_path_to_node(self, target_id: str) -> str:
         """Get the path from root to a node."""

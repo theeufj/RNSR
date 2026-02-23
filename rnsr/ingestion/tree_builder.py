@@ -298,7 +298,12 @@ class TreeBuilder:
     # sub-sections so Tree of Thoughts can traverse into them.
     MAX_LEAF_CHARS = 8000
 
-    def _split_large_nodes(self, node: DocumentNode) -> None:
+    # Maximum recursion depth for splitting.  Prevents infinite recursion
+    # when _semantic_chunk_text cannot produce chunks smaller than the
+    # threshold (e.g. a single dense table row).
+    MAX_SPLIT_DEPTH = 5
+
+    def _split_large_nodes(self, node: DocumentNode, _depth: int = 0) -> None:
         """
         Post-process: recursively decompose leaf nodes that exceed MAX_LEAF_CHARS.
 
@@ -308,11 +313,12 @@ class TreeBuilder:
         sections rather than receiving them as monolithic blobs.
 
         The decomposition is recursive: if a chunk is still too large after
-        the first split, it will be split again on the next pass.
+        the first split, it will be split again on the next pass (up to
+        MAX_SPLIT_DEPTH levels to prevent infinite recursion).
         """
         # First, recurse into existing children
         for child in node.children:
-            self._split_large_nodes(child)
+            self._split_large_nodes(child, _depth)
 
         # Only split leaf nodes (no children) that have oversized content
         if node.children or not node.content:
@@ -320,6 +326,17 @@ class TreeBuilder:
 
         content_len = len(node.content)
         if content_len <= self.MAX_LEAF_CHARS:
+            return
+
+        # Guard against infinite recursion when chunker can't reduce size
+        if _depth >= self.MAX_SPLIT_DEPTH:
+            logger.warning(
+                "split_depth_limit_reached",
+                node_id=node.id[:120],
+                header=node.header[:50],
+                chars=content_len,
+                depth=_depth,
+            )
             return
 
         from rnsr.ingestion.text_builder import (
@@ -335,10 +352,11 @@ class TreeBuilder:
 
         logger.info(
             "splitting_large_node",
-            node_id=node.id,
+            node_id=node.id[:120],
             header=node.header[:50],
             original_chars=content_len,
             new_children=len(segments),
+            depth=_depth,
         )
 
         # Create child nodes from segments
@@ -359,7 +377,7 @@ class TreeBuilder:
 
         # Recurse into newly created children in case any are still too large
         for child in node.children:
-            self._split_large_nodes(child)
+            self._split_large_nodes(child, _depth + 1)
 
     def _count_nodes(self, node: DocumentNode) -> int:
         """Recursively count all nodes in the tree."""

@@ -11,6 +11,8 @@ Then open http://localhost:7860 in your browser.
 """
 from __future__ import annotations  # Enable Python 3.10+ type hints on Python 3.9
 
+import fnmatch
+import hashlib
 import os
 import sys
 import time
@@ -658,6 +660,103 @@ def add_multi_documents(files, progress=gr.Progress()):
     return msg, _multi_doc_list(), _multi_doc_dropdown_choices()
 
 
+def ingest_folder(
+    files: list[str] | None,
+    glob_pattern: str,
+    progress=gr.Progress(),
+):
+    """Ingest all matching documents from a selected folder."""
+    if not files:
+        return (
+            "Select a folder to ingest.",
+            _multi_doc_list(),
+            _multi_doc_dropdown_choices(),
+        )
+
+    raw = glob_pattern.strip() or "*.pdf"
+    patterns = [p.strip() for p in raw.split(",") if p.strip()]
+    matching = [
+        f for f in files
+        if any(fnmatch.fnmatch(Path(f).name, p) for p in patterns)
+    ]
+
+    if not matching:
+        return (
+            f"No files matched `{raw}` in the selected folder "
+            f"({len(files)} file(s) found).",
+            _multi_doc_list(),
+            _multi_doc_dropdown_choices(),
+        )
+
+    store = _get_or_create_store()
+    progress(0.05, desc=f"Ingesting {len(matching)} file(s)…")
+
+    added = 0
+    skipped = 0
+    errors: list[str] = []
+
+    for i, fp in enumerate(matching):
+        try:
+            frac = min(0.95, (i + 0.5) / len(matching))
+            progress(frac, desc=f"Ingesting ({i + 1}/{len(matching)}) {Path(fp).name}…")
+
+            fp_path = Path(fp)
+            candidate_id = hashlib.md5(
+                f"{fp_path.name}_{fp_path.stat().st_size}".encode()
+            ).hexdigest()[:12]
+            already_exists = candidate_id in store
+
+            doc_id = store.add_document(fp)
+            info = store.get_document_info(doc_id)
+
+            if already_exists:
+                skipped += 1
+            else:
+                state.multi_docs.append({
+                    "id": doc_id,
+                    "title": info.title if info else fp_path.stem,
+                    "path": str(fp),
+                })
+                added += 1
+        except Exception as e:
+            errors.append(f"`{Path(fp).name}`: {e}")
+
+    # Build workspace KG so cross-doc queries work immediately
+    kg_status = ""
+    if added > 0:
+        progress(0.92, desc="Building knowledge graph…")
+        try:
+            kg = store.build_workspace_kg()
+            progress(0.96, desc="Linking entities across documents…")
+            links = store.link_entities_across_documents()
+            kg_stats = kg.get_stats()
+            kg_status = (
+                f"**Knowledge graph:** {kg_stats.get('entity_count', 0)} entities, "
+                f"{kg_stats.get('relationship_count', 0)} relationships, "
+                f"{len(links)} cross-doc links"
+            )
+        except Exception as e:
+            kg_status = f"**KG build warning:** {e}"
+
+    progress(1.0, desc="Done")
+
+    parts = [
+        f"**Pattern:** `{raw}`",
+        f"**Result:** {added} ingested, {skipped} already in workspace, "
+        f"{len(errors)} failed out of {len(matching)} matching files.",
+        f"**Total in workspace:** {len(store)}",
+    ]
+    if kg_status:
+        parts.append(kg_status)
+    if errors:
+        parts.append("\n**Errors:**")
+        for e in errors[:10]:
+            parts.append(f"- {e}")
+
+    msg = "\n".join(parts)
+    return msg, _multi_doc_list(), _multi_doc_dropdown_choices()
+
+
 def _multi_doc_list() -> str:
     """Build a markdown list of documents in the workspace."""
     store = _get_or_create_store()
@@ -1215,6 +1314,22 @@ def create_demo():
                         multi_doc_list = gr.Markdown(_multi_doc_list())
 
                         gr.Markdown("---")
+                        gr.Markdown("##### Ingest from Folder")
+                        folder_file_input = gr.File(
+                            label="Select a folder",
+                            file_count="directory",
+                            type="filepath",
+                        )
+                        folder_glob_input = gr.Textbox(
+                            label="File pattern",
+                            value="*.pdf, *.md, *.txt",
+                            info="Comma-separated patterns (e.g. *.pdf, *.md, *.txt)",
+                        )
+                        folder_ingest_btn = gr.Button(
+                            "Ingest Folder", variant="primary",
+                        )
+
+                        gr.Markdown("---")
                         gr.Markdown("##### Manage Documents")
                         multi_remove_dropdown = gr.Dropdown(
                             label="Select document",
@@ -1318,6 +1433,11 @@ def create_demo():
         multi_add_btn.click(
             fn=add_multi_documents,
             inputs=[multi_file_input],
+            outputs=[multi_status, multi_doc_list, multi_remove_dropdown],
+        )
+        folder_ingest_btn.click(
+            fn=ingest_folder,
+            inputs=[folder_file_input, folder_glob_input],
             outputs=[multi_status, multi_doc_list, multi_remove_dropdown],
         )
         multi_clear_btn.click(

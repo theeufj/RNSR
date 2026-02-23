@@ -1168,29 +1168,16 @@ class AnswerVerificationEngine:
         
         evidence_text = "\n---\n".join(evidence) if evidence else "(no evidence provided)"
         
-        verification_prompt = f"""You are a fact-checker verifying an answer.
+        verification_prompt = f"""Verify whether the answer is supported by the evidence. Respond with ONLY a single-line JSON object — nothing else.
 
 Question: {question}
 
-Proposed Answer: {proposed_answer}
+Answer: {proposed_answer}
 
 Evidence:
 {evidence_text}
 
-VERIFICATION TASK:
-1. Check if the answer is supported by the evidence
-2. Check if the answer directly addresses the question
-3. Check for any factual errors or unsupported claims
-
-OUTPUT FORMAT (JSON):
-{{
-    "is_valid": true/false,
-    "confidence": 0.0-1.0,
-    "issues": ["list of issues if any"],
-    "improved_answer": "corrected answer if needed, or null if valid"
-}}
-
-Respond ONLY with JSON:"""
+JSON: {{"is_valid": true/false, "confidence": 0.0-1.0, "issues": [], "improved_answer": null}}"""
         
         try:
             import json
@@ -1199,18 +1186,25 @@ Respond ONLY with JSON:"""
             
             # Parse JSON response
             json_match = re.search(r'\{[\s\S]*\}', response)
+            result = None
             if json_match:
-                result = json.loads(json_match.group())
-                
-                # If not valid and we have retries left, try to improve
+                try:
+                    result = json.loads(json_match.group())
+                except json.JSONDecodeError:
+                    pass
+
+            # Fallback: extract is_valid/confidence from truncated JSON
+            # (LLM responses often get cut off mid-issues list)
+            if result is None:
+                result = self._parse_truncated_verification(response, proposed_answer)
+
+            if result is not None:
                 if not result.get("is_valid", True) and attempt < self.config.verification_retries:
                     logger.debug(
                         "answer_verification_failed",
                         attempt=attempt,
                         issues=result.get("issues", []),
                     )
-                    
-                    # Try with improved answer
                     if result.get("improved_answer"):
                         return self.verify_answer(
                             question,
@@ -1218,11 +1212,9 @@ Respond ONLY with JSON:"""
                             evidence,
                             attempt + 1,
                         )
-                
                 return result
             else:
                 logger.warning("verification_json_parse_failed", response=response[:200])
-                # Default to INVALID when we can't parse - don't assume valid
                 return {
                     "is_valid": False,
                     "confidence": 0.2,
@@ -1232,13 +1224,52 @@ Respond ONLY with JSON:"""
                 
         except Exception as e:
             logger.error("verification_failed", error=str(e))
-            # Default to INVALID on errors - don't assume valid
             return {
                 "is_valid": False,
                 "confidence": 0.1,
                 "issues": [f"Verification failed: {str(e)}"],
                 "improved_answer": proposed_answer,
             }
+
+    @staticmethod
+    def _parse_truncated_verification(
+        response: str, proposed_answer: str
+    ) -> dict[str, Any] | None:
+        """Extract is_valid/confidence from a truncated LLM verification response.
+
+        LLM responses sometimes exceed the token limit and get cut off before
+        the JSON closing brace, causing full JSON parsing to fail. This method
+        uses simple regex to recover the key fields so that a clearly-valid
+        answer isn't rejected due to a formatting issue.
+        """
+        valid_match = re.search(
+            r'"is_valid"\s*:\s*(true|false)', response, re.IGNORECASE
+        )
+        conf_match = re.search(
+            r'"confidence"\s*:\s*([\d.]+)', response
+        )
+        if valid_match is None and conf_match is None:
+            return None
+
+        is_valid = (
+            valid_match.group(1).lower() == "true" if valid_match else False
+        )
+        try:
+            confidence = float(conf_match.group(1)) if conf_match else 0.5
+        except ValueError:
+            confidence = 0.5
+
+        logger.info(
+            "verification_recovered_from_truncated_json",
+            is_valid=is_valid,
+            confidence=confidence,
+        )
+        return {
+            "is_valid": is_valid,
+            "confidence": confidence,
+            "issues": ["Verification JSON was truncated; key fields recovered"],
+            "improved_answer": proposed_answer,
+        }
 
 
 # =============================================================================
@@ -1477,11 +1508,28 @@ class RLMNavigator:
             # Phase 2: Query decomposition
             state = self._phase_decompose(state)
             
-            # Phase 3: Tree navigation with ToT
-            state = self._phase_navigate(state)
-            
-            # Phase 4: Synthesis
-            state = self._phase_synthesize(state)
+            # Recursive navigate-synthesize loop: if the answer is
+            # inconclusive ("sections do not contain…"), refine the
+            # search strategy and retry up to max_recursion_depth times.
+            max_attempts = 1 + self.config.max_recursion_depth
+            for attempt in range(max_attempts):
+                # Phase 3: Tree navigation with ToT
+                state = self._phase_navigate(state)
+                
+                # Phase 4: Synthesis
+                state = self._phase_synthesize(state)
+                
+                if not self._answer_is_inconclusive(state.answer):
+                    break
+                
+                if attempt < max_attempts - 1:
+                    logger.info(
+                        "answer_inconclusive_refining",
+                        attempt=attempt + 1,
+                        max_attempts=max_attempts,
+                        answer_preview=state.answer[:100] if state.answer else "",
+                    )
+                    state = self._refine_search_strategy(state)
             
             # Phase 5: Verification (if enabled)
             if self.config.enable_verification:
@@ -1654,51 +1702,67 @@ Respond with JSON only:"""
         return state
     
     def _phase_navigate(self, state: RLMAgentState) -> RLMAgentState:
-        """Phase 3: Navigate the tree using ToT with pre-filtering."""
+        """Phase 3: Navigate the tree using ToT with pre-filtering.
+        
+        Iterates over all decomposed sub-questions so that multi-part
+        queries (e.g. "revenue / avg PP&E") navigate to each required
+        section independently.
+        """
         state.add_trace("navigation", "Starting tree navigation")
         
-        # Initialize navigation at root
-        state.current_node_id = self.root_id
+        sub_questions = list(state.sub_questions) if state.sub_questions else [state.question]
         
-        while state.iteration < self.config.max_iterations:
-            state.iteration += 1
+        for sq_idx, sub_q in enumerate(sub_questions):
+            state.current_sub_question = sub_q
+            state.current_node_id = self.root_id
+            state.nodes_to_visit = []
+            self.nav_repl.reset(preserve_user_vars=True)
             
-            # Check termination conditions
-            if state.current_node_id is None and not state.nodes_to_visit:
-                break
+            logger.info(
+                "navigating_sub_question",
+                index=sq_idx + 1,
+                total=len(sub_questions),
+                sub_question=sub_q[:100],
+            )
             
-            # Pop from queue if needed
-            if state.current_node_id is None and state.nodes_to_visit:
-                state.current_node_id = state.nodes_to_visit.pop(0)
+            while state.iteration < self.config.max_iterations:
+                state.iteration += 1
+                
+                if state.current_node_id is None and not state.nodes_to_visit:
+                    break
+                
+                if state.current_node_id is None and state.nodes_to_visit:
+                    state.current_node_id = state.nodes_to_visit.pop(0)
+                
+                if state.current_node_id is None:
+                    break
+                
+                node = self.skeleton.get(state.current_node_id)
+                if node is None:
+                    state.current_node_id = None
+                    continue
+                
+                if state.current_node_id in state.visited_nodes:
+                    state.current_node_id = None
+                    continue
+                
+                action = self._decide_action(state, node)
+                
+                if action == "expand":
+                    state = self._do_expand(state, node)
+                elif action == "traverse":
+                    state = self._do_traverse(state, node)
+                elif action == "backtrack":
+                    state = self._do_backtrack(state)
+                else:
+                    break
             
-            if state.current_node_id is None:
-                break
-            
-            node = self.skeleton.get(state.current_node_id)
-            if node is None:
-                state.current_node_id = None
-                continue
-            
-            # Already visited?
-            if state.current_node_id in state.visited_nodes:
-                state.current_node_id = None
-                continue
-            
-            # Decide: expand or traverse
-            action = self._decide_action(state, node)
-            
-            if action == "expand":
-                state = self._do_expand(state, node)
-            elif action == "traverse":
-                state = self._do_traverse(state, node)
-            elif action == "backtrack":
-                state = self._do_backtrack(state)
-            else:
-                break
+            if sub_q in state.pending_questions:
+                state.pending_questions.remove(sub_q)
         
         state.add_trace(
             "navigation",
-            f"Navigation complete after {state.iteration} iterations",
+            f"Navigation complete after {state.iteration} iterations, {len(sub_questions)} sub-questions",
             {"variables_found": len(state.variables)},
         )
         
@@ -1931,7 +1995,7 @@ Generate 2-3 SIMPLE patterns, one per line:"""
         all_results = {}  # node_id -> result (dedup)
         for pattern in all_patterns:
             try:
-                search_results = self.nav_repl._search_tree(pattern, max_depth=5)
+                search_results = self.nav_repl._search_tree(pattern)
                 for result in search_results:
                     node_id = result["node_id"]
                     # Keep highest score for each node
@@ -2024,13 +2088,20 @@ Generate 2-3 SIMPLE patterns, one per line:"""
             # section, we need to expand into its children (Personal Information,
             # Contact Details, etc.) where the actual data lives.
             node_obj = self.skeleton.get(node_id)
-            if node_obj and node_obj.child_ids and len(content) < 200:
+            is_truncated_parent = (
+                node_obj
+                and node_obj.child_ids
+                and (content.rstrip().endswith("...") or len(content) < 500)
+            )
+            if is_truncated_parent:
+                max_children_per_parent = 5
                 logger.info(
                     "expanding_parent_into_children",
                     parent=header,
                     num_children=len(node_obj.child_ids),
+                    expanding=min(len(node_obj.child_ids), max_children_per_parent),
                 )
-                for child_id in node_obj.child_ids:
+                for child_id in node_obj.child_ids[:max_children_per_parent]:
                     child_node = self.skeleton.get(child_id)
                     if not child_node:
                         continue
@@ -2061,7 +2132,7 @@ Generate 2-3 SIMPLE patterns, one per line:"""
                 state.visited_nodes.append(node_id)
                 if findings_stored >= max_findings:
                     break
-                continue
+                # Fall through to also store parent content if useful
             
             # For sibling sections, use lower content threshold (they provide context)
             min_length = 20 if is_sibling else self.config.rlm_min_content_length
@@ -2492,11 +2563,14 @@ Generate Python code only, no explanations:
         if not self._llm_fn or not children:
             return children[:self.config.top_k]
         
-        # Format children for evaluation
-        children_text = "\n".join(
-            f"  - [{c.node_id}] {c.header}: {c.summary[:150]}"
-            for c in children
-        )
+        # Format children for evaluation, including table hints
+        def _format_child(c):
+            table_hint = ""
+            if hasattr(c, "metadata") and c.metadata and c.metadata.get("has_tables"):
+                table_hint = " [HAS TABLES]"
+            return f"  - [{c.node_id}] {c.header}{table_hint}: {c.summary[:150]}"
+        
+        children_text = "\n".join(_format_child(c) for c in children)
         
         current_node = self.skeleton.get(state.current_node_id or self.root_id)
         current_summary = f"{current_node.header}: {current_node.summary}" if current_node else ""
@@ -2622,6 +2696,27 @@ JSON only:"""
                     section_label += f"  [contains ¶{', ¶'.join(para_nums)}]"
 
                 contents.append(f"=== {section_label} ===\n{content}")
+        
+        # Auto-inject structured table data for visited nodes
+        if self.tables and state.visited_nodes:
+            visited_set = set(state.visited_nodes)
+            relevant_tables = [
+                t for t in self.tables
+                if getattr(t, "node_id", None) in visited_set
+            ]
+            if relevant_tables:
+                table_parts = []
+                for t in relevant_tables[:10]:
+                    title = getattr(t, "title", "") or f"Table from {t.node_id}"
+                    headers = getattr(t, "headers", [])
+                    data = getattr(t, "data", [])
+                    header_row = " | ".join(headers) if headers else ""
+                    rows = "\n".join(" | ".join(row) for row in data[:50])
+                    table_parts.append(f"--- {title} ---\n{header_row}\n{rows}")
+                if table_parts:
+                    contents.append(
+                        "=== Structured Table Data ===\n" + "\n\n".join(table_parts)
+                    )
         
         context_text = "\n\n".join(contents)
         
@@ -2765,6 +2860,92 @@ Answer (grounded in document sections):"""
                 return opt
         
         return answer
+    
+    def _answer_is_inconclusive(self, answer: str) -> bool:
+        """Check if the synthesis answer indicates failure to find information.
+
+        An answer that contains substantive content (>300 chars) is NOT
+        inconclusive even if it notes that some requested information is
+        missing.  Only flag truly empty or purely-negative responses.
+        """
+        if not answer:
+            return True
+        if len(answer) > 300:
+            return False
+        lower = answer.lower()
+        inconclusive_phrases = [
+            "provided sections do not contain",
+            "sections do not contain this information",
+            "do not contain this information",
+            "no relevant content found",
+            "error during",
+            "i cannot answer",
+        ]
+        return any(phrase in lower for phrase in inconclusive_phrases)
+    
+    def _refine_search_strategy(self, state: RLMAgentState) -> RLMAgentState:
+        """Generate refined search patterns after an inconclusive answer.
+        
+        Uses the LLM to produce alternative regex patterns informed by
+        what the previous attempt found (or didn't find).
+        """
+        state.add_trace("refinement", "Refining search strategy after inconclusive answer")
+        
+        # Reset navigation state for re-navigation but keep findings so far
+        state.current_node_id = self.root_id
+        state.nodes_to_visit = []
+        state.iteration = 0
+        
+        if not self._llm_fn:
+            return state
+        
+        visited_headers = []
+        for nid in state.visited_nodes[:20]:
+            node = self.skeleton.get(nid)
+            if node:
+                visited_headers.append(node.header)
+        
+        refine_prompt = f"""The previous search did not find enough information to answer the question.
+
+Question: {state.question}
+
+Previous answer attempt: {state.answer[:300] if state.answer else "No answer produced"}
+
+Sections already visited:
+{chr(10).join(f"- {h}" for h in visited_headers[:15])}
+
+Generate 3-5 alternative regex search patterns to find the missing information.
+Focus on:
+- Synonyms or alternative terms for the key concepts
+- Financial statement section names (e.g. balance sheet, income statement, PP&E schedule)
+- Specific table headers or data labels
+
+OUTPUT FORMAT (JSON):
+{{"patterns": ["pattern1", "pattern2", ...], "reasoning": "brief explanation"}}
+
+JSON only:"""
+        
+        try:
+            import json as json_mod
+            response = self._llm_fn(refine_prompt)
+            json_match = re.search(r'\{[\s\S]*\}', response)
+            if json_match:
+                result = json_mod.loads(json_match.group())
+                new_patterns = result.get("patterns", [])
+                if new_patterns:
+                    # Store as new sub-questions for the next navigate pass
+                    state.sub_questions = new_patterns
+                    state.pending_questions = new_patterns.copy()
+                    state.current_sub_question = new_patterns[0]
+                    logger.info(
+                        "search_strategy_refined",
+                        new_patterns=new_patterns,
+                        reasoning=result.get("reasoning", ""),
+                    )
+        except Exception as e:
+            logger.warning("search_refinement_failed", error=str(e))
+        
+        return state
     
     def _verify_answer_grounded(self, answer: str, context: str) -> tuple[bool, str]:
         """
@@ -3193,6 +3374,8 @@ JSON only:"""
             
             prompt = f"""Decompose this query into focused sub-queries based on the entities.
 
+IMPORTANT: Stay focused on the ORIGINAL question. Do NOT expand into unrelated aspects of the entities. If the question is a simple factual lookup, return it as-is or with minimal decomposition (1 sub-query). Every sub-query MUST help answer the original question — do not generate broad exploratory questions about the entities.
+
 Query: {query}
 
 Key entities found: {', '.join(entity_names)}
@@ -3201,7 +3384,7 @@ Related entities: {', '.join(related_names)}
 Known relationships:
 {chr(10).join(rel_descriptions) if rel_descriptions else '(none)'}
 
-Generate 1-5 focused sub-queries. Each should target specific entities or relationships.
+Generate 1-3 focused sub-queries that directly address the original question. Fewer is better.
 
 Return as JSON:
 {{"sub_queries": ["query 1", "query 2"]}}

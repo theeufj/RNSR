@@ -346,6 +346,10 @@ class CrossDocNavigator:
     ) -> list[dict[str, Any]]:
         """
         Plan the retrieval strategy for each document.
+
+        Documents with entity matches get entity-focused sub-queries.
+        All other registered documents are still searched with the
+        original question so that no document is silently skipped.
         
         Args:
             question: Original question.
@@ -356,22 +360,24 @@ class CrossDocNavigator:
             List of retrieval tasks.
         """
         tasks = []
+        planned_doc_ids: set[str] = set()
         
         for doc_id, entities in doc_entities.items():
-            # Get entity names for this document
             entity_names = [e.canonical_name for e in entities]
             
-            # Create sub-query focused on this document's entities
+            # Always keep the original question so key terms (e.g. "jaws of
+            # life") are not dropped.  Add entity context as a hint only.
             if query.query_type == "entity_tracking":
-                sub_query = f"What information is there about {', '.join(entity_names[:3])}?"
+                entity_hint = ", ".join(entity_names[:3])
+                sub_query = f"{question}\n\nFocus on entities: {entity_hint}"
             elif query.query_type == "comparison":
                 sub_query = f"Extract the relevant details for comparison: {question}"
             elif query.query_type == "timeline":
-                sub_query = f"What events involving {', '.join(entity_names[:3])} and when did they occur?"
+                entity_hint = ", ".join(entity_names[:3])
+                sub_query = f"{question}\n\nKey entities: {entity_hint}"
             else:
                 sub_query = question
             
-            # Get node IDs where entities are mentioned
             target_nodes = set()
             for entity in entities:
                 target_nodes.update(entity.node_ids)
@@ -382,15 +388,75 @@ class CrossDocNavigator:
                 "entities": entities,
                 "target_nodes": list(target_nodes),
             })
+            planned_doc_ids.add(doc_id)
+        
+        # Include unmatched documents only if their skeleton headers/summaries
+        # share at least one keyword with the query.
+        all_registered = set(self.navigators.keys()) | set(self._kv_stores.keys())
+        for doc_id in all_registered - planned_doc_ids:
+            if not self._doc_has_keyword_overlap(doc_id, question):
+                logger.debug(
+                    "fallback_doc_skipped",
+                    doc_id=doc_id,
+                    reason="no keyword overlap with query",
+                )
+                continue
+
+            tasks.append({
+                "doc_id": doc_id,
+                "sub_query": question,
+                "entities": [],
+                "target_nodes": [],
+            })
+            logger.debug(
+                "fallback_doc_included",
+                doc_id=doc_id,
+                reason="keyword overlap found, searching with original query",
+            )
         
         return tasks
-    
+
+    _STOPWORDS = frozenset({
+        "a", "an", "the", "is", "are", "was", "were", "in", "on", "at",
+        "to", "for", "of", "and", "or", "not", "it", "this", "that",
+        "with", "from", "by", "as", "be", "been", "being", "have", "has",
+        "had", "do", "does", "did", "will", "would", "could", "should",
+        "what", "when", "where", "who", "how", "which", "there", "about",
+    })
+
+    def _doc_has_keyword_overlap(self, doc_id: str, question: str) -> bool:
+        """Check if a document's skeleton has any keyword overlap with the query."""
+        skeleton = self._skeletons.get(doc_id)
+        if not skeleton:
+            return True  # no metadata to filter on -- keep it safe
+
+        query_words = {
+            w for w in re.findall(r"[a-z0-9]+", question.lower())
+            if w not in self._STOPWORDS and len(w) > 2
+        }
+        if not query_words:
+            return True
+
+        doc_text_parts: list[str] = []
+        for node in skeleton.values():
+            doc_text_parts.append(node.header.lower())
+            doc_text_parts.append(node.summary.lower())
+        doc_text = " ".join(doc_text_parts)
+        doc_words = set(re.findall(r"[a-z0-9]+", doc_text))
+
+        return bool(query_words & doc_words)
+
+    _EARLY_TERMINATION_CONFIDENCE = 0.9
+
     def _execute_navigation(
         self,
         tasks: list[dict[str, Any]],
     ) -> list[DocumentResult]:
         """
         Execute navigation for each document task.
+
+        Stops early when a result exceeds the confidence threshold,
+        skipping remaining documents to save time.
         
         Args:
             tasks: List of retrieval tasks.
@@ -400,7 +466,7 @@ class CrossDocNavigator:
         """
         results = []
         
-        for task in tasks:
+        for i, task in enumerate(tasks):
             doc_id = task["doc_id"]
             
             # Check if we have a navigator for this document
@@ -408,7 +474,6 @@ class CrossDocNavigator:
                 navigator = self.navigators[doc_id]
                 result = self._navigate_with_navigator(task, navigator)
             elif doc_id in self._kv_stores:
-                # Direct content retrieval from target nodes
                 result = self._direct_content_retrieval(task)
             else:
                 logger.warning("no_navigator_for_doc", doc_id=doc_id)
@@ -420,6 +485,20 @@ class CrossDocNavigator:
                 )
             
             results.append(result)
+
+            if (
+                result.confidence >= self._EARLY_TERMINATION_CONFIDENCE
+                and result.answer
+                and i < len(tasks) - 1
+            ):
+                skipped = [t["doc_id"] for t in tasks[i + 1 :]]
+                logger.info(
+                    "early_termination",
+                    confident_doc=doc_id,
+                    confidence=result.confidence,
+                    skipped_docs=skipped,
+                )
+                break
         
         return results
     

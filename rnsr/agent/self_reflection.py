@@ -606,42 +606,16 @@ def reflect_on_answer(
 # Strict Answer Verification (Critic Loop)
 # =============================================================================
 
-STRICT_VERIFICATION_PROMPT = """You are a HARSH CRITIC whose job is to find ANY unsupported claims in answers.
+STRICT_VERIFICATION_PROMPT = """Check whether every factual claim in the answer is directly supported by the source text. Respond with ONLY a single-line JSON object — nothing else.
 
-QUESTION: {question}
+Question: {question}
 
-ANSWER TO VERIFY:
-{answer}
+Answer: {answer}
 
-SOURCE TEXT (the ONLY valid evidence):
+Source text:
 {sources}
 
-YOUR TASK:
-1. Extract EVERY factual claim from the answer
-2. For EACH claim, search the source text for supporting evidence
-3. If a claim is NOT DIRECTLY SUPPORTED by the source text, mark it as unsupported
-4. Do NOT accept inferences, deductions, or "reasonable assumptions" - only explicit statements count
-
-RULES:
-- Numbers must match exactly (or be correctly calculated from source data)
-- Names, dates, and specific facts must appear in the source text
-- General claims need specific supporting evidence
-- "Cannot determine" is an acceptable answer if the sources don't contain the information
-
-Respond in JSON:
-{{
-    "verified": true/false,
-    "claims_analyzed": [
-        {{
-            "claim": "The specific claim from the answer",
-            "supported": true/false,
-            "evidence": "Exact quote from source that supports this, or 'NOT FOUND'"
-        }}
-    ],
-    "unsupported_claims": ["List of claims that are NOT supported"],
-    "rejection_reason": "Why this answer should be rejected (if any)",
-    "confidence": 0.0-1.0
-}}"""
+JSON: {{"verified": true/false, "unsupported_claims": [], "rejection_reason": "", "confidence": 0.0-1.0}}"""
 
 
 @dataclass
@@ -780,24 +754,63 @@ class StrictAnswerVerifier:
         
         try:
             json_match = re.search(r'\{[\s\S]*\}', response)
-            if not json_match:
+            data = None
+            if json_match:
+                try:
+                    data = json.loads(json_match.group())
+                except json.JSONDecodeError:
+                    pass
+
+            if data is None:
+                data = self._recover_truncated_verification(response)
+
+            if data is None:
                 result.verified = False
                 result.rejection_reason = "Could not parse verification response"
                 return result
-            
-            data = json.loads(json_match.group())
-            
+
             result.verified = data.get("verified", False)
             result.claims_analyzed = data.get("claims_analyzed", [])
             result.unsupported_claims = data.get("unsupported_claims", [])
             result.rejection_reason = data.get("rejection_reason", "")
             result.confidence = data.get("confidence", 0.5)
             
-        except json.JSONDecodeError:
+        except Exception:
             result.verified = False
             result.rejection_reason = "Invalid JSON in verification response"
         
         return result
+
+    @staticmethod
+    def _recover_truncated_verification(response: str) -> dict[str, Any] | None:
+        """Recover key fields from a truncated verification JSON response."""
+        verified_match = re.search(
+            r'"verified"\s*:\s*(true|false)', response, re.IGNORECASE
+        )
+        conf_match = re.search(r'"confidence"\s*:\s*([\d.]+)', response)
+        if verified_match is None and conf_match is None:
+            return None
+
+        verified = (
+            verified_match.group(1).lower() == "true" if verified_match else False
+        )
+        try:
+            confidence = float(conf_match.group(1)) if conf_match else 0.5
+        except ValueError:
+            confidence = 0.5
+
+        logger.info(
+            "critic_verification_recovered_from_truncated_json",
+            verified=verified,
+            confidence=confidence,
+        )
+        return {
+            "verified": verified,
+            "confidence": confidence,
+            "claims_analyzed": [],
+            "unsupported_claims": [],
+            "rejection_reason": "" if verified else "Truncated response (recovered)",
+        }
 
 
 def strict_verify_answer(

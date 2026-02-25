@@ -93,3 +93,6 @@ rnsr/test-documents/
 scripts/office_demo.py
 
 test-documents/
+
+# Screenshots
+*.png

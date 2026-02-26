@@ -4,7 +4,7 @@ LLM Configuration - Multi-Provider LLM and Embedding Support
 Supports:
 - OpenAI (GPT-4, text-embedding-3-small)
 - Anthropic (Claude)
-- Google Gemini (gemini-pro, text-embedding-004)
+- Google Gemini (gemini-pro, text-embedding-005)
 
 Features:
 - Automatic rate limit handling with exponential backoff
@@ -79,7 +79,7 @@ DEFAULT_MODELS = {
     },
     LLMProvider.GEMINI: {
         "llm": "gemini-2.5-flash",  # Stable model. Use "gemini-3-flash-preview" for latest.
-        "embed": "text-embedding-004",
+        "embed": "text-embedding-005",
     },
 }
 

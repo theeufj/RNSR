@@ -158,7 +158,7 @@ class SemanticSearcher:
                 from llama_index.embeddings.gemini import GeminiEmbedding
                 
                 logger.info("using_gemini_embeddings")
-                return GeminiEmbedding(model_name="models/text-embedding-004")
+                return GeminiEmbedding(model_name="models/text-embedding-005")
             
             else:
                 raise IndexingError(f"Unsupported provider: {provider}")

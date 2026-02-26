@@ -32,25 +32,38 @@ logger = structlog.get_logger(__name__)
 # =============================================================================
 
 # Patterns that indicate a section header in legal/contract documents
-# Each tuple: (pattern, level_override or None, header_group_indices)
+# Each tuple: (pattern, level_override, requires_uppercase)
+# requires_uppercase: when True, the matched text must be verified as
+# actually uppercase after matching (to counteract re.IGNORECASE).
 HEADER_PATTERNS = [
     # Major sections: "1. PARTIES AND RECITALS" - must have capital word after dot
-    (r'^(\d{1,2})[\.\)]\s+([A-Z][A-Z\s]{2,}(?:[A-Za-z\s]*)?)$', 1),
+    (r'^(\d{1,2})[\.\)]\s+([A-Z][A-Z\s]{2,}(?:[A-Za-z\s]*)?)$', 1, False),
     # Sub-sections: "1.1 Service Provider" or "2.1.1 Details"
-    (r'^(\d{1,2}\.\d{1,2}(?:\.\d{1,2})?)\s+([A-Z][A-Za-z\s]+)', 2),
+    (r'^(\d{1,2}\.\d{1,2}(?:\.\d{1,2})?)\s+([A-Z][A-Za-z\s]+)', 2, False),
     # Roman numerals: "I. HEADING" or "II. HEADING"
-    (r'^([IVXLC]{1,4})[\.\)]\s+([A-Z][A-Z\s]{2,}(?:[A-Za-z\s]*)?)$', 1),
+    (r'^([IVXLC]{1,4})[\.\)]\s+([A-Z][A-Z\s]{2,}(?:[A-Za-z\s]*)?)$', 1, False),
     # ARTICLE format: "ARTICLE I: Title" or "ARTICLE 1"
-    (r'^ARTICLE\s+([IVXLC\d]+)[\.:]\s*(.*)$', 1),
+    (r'^ARTICLE\s+([IVXLC\d]+)[\.:]\s*(.*)$', 1, False),
     # Section format: "Section 1:" or "SECTION 1."
-    (r'^[Ss][Ee][Cc][Tt][Ii][Oo][Nn]\s+(\d+)[\.:]\s*(.*)$', 1),
-    # Exhibit/Appendix: "EXHIBIT A: TECHNICAL SPECIFICATIONS" 
-    (r'^(EXHIBIT|APPENDIX)\s+([A-Z\d]+)[\.:]\s*(.*)$', 1),
-    # All caps line (minimum 10 chars, standalone, typically a header)
-    (r'^([A-Z][A-Z\s]{10,})$', 1),
+    (r'^[Ss][Ee][Cc][Tt][Ii][Oo][Nn]\s+(\d+)[\.:]\s*(.*)$', 1, False),
+    # Exhibit/Appendix: "EXHIBIT A: TECHNICAL SPECIFICATIONS"
+    (r'^(EXHIBIT|APPENDIX)\s+([A-Z\d]+)[\.:]\s*(.*)$', 1, False),
+    # All caps line (minimum 10 chars, standalone, typically a header).
+    # Needs requires_uppercase=True because we apply re.IGNORECASE globally.
+    (r'^([A-Z][A-Z\s]{10,})$', 1, True),
     # Markdown-style headers - level based on # count
-    (r'^(#{1,3})\s+(.+)$', None),  # Level determined by # count
+    (r'^(#{1,3})\s+(.+)$', None, False),
 ]
+
+# Lines that should never be treated as section headers even if they
+# match a pattern (common salutations, closings, generic phrases).
+_HEADER_BLACKLIST = re.compile(
+    r"^(?:yours? (?:faithfully|sincerely|truly)|"
+    r"dear\b|kind regards|best regards|"
+    r"thank(?:s|ing) you|regards|"
+    r"mr |mrs |ms |dr |prof )",
+    re.IGNORECASE,
+)
 
 
 def _try_pattern_based_headers(text: str, title: str) -> DocumentTree | None:
@@ -65,54 +78,65 @@ def _try_pattern_based_headers(text: str, title: str) -> DocumentTree | None:
     """
     lines = text.split('\n')
     sections = []
-    current_section = {"header": None, "content": [], "level": 1}
-    
+    current_section: dict = {"header": None, "content": [], "level": 1}
+    preamble_lines: list[str] = []
+
     for line in lines:
         line_stripped = line.strip()
         if not line_stripped:
             current_section["content"].append("")
             continue
-        
+
         # Check if this line matches a header pattern
         is_header = False
         matched_header = None
         matched_level = 1
-        
-        for pattern, level_override in HEADER_PATTERNS:
+
+        # Skip blacklisted lines (salutations, closings) before any pattern check
+        if _HEADER_BLACKLIST.match(line_stripped):
+            current_section["content"].append(line)
+            continue
+
+        for pattern, level_override, requires_uppercase in HEADER_PATTERNS:
             match = re.match(pattern, line_stripped, re.IGNORECASE)
             if match:
-                # Extract the header text using the original line
+                # For patterns that require uppercase (e.g. "ALL CAPS" detector),
+                # verify the original text is actually uppercase to prevent
+                # false positives like "Yours faithfully" or "James Fowler".
+                if requires_uppercase:
+                    alpha_chars = [c for c in line_stripped if c.isalpha()]
+                    if not alpha_chars or not all(c.isupper() for c in alpha_chars):
+                        continue
+
                 matched_header = line_stripped
-                
-                # Clean up markdown prefixes (## Header -> Header)
+
                 if matched_header.startswith('#'):
                     matched_header = matched_header.lstrip('#').strip()
-                
-                # Clean up the header
+
                 matched_header = matched_header.strip()
-                if len(matched_header) < 4:  # Too short to be a header
+                if len(matched_header) < 4:
                     continue
-                    
-                # Avoid false positives: line must be short enough to be a header
                 if len(matched_header) > 100:
                     continue
-                    
+
                 is_header = True
-                
-                # Determine level
+
                 if level_override is not None:
                     matched_level = level_override
                 elif line_stripped.startswith('#'):
-                    # Markdown: count # for level
                     matched_level = len(line_stripped) - len(line_stripped.lstrip('#'))
                 break
-        
+
         if is_header and matched_header:
             # Save current section if it has content
             if current_section["header"]:
                 sections.append(current_section)
-            
-            # Start new section
+            elif current_section["content"]:
+                # Preserve content that appeared before any header (the
+                # letterhead / preamble).  It will be attached to the root
+                # node so dates, references, and addresses are not lost.
+                preamble_lines = list(current_section["content"])
+
             current_section = {
                 "header": matched_header,
                 "content": [],
@@ -120,7 +144,7 @@ def _try_pattern_based_headers(text: str, title: str) -> DocumentTree | None:
             }
         else:
             current_section["content"].append(line)
-    
+
     # Don't forget the last section
     if current_section["header"]:
         sections.append(current_section)
@@ -132,8 +156,11 @@ def _try_pattern_based_headers(text: str, title: str) -> DocumentTree | None:
     
     logger.info("pattern_based_headers_detected", count=len(sections))
     
-    # Build hierarchical tree from detected sections
-    root = DocumentNode(id="root", level=0, header=title)
+    # Build hierarchical tree from detected sections.
+    # Attach any preamble (text before the first header) to the root so
+    # letterhead info like dates, references, and addresses is preserved.
+    preamble_text = '\n'.join(preamble_lines).strip() if preamble_lines else None
+    root = DocumentNode(id="root", level=0, header=title, content=preamble_text)
     total_nodes = 1
     
     # Track the last node at each level for proper nesting
@@ -160,6 +187,15 @@ def _try_pattern_based_headers(text: str, title: str) -> DocumentTree | None:
         # Push this node onto the stack in case it has children
         level_stack.append(node)
     
+    # Post-process: merge tiny adjacent sections into their siblings.
+    # Without this, form-style documents fragment titles like
+    # "WITNESS SUMMONS" / "TO PRODUCE A RECORD OR THING" / "FORM 48"
+    # into separate 15-char sections that lose their semantic connection.
+    _merge_tiny_siblings(root)
+
+    # Recount after merges
+    total_nodes = _count_nodes(root)
+
     return DocumentTree(
         title=title,
         root=root,
@@ -167,6 +203,63 @@ def _try_pattern_based_headers(text: str, title: str) -> DocumentTree | None:
         ingestion_tier=2,
         ingestion_method="pattern_based_headers",
     )
+
+
+_MERGE_SIBLING_THRESHOLD = 80
+
+
+def _merge_tiny_siblings(node: DocumentNode) -> None:
+    """Merge adjacent tiny leaf sections into their next sibling.
+
+    When a document has header-only sections (e.g. "WITNESS SUMMONS" with
+    15 chars, "TO PRODUCE A RECORD OR THING" with 28 chars), merge them
+    into the next substantial sibling so the combined content stays together.
+    """
+    for child in node.children:
+        _merge_tiny_siblings(child)
+
+    if len(node.children) < 2:
+        return
+
+    merged: list[DocumentNode] = []
+    pending_headers: list[str] = []
+
+    for child in node.children:
+        total_chars = len(child.header or "") + len(child.content or "")
+        is_leaf = not child.children
+
+        if is_leaf and total_chars < _MERGE_SIBLING_THRESHOLD:
+            pending_headers.append(child.header)
+            if child.content:
+                pending_headers.append(child.content)
+        else:
+            if pending_headers:
+                prefix = "\n".join(pending_headers)
+                child.content = f"{prefix}\n\n{child.content}" if child.content else prefix
+                child.header = pending_headers[0] + " " + child.header
+                pending_headers = []
+            merged.append(child)
+
+    # If trailing tiny sections remain, attach them to the last kept child
+    if pending_headers and merged:
+        last = merged[-1]
+        suffix = "\n".join(pending_headers)
+        last.content = f"{last.content}\n\n{suffix}" if last.content else suffix
+    elif pending_headers:
+        # All children were tiny -- create one merged node
+        combined = DocumentNode(
+            id=node.children[0].id,
+            level=node.children[0].level,
+            header=" | ".join(pending_headers),
+            content="\n".join(pending_headers),
+        )
+        merged.append(combined)
+
+    node.children = merged
+
+
+def _count_nodes(node: DocumentNode) -> int:
+    return 1 + sum(_count_nodes(c) for c in node.children)
 
 
 def extract_raw_text(pdf_path: Path | str) -> str:
@@ -315,7 +408,7 @@ def _get_embedding_model(provider: str | None = None):
             from llama_index.embeddings.gemini import GeminiEmbedding
             
             logger.info("using_gemini_embeddings")
-            return GeminiEmbedding(model_name="models/text-embedding-004")
+            return GeminiEmbedding(model_name="models/text-embedding-005")
         except ImportError:
             raise ImportError(
                 "Gemini embeddings not installed. "

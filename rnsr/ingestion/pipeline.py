@@ -48,6 +48,412 @@ from rnsr.models import DetectedTable, DocumentNode, DocumentTree, IngestionResu
 logger = structlog.get_logger(__name__)
 
 
+def _extract_docx_text(docx_path: Path) -> str | None:
+    """Extract text from a .docx file including paragraphs, tables, headers,
+    footers, and structured document tags (content controls / form fields).
+
+    Walks the raw XML so nothing is missed -- python-docx helpers like
+    ``doc.paragraphs`` skip text inside ``<w:sdt>`` tags and don't expose
+    tables that live inside headers/footers.
+    """
+    try:
+        import docx  # python-docx
+    except ImportError:
+        logger.warning("python_docx_not_installed", hint="pip install python-docx")
+        return None
+
+    _WNS = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+    _W_P = f"{{{_WNS}}}p"
+    _W_R = f"{{{_WNS}}}r"
+    _W_TBL = f"{{{_WNS}}}tbl"
+    _W_SDT = f"{{{_WNS}}}sdt"
+    _W_SDT_CONTENT = f"{{{_WNS}}}sdtContent"
+    _W_TR = f"{{{_WNS}}}tr"
+    _W_TC = f"{{{_WNS}}}tc"
+    _W_T = f"{{{_WNS}}}t"
+    _W_BR = f"{{{_WNS}}}br"
+    _W_CR = f"{{{_WNS}}}cr"
+    _W_TAB = f"{{{_WNS}}}tab"
+
+    def _para_text(p_elem) -> str:
+        """Collect all <w:t> text from a paragraph element, respecting
+        breaks, tabs and content controls nested inline."""
+        fragments: list[str] = []
+        for node in p_elem.iter():
+            if node.tag == _W_T and node.text:
+                fragments.append(node.text)
+            elif node.tag in (_W_BR, _W_CR):
+                fragments.append("\n")
+            elif node.tag == _W_TAB:
+                fragments.append("\t")
+        return "".join(fragments).strip()
+
+    def _table_text(tbl_elem) -> list[str]:
+        """Extract table rows as pipe-separated cell text to preserve
+        structure.  Handles SDTs and nested tables inside cells."""
+        rows: list[str] = []
+        for tr in tbl_elem:
+            if tr.tag != _W_TR:
+                continue
+            cells: list[str] = []
+            for tc in tr:
+                if tc.tag != _W_TC:
+                    continue
+                cell_parts: list[str] = []
+                for child in tc:
+                    if child.tag == _W_P:
+                        t = _para_text(child)
+                        if t:
+                            cell_parts.append(t)
+                    elif child.tag == _W_TBL:
+                        cell_parts.extend(_table_text(child))
+                    elif child.tag == _W_SDT:
+                        cell_parts.extend(_process_sdt(child))
+                cell_text = " ".join(cell_parts).strip()
+                if cell_text:
+                    cells.append(cell_text)
+            if cells:
+                rows.append(" | ".join(cells))
+        return rows
+
+    def _run_text(r_elem) -> str:
+        """Collect text from a bare <w:r> element."""
+        fragments: list[str] = []
+        for node in r_elem.iter():
+            if node.tag == _W_T and node.text:
+                fragments.append(node.text)
+            elif node.tag in (_W_BR, _W_CR):
+                fragments.append("\n")
+            elif node.tag == _W_TAB:
+                fragments.append("\t")
+        return "".join(fragments).strip()
+
+    def _process_sdt(sdt_elem) -> list[str]:
+        """Recurse into an SDT's content -- it can hold paragraphs, tables,
+        bare runs, or further nested SDTs."""
+        parts: list[str] = []
+        for child in sdt_elem:
+            if child.tag == _W_SDT_CONTENT:
+                for inner in child:
+                    if inner.tag == _W_P:
+                        t = _para_text(inner)
+                        if t:
+                            parts.append(t)
+                    elif inner.tag == _W_TBL:
+                        parts.extend(_table_text(inner))
+                    elif inner.tag == _W_SDT:
+                        parts.extend(_process_sdt(inner))
+                    elif inner.tag == _W_R:
+                        t = _run_text(inner)
+                        if t:
+                            parts.append(t)
+        return parts
+
+    def _extract_container(container_elem) -> list[str]:
+        """Walk direct children of a container element (body, header,
+        footer) and extract text in document order without duplication."""
+        parts: list[str] = []
+        for child in container_elem:
+            if child.tag == _W_P:
+                t = _para_text(child)
+                if t:
+                    parts.append(t)
+            elif child.tag == _W_TBL:
+                parts.extend(_table_text(child))
+            elif child.tag == _W_SDT:
+                parts.extend(_process_sdt(child))
+        return parts
+
+    try:
+        doc = docx.Document(str(docx_path))
+        parts: list[str] = []
+
+        for section in doc.sections:
+            for hf in (section.header, section.footer):
+                if hf and hf._element is not None:
+                    parts.extend(_extract_container(hf._element))
+
+        parts.extend(_extract_container(doc.element.body))
+
+        return "\n\n".join(parts) if parts else None
+    except Exception as exc:
+        logger.warning("docx_extraction_failed", path=str(docx_path), error=str(exc))
+        return None
+
+
+def _extract_xlsx_text(xlsx_path: Path) -> str | None:
+    """Extract text from an Excel workbook (.xlsx / .xls).
+
+    Each sheet is rendered as a section with its name as header, followed by
+    rows formatted as pipe-separated values so table structure is preserved.
+    """
+    try:
+        import openpyxl
+    except ImportError:
+        logger.warning("openpyxl_not_installed", hint="pip install openpyxl")
+        return None
+
+    try:
+        wb = openpyxl.load_workbook(str(xlsx_path), read_only=True, data_only=True)
+        parts: list[str] = []
+
+        for sheet_name in wb.sheetnames:
+            ws = wb[sheet_name]
+            sheet_rows: list[str] = []
+            for row in ws.iter_rows(values_only=True):
+                cells = [str(c).strip() if c is not None else "" for c in row]
+                if any(cells):
+                    sheet_rows.append(" | ".join(cells))
+            if sheet_rows:
+                parts.append(f"[Sheet: {sheet_name}]")
+                parts.extend(sheet_rows)
+
+        wb.close()
+        return "\n\n".join(parts) if parts else None
+    except Exception as exc:
+        logger.warning("xlsx_extraction_failed", path=str(xlsx_path), error=str(exc))
+        return None
+
+
+def _extract_xlsx_tables(xlsx_path: Path) -> list:
+    """Build DetectedTable objects directly from Excel workbook data.
+
+    Each non-empty worksheet becomes a DetectedTable with the first non-empty
+    row treated as column headers and subsequent rows as data.  This bypasses
+    the text-based table parser which cannot detect tables from the ``\\n\\n``
+    separated text produced by ``_extract_xlsx_text()``.
+    """
+    from rnsr.models import DetectedTable
+
+    try:
+        import openpyxl
+    except ImportError:
+        logger.warning("openpyxl_not_installed", hint="pip install openpyxl")
+        return []
+
+    try:
+        import hashlib
+
+        wb = openpyxl.load_workbook(str(xlsx_path), read_only=True, data_only=True)
+        tables: list[DetectedTable] = []
+
+        for sheet_name in wb.sheetnames:
+            ws = wb[sheet_name]
+            all_rows: list[list[str]] = []
+            for row in ws.iter_rows(values_only=True):
+                cells = [str(c).strip() if c is not None else "" for c in row]
+                if any(cells):
+                    all_rows.append(cells)
+
+            if len(all_rows) < 2:
+                continue
+
+            headers = all_rows[0]
+            data_rows = all_rows[1:]
+
+            table_id = hashlib.sha256(
+                f"{xlsx_path.name}:{sheet_name}".encode()
+            ).hexdigest()[:12]
+
+            tables.append(
+                DetectedTable(
+                    id=table_id,
+                    node_id="root",
+                    title=sheet_name,
+                    headers=headers,
+                    num_rows=len(data_rows),
+                    num_cols=len(headers),
+                    data=data_rows,
+                )
+            )
+
+        wb.close()
+        logger.info("xlsx_tables_built", path=str(xlsx_path), count=len(tables))
+        return tables
+    except Exception as exc:
+        logger.warning("xlsx_table_extraction_failed", path=str(xlsx_path), error=str(exc))
+        return []
+
+
+def _extract_msg_text(msg_path: Path) -> str | None:
+    """Extract text from an Outlook .msg email file.
+
+    Returns structured text with From/To/Subject/Date headers and body.
+    """
+    try:
+        import extract_msg
+    except ImportError:
+        logger.warning("extract_msg_not_installed", hint="pip install extract-msg")
+        return None
+
+    try:
+        msg = extract_msg.openMsg(str(msg_path))
+        parts: list[str] = []
+        if msg.subject:
+            parts.append(f"Subject: {msg.subject}")
+        if msg.sender:
+            parts.append(f"From: {msg.sender}")
+        if msg.to:
+            parts.append(f"To: {msg.to}")
+        if msg.date:
+            parts.append(f"Date: {msg.date}")
+        if msg.cc:
+            parts.append(f"CC: {msg.cc}")
+        if parts:
+            parts.append("")  # blank line before body
+        if msg.body:
+            parts.append(msg.body.strip())
+        msg.close()
+        return "\n".join(parts) if parts else None
+    except Exception as exc:
+        logger.warning("msg_extraction_failed", path=str(msg_path), error=str(exc))
+        return None
+
+
+def _extract_csv_text(csv_path: Path) -> str | None:
+    """Extract text from a CSV file, rendering rows as pipe-separated values."""
+    try:
+        import csv
+
+        with open(csv_path, newline="", encoding="utf-8-sig") as f:
+            reader = csv.reader(f)
+            rows: list[str] = []
+            for row in reader:
+                cells = [c.strip() for c in row]
+                if any(cells):
+                    rows.append(" | ".join(cells))
+        return "\n\n".join(rows) if rows else None
+    except Exception as exc:
+        logger.warning("csv_extraction_failed", path=str(csv_path), error=str(exc))
+        return None
+
+
+def _extract_csv_tables(csv_path: Path) -> list:
+    """Build a single DetectedTable from a CSV file.
+
+    The first non-empty row is treated as column headers.
+    """
+    from rnsr.models import DetectedTable
+
+    try:
+        import csv
+        import hashlib
+
+        with open(csv_path, newline="", encoding="utf-8-sig") as f:
+            reader = csv.reader(f)
+            all_rows: list[list[str]] = []
+            for row in reader:
+                cells = [c.strip() for c in row]
+                if any(cells):
+                    all_rows.append(cells)
+
+        if len(all_rows) < 2:
+            return []
+
+        headers = all_rows[0]
+        data_rows = all_rows[1:]
+
+        table_id = hashlib.sha256(csv_path.name.encode()).hexdigest()[:12]
+
+        table = DetectedTable(
+            id=table_id,
+            node_id="root",
+            title=csv_path.stem,
+            headers=headers,
+            num_rows=len(data_rows),
+            num_cols=len(headers),
+            data=data_rows,
+        )
+        logger.info("csv_table_built", path=str(csv_path), rows=len(data_rows))
+        return [table]
+    except Exception as exc:
+        logger.warning("csv_table_extraction_failed", path=str(csv_path), error=str(exc))
+        return []
+
+
+_IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".tiff", ".tif"}
+
+
+def _extract_image_text(image_path: Path) -> str | None:
+    """Extract text from an image using a Vision Language Model (VLM).
+
+    Uses the configured Gemini model to describe and transcribe all visible
+    text in the image (screenshots, scanned documents, photos of text, etc.).
+    """
+    try:
+        from rnsr.llm import get_llm, LLMProvider
+    except ImportError:
+        logger.warning("llm_module_not_available_for_vlm")
+        return None
+
+    try:
+        image_bytes = image_path.read_bytes()
+
+        import mimetypes
+        mime, _ = mimetypes.guess_type(str(image_path))
+        if not mime:
+            mime = "image/png"
+
+        llm = get_llm(provider=LLMProvider.GEMINI, enable_fallback=True)
+
+        prompt = (
+            "You are a document extraction assistant. Transcribe ALL visible text "
+            "in this image exactly as it appears, preserving layout, line breaks, "
+            "and any structure (tables, lists, headings). If the image is a "
+            "screenshot of a conversation or text message, transcribe each message "
+            "with its sender. Output ONLY the transcribed text, nothing else."
+        )
+
+        result = llm.complete_with_image(prompt, image_bytes)
+        text = str(result).strip()
+        if text:
+            logger.info("vlm_image_extracted", path=str(image_path), chars=len(text))
+            return text
+        return None
+    except Exception as exc:
+        logger.warning("image_extraction_failed", path=str(image_path), error=str(exc))
+        return None
+
+
+def _text_to_ingestion_result(
+    text: str,
+    file_path: Path,
+    stats: dict,
+    warnings: list[str],
+) -> IngestionResult:
+    """Convert extracted plain text into an IngestionResult with optional
+    pattern-based header detection."""
+    from rnsr.ingestion.semantic_fallback import _try_pattern_based_headers
+
+    tree = _try_pattern_based_headers(text, file_path.stem)
+    if tree:
+        result = IngestionResult(
+            tree=tree,
+            tier_used=2,
+            method="pattern_based_headers",
+            stats=stats,
+            warnings=warnings,
+        )
+        return _add_tables_to_result(result)
+
+    root = DocumentNode(id="root", level=0, header=file_path.stem, content=text)
+    tree = DocumentTree(
+        title=file_path.stem,
+        root=root,
+        total_nodes=1,
+        ingestion_tier=2,
+        ingestion_method="semantic_splitter",
+    )
+    result = IngestionResult(
+        tree=tree,
+        tier_used=2,
+        method="semantic_splitter",
+        stats=stats,
+        warnings=warnings,
+    )
+    return _add_tables_to_result(result)
+
+
 def ingest_document(
     pdf_path: Path | str,
     use_visual_analysis: bool = True,
@@ -96,43 +502,64 @@ def ingest_document(
     warnings: list[str] = []
     stats: dict = {"path": str(pdf_path)}
     
-    # Handle text/markdown files directly with pattern-based headers
-    if pdf_path.suffix.lower() in {'.md', '.txt', '.text', '.markdown'}:
-        from rnsr.ingestion.semantic_fallback import _try_pattern_based_headers
-        
+    suffix = pdf_path.suffix.lower()
+
+    # --- Non-PDF file types: extract text then build tree -----------------
+
+    if suffix in {".md", ".txt", ".text", ".markdown"}:
         logger.info("text_file_detected", path=str(pdf_path))
-        text = pdf_path.read_text(encoding='utf-8')
-        
-        # Try pattern-based header detection first
-        tree = _try_pattern_based_headers(text, pdf_path.stem)
-        if tree:
-            result = IngestionResult(
-                tree=tree,
-                tier_used=2,  # Pattern-based is a sub-tier of tier 2
-                method="pattern_based_headers",
-                stats=stats,
-                warnings=warnings,
+        text = pdf_path.read_text(encoding="utf-8")
+        return _text_to_ingestion_result(text, pdf_path, stats, warnings)
+
+    if suffix == ".docx":
+        logger.info("docx_file_detected", path=str(pdf_path))
+        text = _extract_docx_text(pdf_path)
+        if not text:
+            raise IngestionError(f"Failed to extract text from docx: {pdf_path}")
+        return _text_to_ingestion_result(text, pdf_path, stats, warnings)
+
+    if suffix in {".xlsx", ".xls"}:
+        logger.info("xlsx_file_detected", path=str(pdf_path))
+        text = _extract_xlsx_text(pdf_path)
+        if not text:
+            raise IngestionError(f"Failed to extract text from Excel: {pdf_path}")
+        result = _text_to_ingestion_result(text, pdf_path, stats, warnings)
+        excel_tables = _extract_xlsx_tables(pdf_path)
+        if excel_tables:
+            result.tables = excel_tables
+            result.stats["tables_detected"] = len(excel_tables)
+        return result
+
+    if suffix == ".msg":
+        logger.info("msg_file_detected", path=str(pdf_path))
+        text = _extract_msg_text(pdf_path)
+        if not text:
+            raise IngestionError(f"Failed to extract text from .msg: {pdf_path}")
+        return _text_to_ingestion_result(text, pdf_path, stats, warnings)
+
+    if suffix == ".csv":
+        logger.info("csv_file_detected", path=str(pdf_path))
+        text = _extract_csv_text(pdf_path)
+        if not text:
+            raise IngestionError(f"Failed to extract text from CSV: {pdf_path}")
+        result = _text_to_ingestion_result(text, pdf_path, stats, warnings)
+        csv_tables = _extract_csv_tables(pdf_path)
+        if csv_tables:
+            result.tables = csv_tables
+            result.stats["tables_detected"] = len(csv_tables)
+        return result
+
+    if suffix in _IMAGE_EXTENSIONS:
+        logger.info("image_file_detected", path=str(pdf_path))
+        text = _extract_image_text(pdf_path)
+        if not text:
+            raise IngestionError(
+                f"Failed to extract text from image via VLM: {pdf_path}"
             )
-            return _add_tables_to_result(result)
-        
-        # Fallback: create a simple tree from the text
-        root = DocumentNode(id="root", level=0, header=pdf_path.stem, content=text)
-        tree = DocumentTree(
-            title=pdf_path.stem,
-            root=root,
-            total_nodes=1,
-            ingestion_tier=2,
-            ingestion_method="semantic_splitter",
-        )
-        result = IngestionResult(
-            tree=tree,
-            tier_used=2,
-            method="semantic_splitter",
-            stats=stats,
-            warnings=warnings,
-        )
-        return _add_tables_to_result(result)
-    
+        return _text_to_ingestion_result(text, pdf_path, stats, warnings)
+
+    # --- PDF path (existing tier logic) -----------------------------------
+
     # Check if document has extractable text
     if not has_extractable_text(pdf_path):
         # No text - go directly to Tier 3 (OCR)
@@ -430,7 +857,7 @@ def _try_tier_3(
         result = IngestionResult(
             tree=tree,
             tier_used=3,
-            method="ocr",
+            method=tree.ingestion_method or "ocr",
             warnings=warnings,
             stats=stats,
         )

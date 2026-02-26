@@ -503,50 +503,41 @@ def evaluate_answer_quality(
             "honesty": 1.0,
         }
     
-    prompt = f"""You are evaluating if an answer correctly addresses a question.
+    prompt = f"""You are evaluating whether a predicted answer is correct given a question and ground truth.
 
-QUESTION: {question}
+Question: {question}
+Ground Truth Answer: {ground_truth}
+Predicted Answer: {answer[:4000]}
 
-EXPECTED ANSWER (key information that should be present):
-{ground_truth}
+Does the predicted answer convey the same information as the ground truth? The predicted answer may be verbose, include source citations, or use different wording - focus on semantic equivalence. Ignore formatting and minor phrasing differences.
 
-GENERATED ANSWER:
-{answer}
+**Numeric and derived answers:** Treat numeric answers as correct when the **value** matches the ground truth even if units or format differ (e.g. 8325 thousand = 8.325 million = 8325000; "8325 thousand" vs "$8.325 million"). When the question asks for a derived value (average, total, sum, ratio), treat the prediction as correct if it states or clearly implies the same number, even if the wording differs.
 
-Does the generated answer contain the key information from the expected answer?
-- The answer may include ADDITIONAL correct information (that's fine)
-- The answer may use different wording (that's fine)  
-- The key facts/values from the expected answer should be present
+Respond with ONLY valid JSON (no markdown, no extra text):
+{{"verdict": "correct"|"partial"|"incorrect", "score": 1.0|0.5|0.0, "explanation": "brief reason"}}
 
-Think step by step:
-1. What are the key facts in the expected answer?
-2. Are those facts present in the generated answer?
-
-Respond with ONLY a JSON object:
-{{"is_correct": 1, "reasoning": "brief explanation"}}
-
-Use is_correct=1 if the answer contains the expected information, is_correct=0 if it's missing or wrong."""
+Use: verdict "correct" and score 1.0 when the predicted answer clearly contains the same factual answer (including numerically equivalent values). Use "partial" and 0.5 when it is partly right. Use "incorrect" and 0.0 when it is wrong or does not address the question."""
 
     try:
         llm = get_cached_llm()
         response = llm.complete(prompt)
         response_text = str(response)
-        
-        # Parse JSON
+
         json_match = re.search(r'\{[^}]+\}', response_text, re.DOTALL)
         if json_match:
             result_json = json.loads(json_match.group())
-            is_correct = int(result_json.get("is_correct", 0))
-            
+            verdict = result_json.get("verdict", "incorrect")
+            score = float(result_json.get("score", 0.0))
+
             return {
-                "relevance": 1.0 if is_correct else 0.5,
-                "correctness": float(is_correct),
-                "completeness": float(is_correct),
+                "relevance": 1.0 if verdict != "incorrect" else 0.5,
+                "correctness": score,
+                "completeness": score,
                 "honesty": 0.5,
             }
     except Exception as e:
         console.print(f"[yellow]Evaluation error: {e}[/yellow]")
-    
+
     return {"relevance": 0.5, "correctness": 0.5, "completeness": 0.5, "honesty": 0.5}
 
 

@@ -59,7 +59,7 @@ class SemanticRetriever:
             
             # Create embedding model
             self._embed_model = GeminiEmbedding(
-                model_name="models/text-embedding-004"
+                model_name="models/text-embedding-005"
             )
             
             # Create index nodes (summaries only!)

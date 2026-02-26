@@ -719,12 +719,13 @@ class NavigationREPL:
         
         return results
     
-    def _search_tree(self, pattern: str) -> list[dict[str, Any]]:
+    def _search_tree(self, pattern: str, max_depth: int = 99, **kwargs: Any) -> list[dict[str, Any]]:
         """
         Search the entire subtree from current position.
         
         Breadth-first search that exhausts the full tree.
         Returns all matching nodes sorted by relevance.
+        max_depth limits how deep the BFS descends from the current node.
         """
         logger.info(
             "search_tree_start",
@@ -750,6 +751,9 @@ class NavigationREPL:
                 continue
             visited.add(node_id)
             
+            if depth > max_depth:
+                continue
+            
             node = self.skeleton.get(node_id)
             if not node:
                 continue
@@ -757,7 +761,6 @@ class NavigationREPL:
             # Skip nodes not in allowed set (ToT constraint)
             # But still traverse children in case they are allowed
             if not self._is_node_allowed(node_id):
-                # Still add children to queue for traversal
                 for child_id in node.child_ids:
                     if child_id not in visited:
                         queue.append((child_id, depth + 1))

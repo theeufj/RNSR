@@ -93,6 +93,7 @@ class DocumentTree(BaseModel):
     total_nodes: int = 0
     ingestion_tier: Literal[1, 2, 3] = 1
     ingestion_method: IngestionMethod | None = None
+    page_count: int | None = None
 
 
 # =============================================================================
@@ -188,9 +189,10 @@ class RetrievalTrace(BaseModel):
 # Define the type alias for all valid ingestion methods
 IngestionMethod = Literal[
     "font_histogram",
-    "semantic_splitter", 
+    "semantic_splitter",
     "pattern_based_headers",  # Sub-tier of semantic: uses regex to detect headers
     "ocr",
+    "vlm_ocr",
     "xy_cut",
     "hierarchical_clustering",
 ]

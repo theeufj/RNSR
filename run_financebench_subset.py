@@ -173,31 +173,32 @@ def _download_pdf(url: str, doc_name: str) -> Path | None:
 
 def _judge_answer(question: str, expected: str, actual: str, llm) -> tuple[bool, str]:
     """Use LLM to judge if actual answer is correct given expected answer."""
-    prompt = f"""You are a financial document QA judge. Determine if the ACTUAL answer is correct
-by comparing it to the EXPECTED answer. Focus on factual correctness, not exact wording.
+    prompt = f"""You are evaluating whether a predicted answer is correct given a question and ground truth.
 
-QUESTION: {question}
+Question: {question}
+Ground Truth Answer: {expected}
+Predicted Answer: {actual[:4000]}
 
-EXPECTED ANSWER: {expected}
+Does the predicted answer convey the same information as the ground truth? The predicted answer may be verbose, include source citations, or use different wording - focus on semantic equivalence. Ignore formatting and minor phrasing differences.
 
-ACTUAL ANSWER: {actual}
+**Numeric and derived answers:** Treat numeric answers as correct when the **value** matches the ground truth even if units or format differ (e.g. 8325 thousand = 8.325 million = 8325000; "8325 thousand" vs "$8.325 million"). When the question asks for a derived value (average, total, sum, ratio), treat the prediction as correct if it states or clearly implies the same number, even if the wording differs.
 
-Rules:
-- If the actual answer contains the key facts from the expected answer, it is CORRECT.
-- Minor wording differences are OK.
-- If the actual answer says "unable to find" or similar, it is INCORRECT.
-- Numerical answers must be approximately correct (within 5% or rounding).
+Respond with ONLY valid JSON (no markdown, no extra text):
+{{"verdict": "correct"|"partial"|"incorrect", "score": 1.0|0.5|0.0, "explanation": "brief reason"}}
 
-Respond with EXACTLY this JSON:
-{{"correct": true/false, "reasoning": "brief explanation"}}
-"""
+Use: verdict "correct" and score 1.0 when the predicted answer clearly contains the same factual answer (including numerically equivalent values). Use "partial" and 0.5 when it is partly right. Use "incorrect" and 0.0 when it is wrong or does not address the question."""
     try:
         complete_fn = getattr(llm, "complete_json", None) or llm.complete
         resp = str(complete_fn(prompt))
         m = re.search(r'\{[^}]+\}', resp)
         if m:
             data = json.loads(m.group())
-            return data.get("correct", False), data.get("reasoning", "")
+            verdict = data.get("verdict", "incorrect")
+            score = float(data.get("score", 0.0))
+            explanation = data.get("explanation", "")
+            correct = verdict in ("correct", "partial")
+            reasoning = f"[{verdict} {score}] {explanation}"
+            return correct, reasoning
     except Exception as e:
         logger.warning("judge_failed", error=str(e))
     return False, "Judge failed to parse"

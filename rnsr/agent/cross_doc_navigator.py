@@ -54,6 +54,8 @@ class DocumentResult:
     evidence: list[str] = field(default_factory=list)
     entities_found: list[Entity] = field(default_factory=list)
     confidence: float = 0.0
+    nodes_visited: int = 0
+    iterations: int = 0
 
 
 @dataclass
@@ -67,6 +69,8 @@ class CrossDocAnswer:
     relationships_used: list[Relationship] = field(default_factory=list)
     confidence: float = 0.0
     trace: list[dict[str, Any]] = field(default_factory=list)
+    total_nodes_visited: int = 0
+    total_iterations: int = 0
 
 
 # =============================================================================
@@ -138,10 +142,15 @@ class CrossDocNavigator:
         # Cache for document content stores
         self._kv_stores: dict[str, KVStore] = {}
         self._skeletons: dict[str, dict[str, SkeletonNode]] = {}
+        self._doc_titles: dict[str, str] = {}
     
     def set_llm_function(self, llm_fn: Callable[[str], str]) -> None:
         """Set the LLM function."""
         self._llm_fn = llm_fn
+
+    def _get_doc_title(self, doc_id: str) -> str:
+        """Resolve doc_id to a human-readable title."""
+        return self._doc_titles.get(doc_id, doc_id)
     
     def register_document(
         self,
@@ -149,6 +158,7 @@ class CrossDocNavigator:
         skeleton: dict[str, SkeletonNode],
         kv_store: KVStore,
         navigator: Any = None,
+        title: str | None = None,
     ) -> None:
         """
         Register a document's resources for cross-document queries.
@@ -158,14 +168,17 @@ class CrossDocNavigator:
             skeleton: Skeleton index for the document.
             kv_store: KV store with document content.
             navigator: Optional pre-configured navigator.
+            title: Human-readable document title / filename.
         """
         self._skeletons[doc_id] = skeleton
         self._kv_stores[doc_id] = kv_store
+        if title:
+            self._doc_titles[doc_id] = title
         
         if navigator:
             self.navigators[doc_id] = navigator
         
-        logger.info("document_registered", doc_id=doc_id)
+        logger.info("document_registered", doc_id=doc_id, title=title or doc_id)
     
     def query(self, question: str) -> CrossDocAnswer:
         """
@@ -390,11 +403,15 @@ class CrossDocNavigator:
             })
             planned_doc_ids.add(doc_id)
         
-        # Include unmatched documents only if their skeleton headers/summaries
-        # share at least one keyword with the query.
+        # For small document collections (<= 10 docs), query every
+        # document — filtering is counterproductive when the collection
+        # is small and the cost of querying all docs is low.
         all_registered = set(self.navigators.keys()) | set(self._kv_stores.keys())
+        _SMALL_COLLECTION_THRESHOLD = 10
+        skip_filtering = len(all_registered) <= _SMALL_COLLECTION_THRESHOLD
+
         for doc_id in all_registered - planned_doc_ids:
-            if not self._doc_has_keyword_overlap(doc_id, question):
+            if not skip_filtering and not self._doc_has_keyword_overlap(doc_id, question):
                 logger.debug(
                     "fallback_doc_skipped",
                     doc_id=doc_id,
@@ -411,7 +428,8 @@ class CrossDocNavigator:
             logger.debug(
                 "fallback_doc_included",
                 doc_id=doc_id,
-                reason="keyword overlap found, searching with original query",
+                reason="small collection — querying all docs" if skip_filtering
+                       else "keyword overlap found, searching with original query",
             )
         
         return tasks
@@ -479,16 +497,22 @@ class CrossDocNavigator:
                 logger.warning("no_navigator_for_doc", doc_id=doc_id)
                 result = DocumentResult(
                     doc_id=doc_id,
-                    doc_title=doc_id,
+                    doc_title=self._get_doc_title(doc_id),
                     answer="Document not accessible",
                     confidence=0.0,
                 )
             
             results.append(result)
 
+            # Only use early termination for large collections (>10 docs).
+            # For small collections the cost of querying all docs is low and
+            # skipping docs risks missing the correct answer in a different
+            # document that also matches the query.
             if (
-                result.confidence >= self._EARLY_TERMINATION_CONFIDENCE
+                len(tasks) > 10
+                and result.confidence >= self._EARLY_TERMINATION_CONFIDENCE
                 and result.answer
+                and not self._is_negative_answer(result.answer)
                 and i < len(tasks) - 1
             ):
                 skipped = [t["doc_id"] for t in tasks[i + 1 :]]
@@ -522,20 +546,23 @@ class CrossDocNavigator:
         try:
             nav_result = navigator.navigate(task["sub_query"])
             
+            visited = nav_result.get("visited_nodes", [])
             return DocumentResult(
                 doc_id=doc_id,
-                doc_title=doc_id,
+                doc_title=self._get_doc_title(doc_id),
                 answer=nav_result.get("answer", ""),
                 evidence=nav_result.get("variables", []),
                 entities_found=task["entities"],
                 confidence=nav_result.get("confidence", 0.5),
+                nodes_visited=len(visited) if isinstance(visited, list) else 0,
+                iterations=nav_result.get("iteration", 0),
             )
             
         except Exception as e:
             logger.error("navigation_failed", doc_id=doc_id, error=str(e))
             return DocumentResult(
                 doc_id=doc_id,
-                doc_title=doc_id,
+                doc_title=self._get_doc_title(doc_id),
                 answer=f"Error: {str(e)}",
                 confidence=0.0,
             )
@@ -559,7 +586,7 @@ class CrossDocNavigator:
         if not kv_store:
             return DocumentResult(
                 doc_id=doc_id,
-                doc_title=doc_id,
+                doc_title=self._get_doc_title(doc_id),
                 answer="Content not available",
                 confidence=0.0,
             )
@@ -574,7 +601,7 @@ class CrossDocNavigator:
         if not evidence:
             return DocumentResult(
                 doc_id=doc_id,
-                doc_title=doc_id,
+                doc_title=self._get_doc_title(doc_id),
                 answer="No relevant content found",
                 confidence=0.0,
             )
@@ -603,13 +630,49 @@ Answer:"""
         
         return DocumentResult(
             doc_id=doc_id,
-            doc_title=doc_id,
+            doc_title=self._get_doc_title(doc_id),
             answer=answer,
             evidence=evidence,
             entities_found=task["entities"],
             confidence=0.7 if evidence else 0.0,
         )
     
+    _NEGATIVE_ANSWER_PATTERNS = (
+        "i cannot answer",
+        "cannot answer",
+        "cannot be determined",
+        "cannot determine",
+        "no relevant content found",
+        "no relevant documents found",
+        "content not available",
+        "document not accessible",
+        "error during navigation",
+        "error during synthesis",
+        "unable to determine",
+        "unable to find",
+        "unable to answer",
+        "unable to identify",
+        "insufficient information",
+        "not contain this information",
+        "does not contain",
+        "do not contain",
+        "no information found",
+        "no information available",
+        "no information was found",
+        "information not found",
+        "information gap",
+        "not found in",
+        "question status:** **unanswered",
+    )
+
+    @classmethod
+    def _is_negative_answer(cls, answer: str) -> bool:
+        """True if *answer* is an unanswerable / hedged boilerplate response."""
+        if not answer:
+            return True
+        lower = answer.lower()
+        return any(pat in lower for pat in cls._NEGATIVE_ANSWER_PATTERNS)
+
     def _synthesize_answer(
         self,
         question: str,
@@ -635,14 +698,18 @@ Answer:"""
                 answer="No relevant documents found for this query.",
                 confidence=0.0,
             )
-        
-        # Collect all entities involved
+
+        useful_results = [
+            r for r in results if not self._is_negative_answer(r.answer)
+        ]
+        if not useful_results:
+            useful_results = results
+
         all_entities = []
         for entities in doc_entities.values():
             all_entities.extend(entities)
         
-        # Get relationships between entities
-        relationships = []
+        relationships: list[Relationship] = []
         entity_ids = {e.id for e in all_entities}
         for entity_id in entity_ids:
             rels = self.kg.get_entity_relationships(entity_id)
@@ -650,31 +717,94 @@ Answer:"""
                 if rel.target_id in entity_ids or rel.source_id in entity_ids:
                     if rel not in relationships:
                         relationships.append(rel)
+
+        entity_context = self._build_entity_context(
+            all_entities, relationships, doc_entities,
+        )
+
+        best_confidence = max(r.confidence for r in results) if results else 0.0
         
-        # Calculate confidence
-        avg_confidence = sum(r.confidence for r in results) / len(results) if results else 0.0
-        
-        # Synthesize based on query type
         if not self._llm_fn:
-            # Simple concatenation without LLM
-            answer = self._simple_synthesis(question, results)
+            answer = self._simple_synthesis(question, useful_results)
         elif query.query_type == "comparison":
-            answer = self._synthesize_comparison(question, results)
+            answer = self._synthesize_comparison(
+                question, useful_results, entity_context,
+            )
         elif query.query_type == "timeline":
-            answer = self._synthesize_timeline(question, results, all_entities)
+            answer = self._synthesize_timeline(
+                question, useful_results, all_entities, entity_context,
+            )
         elif query.query_type == "entity_tracking":
-            answer = self._synthesize_entity_tracking(question, results, all_entities)
+            answer = self._synthesize_entity_tracking(
+                question, useful_results, all_entities, entity_context,
+            )
         else:
-            answer = self._synthesize_general(question, results)
+            answer = self._synthesize_general(
+                question, useful_results, entity_context,
+            )
         
+        total_nodes = sum(r.nodes_visited for r in results)
+        total_iters = sum(r.iterations for r in results)
+
         return CrossDocAnswer(
             query=question,
             answer=answer,
             document_results=results,
             entities_involved=list({e.id: e for e in all_entities}.values()),
             relationships_used=relationships,
-            confidence=avg_confidence,
+            confidence=best_confidence,
+            total_nodes_visited=total_nodes,
+            total_iterations=total_iters,
         )
+
+    def _build_entity_context(
+        self,
+        entities: list[Entity],
+        relationships: list[Relationship],
+        doc_entities: dict[str, list[Entity]],
+    ) -> str:
+        """Build a textual KG context block for the synthesis prompt.
+
+        Includes entity-to-document mapping, entity relationships, and
+        co-mention information so the LLM can disambiguate conflicting
+        answers across documents.
+        """
+        lines: list[str] = []
+
+        # Map entities to their documents (using human-readable titles)
+        doc_entity_map: dict[str, list[str]] = {}
+        for doc_id, ents in doc_entities.items():
+            title = self._get_doc_title(doc_id)
+            doc_entity_map[title] = [e.canonical_name for e in ents]
+        if doc_entity_map:
+            lines.append("Entity-Document mapping:")
+            for title, names in doc_entity_map.items():
+                lines.append(f"  - {title}: {', '.join(names)}")
+
+        # Relationships
+        if relationships:
+            lines.append("Entity relationships:")
+            seen: set[str] = set()
+            for rel in relationships[:20]:
+                key = f"{rel.source_id}|{rel.type.value}|{rel.target_id}"
+                if key not in seen:
+                    seen.add(key)
+                    lines.append(
+                        f"  - {rel.source_id} → {rel.type.value} → {rel.target_id}"
+                    )
+
+        # Co-mentions (entities that appear together)
+        for entity in entities[:8]:
+            co = self.kg.get_entities_mentioned_together(entity.id)
+            if co:
+                related = [e.canonical_name for e, _ in co[:5]]
+                lines.append(
+                    f"  - {entity.canonical_name} co-occurs with: {', '.join(related)}"
+                )
+
+        if not lines:
+            return ""
+        return "\n".join(lines)
     
     def _simple_synthesis(
         self,
@@ -688,128 +818,153 @@ Answer:"""
                 parts.append(f"**{result.doc_title}**:\n{result.answer}")
         return "\n\n".join(parts) if parts else "No answers found."
     
+    _CROSS_DOC_RULES = """RULES (STRICTLY FOLLOW ALL):
+1. Give a DIRECT, CONCISE answer — start with the answer itself, not analysis or preamble.
+2. FORBIDDEN: markdown headers (#, ##), section titles, bullet lists, "Overview", "Summary", "Conclusion" sections. Write plain prose only.
+3. Do NOT hedge or say "cannot be determined" when the information IS present in the findings.
+4. If multiple documents provide the same answer, state it once — do not repeat per document.
+5. When documents DISAGREE, use the Knowledge Graph context (entity relationships, document types, entity-document mapping) to determine the MOST CONTEXTUALLY RELEVANT answer. Do NOT pick an answer just because more documents mention it — frequency is NOT correctness. Consider which document type is most likely to contain the authoritative answer for this specific question.
+6. Keep the answer under 3 sentences unless the question requires more detail.
+7. NEVER wrap the answer in "Entity Tracking", "Timeline", "Analysis", "Comprehensive", or any report-style formatting.
+8. Ignore any formatting in the document findings — rewrite in plain, concise prose."""
+
     def _synthesize_comparison(
         self,
         question: str,
         results: list[DocumentResult],
+        entity_context: str = "",
     ) -> str:
         """Synthesize a comparison answer."""
         if not self._llm_fn:
             return self._simple_synthesis(question, results)
-        
+
         results_text = "\n\n".join([
             f"Document: {r.doc_title}\nFindings: {r.answer}"
             for r in results
         ])
-        
-        prompt = f"""Compare the following information from multiple documents.
 
+        kg_block = ""
+        if entity_context:
+            kg_block = f"\nKnowledge Graph Context:\n{entity_context}\n"
+
+        prompt = f"""Answer the question by comparing information from multiple documents.
+
+{self._CROSS_DOC_RULES}
+{kg_block}
 Question: {question}
 
 Document findings:
 {results_text}
 
-Provide a structured comparison highlighting:
-1. Key similarities
-2. Key differences
-3. Summary
+Answer:"""
 
-Comparison:"""
-        
         try:
             return self._llm_fn(prompt)
         except Exception as e:
             return f"Error: {str(e)}\n\n{self._simple_synthesis(question, results)}"
-    
+
     def _synthesize_timeline(
         self,
         question: str,
         results: list[DocumentResult],
         entities: list[Entity],
+        entity_context: str = "",
     ) -> str:
         """Synthesize a timeline answer."""
         if not self._llm_fn:
             return self._simple_synthesis(question, results)
-        
+
         results_text = "\n\n".join([
-            f"Document: {r.doc_title}\nEvents: {r.answer}"
+            f"Document: {r.doc_title}\nFindings: {r.answer}"
             for r in results
         ])
-        
-        entity_names = ", ".join([e.canonical_name for e in entities[:5]])
-        
-        prompt = f"""Construct a timeline of events from multiple documents.
 
+        kg_block = ""
+        if entity_context:
+            kg_block = f"\nKnowledge Graph Context:\n{entity_context}\n"
+
+        prompt = f"""Answer the question using information from multiple documents.
+
+{self._CROSS_DOC_RULES}
+{kg_block}
 Question: {question}
-
-Key entities: {entity_names}
 
 Document findings:
 {results_text}
 
-Provide a chronological timeline of events:"""
-        
+Answer:"""
+
         try:
             return self._llm_fn(prompt)
         except Exception as e:
             return f"Error: {str(e)}\n\n{self._simple_synthesis(question, results)}"
-    
+
     def _synthesize_entity_tracking(
         self,
         question: str,
         results: list[DocumentResult],
         entities: list[Entity],
+        entity_context: str = "",
     ) -> str:
         """Synthesize an entity tracking answer."""
         if not self._llm_fn:
             return self._simple_synthesis(question, results)
-        
+
         results_text = "\n\n".join([
-            f"Document: {r.doc_title}\nMentions: {r.answer}"
+            f"Document: {r.doc_title}\nFindings: {r.answer}"
             for r in results
         ])
-        
-        entity_names = ", ".join([e.canonical_name for e in entities[:5]])
-        
-        prompt = f"""Track the following entities across multiple documents.
 
+        kg_block = ""
+        if entity_context:
+            kg_block = f"\nKnowledge Graph Context:\n{entity_context}\n"
+
+        prompt = f"""Answer the question using information from multiple documents.
+
+{self._CROSS_DOC_RULES}
+{kg_block}
 Question: {question}
-
-Entities being tracked: {entity_names}
 
 Document findings:
 {results_text}
 
-Provide a comprehensive view of what happens to these entities across all documents:"""
-        
+Answer:"""
+
         try:
             return self._llm_fn(prompt)
         except Exception as e:
             return f"Error: {str(e)}\n\n{self._simple_synthesis(question, results)}"
-    
+
     def _synthesize_general(
         self,
         question: str,
         results: list[DocumentResult],
+        entity_context: str = "",
     ) -> str:
         """Synthesize a general cross-document answer."""
         if not self._llm_fn:
             return self._simple_synthesis(question, results)
-        
+
         results_text = "\n\n".join([
-            f"Document: {r.doc_title}\nContent: {r.answer}"
+            f"Document: {r.doc_title}\nFindings: {r.answer}"
             for r in results
         ])
-        
-        prompt = f"""Answer the question based on information from multiple documents.
 
+        kg_block = ""
+        if entity_context:
+            kg_block = f"\nKnowledge Graph Context:\n{entity_context}\n"
+
+        prompt = f"""Answer the question using information from multiple documents.
+
+{self._CROSS_DOC_RULES}
+{kg_block}
 Question: {question}
 
 Document findings:
 {results_text}
 
-Synthesized answer:"""
-        
+Answer:"""
+
         try:
             return self._llm_fn(prompt)
         except Exception as e:

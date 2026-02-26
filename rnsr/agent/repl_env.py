@@ -572,7 +572,7 @@ Query: {query}
 Collected Information:
 {context}
 
-Provide a comprehensive answer based on the above information."""
+Give a DIRECT, CONCISE answer. Start with the answer itself — no preamble, analysis sections, or markdown headers. Keep it under 3 sentences unless more detail is explicitly needed."""
             
             return self._llm_fn(prompt)
         

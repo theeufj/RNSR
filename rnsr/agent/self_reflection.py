@@ -697,21 +697,33 @@ class StrictAnswerVerifier:
                 rejection_reason="No LLM available for verification",
             )
         
-        # Handle "cannot determine" answers - these are acceptable
+        # Handle "cannot determine" answers -- the answer itself is honest
+        # (not a hallucination), but confidence should stay low so
+        # cross-document early termination doesn't skip other documents
+        # that may actually contain the information.
         answer_lower = answer.lower().strip()
         if any(phrase in answer_lower for phrase in [
             "cannot answer",
             "cannot determine",
+            "cannot be determined",
             "not found",
             "i don't know",
             "no information",
             "not available",
             "unable to find",
+            "unable to determine",
+            "unable to answer",
+            "unable to identify",
+            "insufficient information",
+            "does not contain",
+            "do not contain",
+            "not contain this information",
+            "information gap",
         ]):
             logger.info("answer_is_explicit_unknown", answer=answer[:100])
             return VerificationResult(
                 verified=True,
-                confidence=1.0,
+                confidence=0.3,
                 rejection_reason="",
             )
         

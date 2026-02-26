@@ -247,7 +247,7 @@ class HierarchicalSemanticClusterer:
         
         for text in texts:
             result = client.models.embed_content(
-                model="models/text-embedding-004",
+                model="models/text-embedding-005",
                 contents=text,
             )
             

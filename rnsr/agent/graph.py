@@ -1,6 +1,15 @@
 """
-Agent Graph - LangGraph State Machine for Document Navigation
+Agent Graph - DEPRECATED LangGraph State Machine for Document Navigation
 
+NOTE: The primary navigator is now RLMNavigator (rnsr/agent/rlm_navigator.py).
+run_navigator() delegates to RLMNavigator.navigate() as of the consolidation.
+The LangGraph graph builder and node functions below are retained for
+backward compatibility but are no longer the active code path.
+
+Key capabilities (arithmetic synthesis, vision augmentation, header-match
+fallback, short-answer extraction) have been ported to rlm_navigator.py.
+
+Original description:
 Implements the Navigator Agent with full RLM (Recursive Language Model) support:
 
 1. Decomposes queries into sub-questions (Section 2.2 - Recursive Loop)
@@ -2798,7 +2807,7 @@ def run_navigator(
     max_iterations: int = 20,
     top_k: int | None = None,
     use_semantic_search: bool = True,
-    semantic_searcher: SemanticSearcher | None = None,
+    semantic_searcher: "SemanticSearcher | None" = None,
     metadata: dict[str, Any] | None = None,
     tot_selection_threshold: float = 0.4,
     tot_dead_end_threshold: float = 0.1,
@@ -2806,539 +2815,42 @@ def run_navigator(
 ) -> dict[str, Any]:
     """
     Run the navigator agent on a question.
-    
+
+    Delegates to RLMNavigator which combines KG-aware decomposition,
+    REPL code-generation navigation, arithmetic code execution,
+    vision augmentation, and header-match fallback.
+
     Args:
         question: User's question.
         skeleton: Skeleton index.
         kv_store: KV store with full content.
         max_iterations: Maximum navigation iterations.
-        top_k: Number of top children to explore (default: auto-detect based on tree depth).
-        use_semantic_search: Use semantic search (O(log N)) instead of ToT evaluation (O(N)).
-            Allows exploring ALL leaf nodes ranked by relevance, preventing missed data.
-        semantic_searcher: Optional pre-built semantic searcher. If None and use_semantic_search=True, creates one.
-        tot_selection_threshold: Minimum probability for ToT node selection (0.0-1.0).
-        tot_dead_end_threshold: Probability threshold for declaring a dead end (0.0-1.0).
-        enable_header_fallback: When True and navigation yields no variables,
-            present all skeleton headers to the LLM to pick relevant sections
-            and read their content directly (bypasses ToT for retry).
-        
+        top_k: Number of top children to explore.
+        use_semantic_search: Unused (kept for API compatibility).
+        semantic_searcher: Unused (kept for API compatibility).
+        metadata: Optional metadata (e.g., multiple-choice options).
+        tot_selection_threshold: Unused (kept for API compatibility).
+        tot_dead_end_threshold: Unused (kept for API compatibility).
+        enable_header_fallback: Unused (always enabled in RLMNavigator).
+
     Returns:
         Dictionary with answer, confidence, trace.
-        
-    Example:
-        result = run_navigator(
-            "What are the liability terms?",
-            skeleton,
-            kv_store,
-            use_semantic_search=True,  # Enable semantic search
-        )
-        print(result["answer"])
     """
-    # Get root node
-    root_id = None
-    root_node = None
-    for node in skeleton.values():
-        if node.level == 0:
-            root_id = node.node_id
-            root_node = node
-            break
-    
-    if root_id is None:
-        return {
-            "answer": "Error: No root node found in skeleton index.",
-            "confidence": 0.0,
-            "trace": [],
-        }
-    
-    # Multi-level trees: need more iterations to traverse groups and expand leaves
-    if _skeleton_has_multiple_levels(skeleton):
-        num_leaves = sum(1 for n in skeleton.values() if not n.child_ids)
-        max_iterations = max(max_iterations, min(100, num_leaves + 25))
-    
-    # Auto-detect top_k based on tree structure
-    if top_k is None:
-        num_root_children = len(root_node.child_ids) if root_node else 0
-        if num_root_children > 10:
-            # Flat hierarchy (e.g., QuALITY): explore more children
-            top_k = min(10, num_root_children)
-        else:
-            # Deep hierarchy (e.g., PDFs): explore fewer
-            top_k = 3
-    
-    # Semantic search disabled by default per research paper Section 9.1:
-    # "Hybridize Search: Give the agent a vector_search tool as a SHORTCUT.
-    # The agent can use vector search to find a starting node and then
-    # SWITCH TO TREE TRAVERSAL for local exploration."
-    # 
-    # Primary navigation uses ToT reasoning-based retrieval.
-    if use_semantic_search and semantic_searcher is None:
-        try:
-            from rnsr.indexing.semantic_search import create_semantic_searcher
-            semantic_searcher = create_semantic_searcher(skeleton, kv_store)
-            logger.info(
-                "semantic_search_optional_tool",
-                nodes=len(skeleton),
-                note="Available as shortcut for entry points only",
-            )
-        except Exception as e:
-            logger.warning(
-                "semantic_search_unavailable",
-                error=str(e),
-            )
-            semantic_searcher = None
-    
-    logger.info(
-        "using_tot_reasoning_navigation",
-        method="Tree of Thoughts",
-        adaptive_exploration=True,
-        note="LLM reasons about document structure to navigate",
-    )
-    
-    # Build and run graph
-    graph = build_navigator_graph(skeleton, kv_store, semantic_searcher)
-    
-    initial_state = create_initial_state(
-        question=question,
-        root_node_id=root_id,
+    from rnsr.agent.rlm_navigator import RLMNavigator, RLMConfig
+
+    config = RLMConfig(
         max_iterations=max_iterations,
-        top_k=top_k,
-        metadata=metadata,
-        tot_selection_threshold=tot_selection_threshold,
-        tot_dead_end_threshold=tot_dead_end_threshold,
+        max_recursion_depth=3,
+        enable_pre_filtering=True,
+        enable_verification=False,
     )
-    
-    # LangGraph defaults to recursion_limit=25; we need at least ~2–3 steps per navigation iteration
-    recursion_limit = max(50, max_iterations * 3)
-    final_state = graph.invoke(initial_state, config={"recursion_limit": recursion_limit})
+    if top_k is not None:
+        config.top_k = top_k
 
-    answer = final_state.get("answer", "")
-    variables_used = final_state.get("variables", [])
-
-    # --- Header-match fallback: if no content found, try direct header matching ---
-    if (
-        enable_header_fallback
-        and not variables_used
-        and (not answer or answer.strip().startswith("No relevant content found"))
-    ):
-        logger.info(
-            "header_match_fallback_triggered",
-            question=question[:80],
-        )
-        fallback_vs = VariableStore()
-        fallback_pointers = _header_match_fallback(
-            question=question,
-            skeleton=skeleton,
-            kv_store=kv_store,
-            variable_store=fallback_vs,
-        )
-        if fallback_pointers:
-            # Build a minimal state and run synthesis with the fallback content
-            from typing import cast as _cast
-            fallback_state: AgentState = _cast(AgentState, dict(final_state))
-            fallback_state["variables"] = fallback_pointers
-            fallback_state["answer"] = ""
-            synthesized = synthesize_answer(fallback_state, fallback_vs, kv_store)
-            fallback_answer = synthesized.get("answer", "")
-            if fallback_answer and not fallback_answer.strip().startswith("No relevant content found"):
-                answer = fallback_answer
-                variables_used = fallback_pointers
-                logger.info(
-                    "header_match_fallback_succeeded",
-                    num_pointers=len(fallback_pointers),
-                    question=question[:80],
-                )
-
-    # --- Challenge step: for under-explored documents, ask if the question
-    #     could have an alternative interpretation that leads to a different
-    #     answer from unvisited sections. ---
-    _total_leaves_challenge = sum(1 for n in skeleton.values() if not n.child_ids)
-    _visited_set_challenge = set(final_state.get("visited_nodes", []))
-    _visited_leaves_challenge = sum(
-        1 for nid in _visited_set_challenge
-        if nid in skeleton and not skeleton[nid].child_ids
-    )
-    _coverage_ratio = (
-        _visited_leaves_challenge / _total_leaves_challenge
-        if _total_leaves_challenge > 0 else 1.0
+    navigator = RLMNavigator(
+        skeleton=skeleton,
+        kv_store=kv_store,
+        config=config,
     )
 
-    # Only challenge ambiguous "how/why" process-oriented questions.
-    # Skip for factual/quantitative questions like "how big", "how many",
-    # "how much", "what is the value", numbers, etc.
-    _q_lower = question.strip().lower()
-    _is_process_question = (
-        _q_lower.startswith("how ") and not any(
-            _q_lower.startswith(f"how {w}")
-            for w in ("big", "many", "much", "often", "long", "far", "old",
-                       "large", "small", "high", "low", "fast", "slow",
-                       "close", "near", "likely", "frequently")
-        )
-    ) or _q_lower.startswith("why ") or _q_lower.startswith("in what way")
-
-    if (_total_leaves_challenge >= 6 and _coverage_ratio < 0.50
-            and answer and _is_process_question):
-        # Build list of unvisited section headers
-        _unvisited_headers: list[tuple[str, str]] = []
-        for nid, snode in skeleton.items():
-            if nid in _visited_set_challenge or snode.child_ids:
-                continue
-            _unvisited_headers.append((nid, snode.header))
-
-        if _unvisited_headers:
-            _header_list = "\n".join(
-                f"- {hdr}" for _, hdr in _unvisited_headers
-            )
-            _challenge_prompt = f"""I have a question and an answer derived from specific sections of a document. However, I only read {_visited_leaves_challenge} out of {_total_leaves_challenge} sections.
-
-Question: {question}
-Current answer: {answer}
-
-The following sections were NOT read:
-{_header_list}
-
-Could this question have a DIFFERENT interpretation that would lead to a different answer found in one of the unvisited sections listed above?
-
-Reply with:
-- NO_ALTERNATIVE — if the current answer fully and correctly addresses the question.
-- ALTERNATIVE: <section_name_1>, <section_name_2>, ... — if a different interpretation exists and those unvisited sections might contain the alternative answer. Explain briefly what the alternative interpretation is.
-"""
-            try:
-                from rnsr.llm import get_llm as _get_llm_challenge
-                _challenge_llm = _get_llm_challenge()
-                _challenge_response = str(_challenge_llm.complete(_challenge_prompt)).strip()
-
-                if "ALTERNATIVE" in _challenge_response.upper() and "NO_ALTERNATIVE" not in _challenge_response.upper():
-                    logger.info(
-                        "challenge_alternative_found",
-                        response=_challenge_response[:200],
-                        question=question[:80],
-                    )
-
-                    # Parse which sections the LLM suggested
-                    _alt_sections: list[str] = []
-                    for nid, hdr in _unvisited_headers:
-                        if hdr.lower() in _challenge_response.lower():
-                            _alt_sections.append(nid)
-                    # If no exact header match, try fuzzy: load up to 5 top
-                    # sections from the unvisited list
-                    if not _alt_sections:
-                        _alt_sections = [nid for nid, _ in _unvisited_headers[:5]]
-
-                    # Load alternative sections and re-synthesize
-                    alt_vs = VariableStore()
-                    alt_pointers: list[str] = []
-                    for nid in _alt_sections:
-                        content_alt = kv_store.get(nid)
-                        if not content_alt or len(content_alt.strip()) < 20:
-                            continue
-                        snode_alt = skeleton.get(nid)
-                        hdr_alt = snode_alt.header if snode_alt else f"section_{nid}"
-                        ptr_alt = generate_pointer_name(hdr_alt)
-                        base_ptr = ptr_alt
-                        ctr = 2
-                        while alt_vs.exists(ptr_alt):
-                            ptr_alt = f"{base_ptr}_{ctr}"
-                            ctr += 1
-                        alt_vs.assign(ptr_alt, content_alt, source_node_id=nid)
-                        alt_pointers.append(ptr_alt)
-
-                    if alt_pointers:
-                        # Extract the alternative interpretation from the
-                        # challenge response to guide re-synthesis.
-                        _alt_interpretation = ""
-                        _alt_lines = _challenge_response.split("\n")
-                        for _al in _alt_lines:
-                            _al_stripped = _al.strip()
-                            if _al_stripped and not _al_stripped.startswith("ALTERNATIVE:"):
-                                _alt_interpretation += _al_stripped + " "
-                        _alt_interpretation = _alt_interpretation.strip()[:300]
-
-                        # Build context from alt sections
-                        _alt_context_parts: list[str] = []
-                        for _ap in alt_pointers:
-                            _aval = alt_vs.resolve(_ap)
-                            if _aval:
-                                _alt_context_parts.append(f"=== {_ap} ===\n{_aval}")
-                        _alt_context_text = "\n\n".join(_alt_context_parts)
-
-                        # Use a focused synthesis prompt that includes
-                        # the alternative interpretation hint
-                        _alt_synth_prompt = f"""Answer the question using ONLY the provided context.
-
-IMPORTANT: A previous answer to this question focused on: {answer[:200]}
-However, the question may have a DIFFERENT interpretation: {_alt_interpretation}
-Focus on THIS alternative interpretation when reading the context below.
-
-Question: {question}
-
-Context:
-{_alt_context_text}
-
-Answer (focused on the alternative interpretation):"""
-
-                        try:
-                            alt_answer = str(_challenge_llm.complete(_alt_synth_prompt)).strip()
-                        except Exception:
-                            # Fallback to generic synthesis
-                            from typing import cast as _cast_ch_fb
-                            alt_state_fb: AgentState = _cast_ch_fb(AgentState, dict(final_state))
-                            alt_state_fb["variables"] = alt_pointers
-                            alt_state_fb["answer"] = ""
-                            alt_synth_fb = synthesize_answer(alt_state_fb, alt_vs, kv_store)
-                            alt_answer = (alt_synth_fb.get("answer") or "").strip()
-
-                        if alt_answer and alt_answer.lower() != answer.lower():
-                            # Ask the LLM to arbitrate between the two answers
-                            _arbiter_prompt = f"""A question was answered from two different sets of document sections, producing two candidate answers.
-
-Question: {question}
-
-Answer A:
-{answer}
-
-Answer B:
-{alt_answer}
-
-Which answer BEST addresses the question? Consider these criteria carefully:
-1. If the question asks "How is X done/created/annotated/collected?", prefer the answer that describes the CONCRETE METHOD or PROCESS (tools, platforms, procedures) over one that describes a conceptual scheme or taxonomy.
-2. If the question asks "What is X?", prefer the answer that gives a concise definition or description.
-3. Prefer the answer that is more specific, concrete, and directly responsive to the question.
-4. If one answer describes a classification/taxonomy and the other describes a data collection or creation process, and the question asks "how", choose the process answer.
-
-Reply with ONLY the letter "A" or "B"."""
-                            try:
-                                _arbiter_response = str(_challenge_llm.complete(_arbiter_prompt)).strip().upper()
-                                if "B" in _arbiter_response and "A" not in _arbiter_response:
-                                    logger.info(
-                                        "challenge_answer_replaced",
-                                        original=answer[:100],
-                                        replacement=alt_answer[:100],
-                                        question=question[:80],
-                                    )
-                                    answer = alt_answer
-                                    variables_used = alt_pointers
-                                else:
-                                    logger.info(
-                                        "challenge_original_kept",
-                                        question=question[:80],
-                                    )
-                            except Exception:
-                                logger.debug("challenge_arbiter_failed", question=question[:80])
-                else:
-                    logger.debug(
-                        "challenge_no_alternative",
-                        question=question[:80],
-                    )
-            except Exception as e:
-                logger.debug("challenge_step_failed", error=str(e))
-
-    # --- Iterative progressive exploration: if synthesis yields a "not found"
-    #     answer, progressively visit unvisited leaf nodes in batches until we
-    #     find a concrete answer or exhaust the document.  No hard-coded
-    #     coverage thresholds — we simply keep trying. ---
-    _NOT_FOUND_PATTERNS = (
-        "no relevant content found",
-        "unanswerable",
-        "cannot answer",
-        "cannot determine from context",
-        "not provided",
-        "information is not",
-        "not explicitly stated",
-        "not mentioned",
-    )
-
-    def _answer_is_unsatisfactory(ans: str) -> bool:
-        """Return True if the answer looks like 'not found'."""
-        lower = (ans or "").strip().lower()
-        return any(pat in lower for pat in _NOT_FOUND_PATTERNS)
-
-    # Collect ALL unvisited leaf node IDs
-    visited_set = set(final_state.get("visited_nodes", []))
-    all_leaves = [
-        nid for nid, snode in skeleton.items()
-        if not snode.child_ids and nid not in visited_set
-    ]
-    total_leaves = sum(1 for n in skeleton.values() if not n.child_ids)
-
-    # Determine if we should start progressive exploration.
-    # Two triggers:
-    #   1) Answer is explicitly "not found" and we had context → explore more
-    #   2) We only visited a small fraction of the document → enrich
-    visited_leaf_count = sum(
-        1 for nid in visited_set
-        if nid in skeleton and not skeleton[nid].child_ids
-    )
-
-    _is_not_found = _answer_is_unsatisfactory(answer)
-    # Explore more if:
-    #   a) answer is explicitly "not found" and we had some context, OR
-    #   b) answer is "not found" and we had no context (empty variables), OR
-    #   c) we haven't visited all leaves yet — meaning there could be better
-    #      content out there (only if the answer seems shaky).
-    _should_explore = _is_not_found and all_leaves
-
-    if _should_explore and all_leaves:
-        # --- Use LLM to rank unvisited nodes by relevance, then load in
-        #     batches.  Each iteration adds the next batch to the context
-        #     and re-synthesises. ---
-
-        # Step 1: Rank all unvisited leaves by relevance using the LLM
-        ranked_node_ids: list[str] = []
-        try:
-            # Build header list for ranking
-            _rank_entries: list[tuple[str, str, str]] = []
-            for nid in all_leaves:
-                snode = skeleton.get(nid)
-                if snode is None:
-                    continue
-                preview = snode.summary[:120] if snode.summary else ""
-                _rank_entries.append((nid, snode.header, preview))
-
-            if _rank_entries:
-                header_lines = "\n".join(
-                    f"{i + 1}. [{e[0]}] {e[1]} -- {e[2]}"
-                    for i, e in enumerate(_rank_entries)
-                )
-                rank_prompt = (
-                    f"Given this question, rank ALL the document sections "
-                    f"below from most to least likely to contain the answer. "
-                    f"Reply with ONLY the section numbers in order of "
-                    f"relevance (comma-separated), e.g.: 3, 1, 5, 2, 4\n\n"
-                    f"Question: {question}\n\n"
-                    f"Available sections:\n{header_lines}"
-                )
-                from rnsr.llm import get_llm as _get_llm_rank
-                _rank_llm = _get_llm_rank()
-                _rank_response = str(_rank_llm.complete(rank_prompt)).strip()
-
-                # Parse the ranked indices
-                for token in re.split(r"[,\s]+", _rank_response):
-                    token = token.strip().rstrip(".")
-                    if token.isdigit():
-                        idx = int(token)
-                        if 1 <= idx <= len(_rank_entries):
-                            nid_ranked = _rank_entries[idx - 1][0]
-                            if nid_ranked not in ranked_node_ids:
-                                ranked_node_ids.append(nid_ranked)
-
-                # Append any unranked nodes at the end
-                for nid in all_leaves:
-                    if nid not in ranked_node_ids:
-                        ranked_node_ids.append(nid)
-
-                logger.info(
-                    "progressive_exploration_ranked",
-                    total_unvisited=len(ranked_node_ids),
-                    question=question[:80],
-                )
-        except Exception as e:
-            logger.warning("progressive_exploration_rank_failed", error=str(e))
-            # Fall back to natural order
-            ranked_node_ids = list(all_leaves)
-
-        # Step 2: Progressively load batches and re-synthesise
-        BATCH_SIZE = 5
-        cumulative_vs = VariableStore()
-        cumulative_pointers: list[str] = []
-
-        # Seed with original visited-node content
-        for nid_v in visited_set:
-            if nid_v not in skeleton or skeleton[nid_v].child_ids:
-                continue
-            content_v = kv_store.get(nid_v)
-            if not content_v or len(content_v.strip()) < 20:
-                continue
-            snode_v = skeleton.get(nid_v)
-            hdr_v = snode_v.header if snode_v else f"section_{nid_v}"
-            ptr_v = generate_pointer_name(hdr_v)
-            base_ptr = ptr_v
-            ctr = 2
-            while cumulative_vs.exists(ptr_v):
-                ptr_v = f"{base_ptr}_{ctr}"
-                ctr += 1
-            cumulative_vs.assign(ptr_v, content_v, source_node_id=nid_v)
-            cumulative_pointers.append(ptr_v)
-
-        best_answer = answer
-        best_pointers = list(variables_used)
-        exploration_round = 0
-
-        for batch_start in range(0, len(ranked_node_ids), BATCH_SIZE):
-            batch = ranked_node_ids[batch_start : batch_start + BATCH_SIZE]
-            if not batch:
-                break
-
-            exploration_round += 1
-
-            # Load this batch into the cumulative variable store
-            new_in_batch = 0
-            for nid_b in batch:
-                content_b = kv_store.get(nid_b)
-                if not content_b or len(content_b.strip()) < 20:
-                    continue
-                snode_b = skeleton.get(nid_b)
-                hdr_b = snode_b.header if snode_b else f"section_{nid_b}"
-                ptr_b = generate_pointer_name(hdr_b)
-                base_ptr_b = ptr_b
-                ctr_b = 2
-                while cumulative_vs.exists(ptr_b):
-                    ptr_b = f"{base_ptr_b}_{ctr_b}"
-                    ctr_b += 1
-                cumulative_vs.assign(ptr_b, content_b, source_node_id=nid_b)
-                cumulative_pointers.append(ptr_b)
-                new_in_batch += 1
-
-            if new_in_batch == 0:
-                continue
-
-            # Re-synthesise with the expanded context
-            from typing import cast as _cast_bt
-            bt_state: AgentState = _cast_bt(AgentState, dict(final_state))
-            bt_state["variables"] = list(cumulative_pointers)
-            bt_state["answer"] = ""
-            bt_synth = synthesize_answer(bt_state, cumulative_vs, kv_store)
-            bt_answer = (bt_synth.get("answer") or "").strip()
-
-            logger.info(
-                "progressive_exploration_round",
-                round=exploration_round,
-                batch_nodes=len(batch),
-                total_pointers=len(cumulative_pointers),
-                answer_preview=bt_answer[:120],
-                question=question[:80],
-            )
-
-            if bt_answer and not _answer_is_unsatisfactory(bt_answer):
-                # We found a concrete answer — accept it and stop
-                best_answer = bt_answer
-                best_pointers = list(cumulative_pointers)
-                logger.info(
-                    "progressive_exploration_succeeded",
-                    round=exploration_round,
-                    total_nodes_used=len(cumulative_pointers),
-                    question=question[:80],
-                )
-                break
-            # Otherwise update best if we got something better than "not found"
-            if bt_answer and not _answer_is_unsatisfactory(bt_answer):
-                best_answer = bt_answer
-                best_pointers = list(cumulative_pointers)
-        else:
-            # Exhausted all nodes — use whatever we have
-            if best_answer != answer:
-                logger.info(
-                    "progressive_exploration_exhausted",
-                    rounds=exploration_round,
-                    question=question[:80],
-                )
-
-        answer = best_answer
-        variables_used = best_pointers
-
-    return {
-        "answer": answer,
-        "confidence": final_state.get("confidence", 0.0),
-        "trace": final_state.get("trace", []),
-        "variables_used": variables_used,
-        "nodes_visited": final_state.get("visited_nodes", []),
-    }
+    return navigator.navigate(question, metadata=metadata)

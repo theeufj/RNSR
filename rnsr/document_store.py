@@ -26,7 +26,9 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import shutil
+import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field, asdict
@@ -37,7 +39,12 @@ from typing import Any, Callable, Iterator
 import structlog
 
 from rnsr.exceptions import IndexingError
-from rnsr.indexing.kv_store import KVStore, SQLiteKVStore
+from rnsr.indexing.collection_skeleton import (
+    CollectionSkeletonBuilder,
+    is_doc_stub,
+)
+from rnsr.indexing.expandable_skeleton import ExpandableSkeleton
+from rnsr.indexing.kv_store import KVStore, LazyKVStore, SQLiteKVStore
 from rnsr.indexing.persistence import (
     save_index,
     load_index,
@@ -45,10 +52,103 @@ from rnsr.indexing.persistence import (
     delete_index,
 )
 from rnsr.indexing.skeleton_index import build_skeleton_index
+from rnsr.indexing.store_db import StoreDB
 from rnsr.ingestion import ingest_document
 from rnsr.models import SkeletonNode
 
 logger = structlog.get_logger(__name__)
+
+
+# =============================================================================
+# Document Metadata Extraction
+# =============================================================================
+
+# Common date patterns in legal / business documents
+_DATE_PATTERNS = [
+    re.compile(r"\b(\d{1,2}[/-]\w{3,9}[/-]\d{2,4})\b"),          # 11-Nov-24, 25/Jul/22
+    re.compile(r"\b(\d{1,2}[/ ]\w{3,9}[, ]+\d{4})\b"),           # 25 July 2022, 11 November 2024
+    re.compile(r"\b(\w{3,9} \d{1,2},? \d{4})\b"),                 # July 25, 2022
+    re.compile(r"\b(\d{1,2}/\d{1,2}/\d{2,4})\b"),                 # 11/12/2024
+    re.compile(r"\b(\d{4}-\d{2}-\d{2})\b"),                       # 2024-11-29
+]
+
+_REF_PATTERNS = [
+    re.compile(r"(?:Our Ref|Your Ref|Ref|Reference)[:\s]+([^\n]{3,40})", re.IGNORECASE),
+    re.compile(r"(?:File No|File Number|Matter No)[.:\s]+([^\n]{3,30})", re.IGNORECASE),
+]
+
+
+def _extract_document_metadata(
+    skeleton: dict[str, "SkeletonNode"],
+    kv_store: "KVStore",
+) -> dict[str, Any]:
+    """Pull dates, reference numbers, and page info from a document's content.
+
+    The extracted metadata is intentionally kept lightweight — it is
+    stored on the skeleton root node so the navigator can surface it
+    without reading every section.
+    """
+    meta: dict[str, Any] = {}
+
+    # Find root and leaf nodes
+    root = None
+    max_page = 0
+    for node in skeleton.values():
+        if node.level == 0:
+            root = node
+        if node.page_num and node.page_num > max_page:
+            max_page = node.page_num
+
+    if max_page > 0:
+        meta["total_pages"] = max_page
+
+    # Gather text from the first few nodes (headers / opening) for date & ref extraction
+    sample_texts: list[str] = []
+    if root:
+        content = kv_store.get(root.node_id)
+        if content:
+            sample_texts.append(content[:2000])
+        for cid in root.child_ids[:3]:
+            child_content = kv_store.get(cid)
+            if child_content:
+                sample_texts.append(child_content[:1000])
+
+    combined = "\n".join(sample_texts)
+
+    # Extract dates
+    dates_found: list[str] = []
+    for pat in _DATE_PATTERNS:
+        dates_found.extend(pat.findall(combined))
+    if dates_found:
+        meta["dates_found"] = dates_found[:5]
+
+    # Extract references
+    refs_found: list[str] = []
+    for pat in _REF_PATTERNS:
+        refs_found.extend(m.strip() for m in pat.findall(combined))
+    if refs_found:
+        meta["references_found"] = refs_found[:5]
+
+    return meta
+
+
+def _get_source_page_count(source_path: Path) -> int | None:
+    """Return the true page count from the source file.
+
+    Only reliable for PDF files (via PyMuPDF). DOCX ``docProps/app.xml``
+    is not used because Word only updates it on save, making it
+    frequently stale for programmatically generated documents.
+    """
+    if source_path.suffix.lower() != ".pdf":
+        return None
+    try:
+        import fitz
+        doc = fitz.open(source_path)
+        count = len(doc)
+        doc.close()
+        return count
+    except Exception:
+        return None
 
 
 @dataclass
@@ -107,22 +207,41 @@ class DocumentStore:
         answer = store.query("contract", "What are the terms?")
     """
     
-    def __init__(self, store_path: str | Path):
+    def __init__(self, store_path: str | Path, root_path: str | Path | None = None):
         """
         Initialize or open a document store.
         
         Args:
-            store_path: Directory for storing document indexes
+            store_path: Directory for storing document indexes.
+            root_path: Original root directory of the document collection.
+                When set, the folder hierarchy relative to this path is
+                used to build a collection skeleton for hierarchical
+                navigation.  When ``None``, documents are placed flat
+                under the root (scoped / matter mode).
         """
-        self.store_path = Path(store_path)
+        self.store_path = Path(store_path).resolve()
         self.store_path.mkdir(parents=True, exist_ok=True)
+        self.root_path = Path(root_path).resolve() if root_path else None
         
-        self._catalog_path = self.store_path / "catalog.json"
+        # Unified SQLite store (WAL mode, single file)
+        self._db = StoreDB(self.store_path)
+
+        # Auto-migrate legacy multi-file stores
+        self._db.migrate_from_legacy()
+
         self._catalog: dict[str, DocumentInfo] = {}
         
-        # Load existing catalog if present
-        if self._catalog_path.exists():
-            self._load_catalog()
+        # Lock for thread-safe catalog and skeleton mutations
+        self._lock = threading.Lock()
+        
+        # Collection skeleton (lazy loaded)
+        self._collection_skeleton: dict[str, SkeletonNode] | None = None
+
+        # Cache loaded document indexes to avoid re-opening SQLite per query
+        self._doc_cache: dict[str, tuple] = {}
+        
+        # Load catalog from unified DB
+        self._load_catalog()
         
         logger.info(
             "document_store_initialized",
@@ -131,29 +250,102 @@ class DocumentStore:
         )
     
     def _load_catalog(self) -> None:
-        """Load the document catalog from disk."""
-        with open(self._catalog_path) as f:
-            data = json.load(f)
-        
+        """Load the document catalog from the unified DB."""
+        catalog_data = self._db.load_catalog()
         self._catalog = {
             doc_id: DocumentInfo(**info)
-            for doc_id, info in data.get("documents", {}).items()
+            for doc_id, info in catalog_data.items()
         }
-    
+
     def _save_catalog(self) -> None:
-        """Save the document catalog to disk."""
-        data = {
-            "version": "1.0",
-            "updated_at": datetime.now().isoformat(),
-            "documents": {
-                doc_id: info.to_dict()
-                for doc_id, info in self._catalog.items()
+        """No-op: catalog is persisted by StoreDB.save_document / remove_document."""
+
+    # ------------------------------------------------------------------
+    # Collection skeleton helpers
+    # ------------------------------------------------------------------
+
+    def _get_doc_root_summary(self, doc_id: str) -> str:
+        """Extract the root-node summary for a document from the unified DB.
+
+        When the root node carries extracted metadata (dates, references,
+        page count) the summary is augmented so the navigator can see
+        this information at the collection level without drilling in.
+        """
+        return self._db.get_root_summary(doc_id)
+
+    def _build_collection_skeleton(self) -> dict[str, SkeletonNode]:
+        """Build and save the collection skeleton from the current catalog."""
+        catalog_dict: dict[str, dict[str, Any]] = {}
+        for doc_id, info in self._catalog.items():
+            catalog_dict[doc_id] = {
+                "title": info.title,
+                "source_path": info.source_path or "",
+                "summary": self._get_doc_root_summary(doc_id),
+                "node_count": info.node_count,
             }
-        }
-        
-        with open(self._catalog_path, "w") as f:
-            json.dump(data, f, indent=2)
-    
+
+        builder = CollectionSkeletonBuilder(catalog_dict, root_path=self.root_path)
+        nodes = builder.build()
+        builder.save(self.store_path)
+        self._collection_skeleton = nodes
+        return nodes
+
+    def _load_collection_skeleton(self) -> dict[str, SkeletonNode] | None:
+        """Load the collection skeleton from disk if it exists."""
+        nodes = CollectionSkeletonBuilder.load(self.store_path)
+        if nodes:
+            self._collection_skeleton = nodes
+        return nodes or None
+
+    def _update_collection_skeleton_add(self, doc_id: str, info: DocumentInfo) -> None:
+        """Incrementally add a doc stub to the collection skeleton."""
+        if self._collection_skeleton is None:
+            self._load_collection_skeleton()
+        if self._collection_skeleton is None:
+            self._build_collection_skeleton()
+            return
+
+        catalog_dict: dict[str, dict[str, Any]] = {}
+        for did, inf in self._catalog.items():
+            catalog_dict[did] = {
+                "title": inf.title,
+                "source_path": inf.source_path or "",
+                "summary": self._get_doc_root_summary(did),
+                "node_count": inf.node_count,
+            }
+
+        builder = CollectionSkeletonBuilder(catalog_dict, root_path=self.root_path)
+        builder._nodes = dict(self._collection_skeleton)
+        builder.add_doc_stub(
+            doc_id=doc_id,
+            title=info.title,
+            summary=self._get_doc_root_summary(doc_id),
+            source_path=info.source_path,
+            node_count=info.node_count,
+        )
+        builder.save(self.store_path)
+        self._collection_skeleton = builder._nodes
+
+    def _update_collection_skeleton_remove(self, doc_id: str) -> None:
+        """Incrementally remove a doc stub from the collection skeleton."""
+        if self._collection_skeleton is None:
+            self._load_collection_skeleton()
+        if self._collection_skeleton is None:
+            return
+
+        catalog_dict: dict[str, dict[str, Any]] = {}
+        for did, inf in self._catalog.items():
+            catalog_dict[did] = {
+                "title": inf.title,
+                "source_path": inf.source_path or "",
+                "node_count": inf.node_count,
+            }
+        builder = CollectionSkeletonBuilder(catalog_dict, root_path=self.root_path)
+        builder._nodes = dict(self._collection_skeleton)
+        builder.remove_doc_stub(doc_id)
+        builder.save(self.store_path)
+        self._collection_skeleton = builder._nodes
+
     def add_document(
         self,
         source: str | Path,
@@ -188,32 +380,59 @@ class DocumentStore:
             doc_id = hashlib.md5(hash_input.encode()).hexdigest()[:12]
         
         # Check if already exists
-        if doc_id in self._catalog:
-            logger.warning("document_already_exists", doc_id=doc_id)
-            return doc_id
+        with self._lock:
+            if doc_id in self._catalog:
+                logger.warning("document_already_exists", doc_id=doc_id)
+                return doc_id
         
-        # Ingest document
+        # Ingest document (outside lock -- this is the expensive step)
         logger.info("ingesting_document", source=str(source_path))
         result = ingest_document(str(source_path))
         
         # Build skeleton index
         skeleton, kv_store = build_skeleton_index(result.tree)
+
+        # Extract document-level metadata (dates, references, page counts)
+        # and attach it to the root skeleton node so the navigator can
+        # surface it without reading every section.
+        doc_meta = _extract_document_metadata(skeleton, kv_store)
+
+        # Get authoritative page count from the source file itself
+        # (overrides the heuristic max-page_num from _extract_document_metadata)
+        page_count = _get_source_page_count(source_path)
+        if page_count:
+            doc_meta["total_pages"] = page_count
+            result.tree.page_count = page_count
+
+        if doc_meta:
+            for node in skeleton.values():
+                if node.level == 0:
+                    node.metadata.update(doc_meta)
+                    break
         
-        # Save to store
-        index_path = self.store_path / doc_id
-        save_index(skeleton, kv_store, index_path)
+        # Atomically save skeleton + content + catalog to unified DB
+        doc_title = title or source_path.stem
+        self._db.save_document(
+            doc_id=doc_id,
+            title=doc_title,
+            source_path=str(source_path),
+            skeleton=skeleton,
+            kv_store=kv_store,
+            metadata=metadata,
+        )
         
-        # Update catalog
+        # Update in-memory catalog (under lock for thread safety)
         info = DocumentInfo(
             id=doc_id,
-            title=title or source_path.stem,
+            title=doc_title,
             source_path=str(source_path),
             node_count=len(skeleton),
             created_at=datetime.now().isoformat(),
             metadata=metadata or {},
         )
-        self._catalog[doc_id] = info
-        self._save_catalog()
+        with self._lock:
+            self._catalog[doc_id] = info
+            self._update_collection_skeleton_add(doc_id, info)
         
         logger.info(
             "document_added",
@@ -256,21 +475,28 @@ class DocumentStore:
         # Build skeleton index
         skeleton, kv_store = build_skeleton_index(tree)
         
-        # Save to store
-        index_path = self.store_path / doc_id
-        save_index(skeleton, kv_store, index_path)
+        # Atomically save to unified DB
+        doc_title = title or doc_id
+        self._db.save_document(
+            doc_id=doc_id,
+            title=doc_title,
+            source_path=None,
+            skeleton=skeleton,
+            kv_store=kv_store,
+            metadata=metadata,
+        )
         
-        # Update catalog
+        # Update in-memory catalog
         info = DocumentInfo(
             id=doc_id,
-            title=title or doc_id,
+            title=doc_title,
             source_path=None,
             node_count=len(skeleton),
             created_at=datetime.now().isoformat(),
             metadata=metadata or {},
         )
         self._catalog[doc_id] = info
-        self._save_catalog()
+        self._update_collection_skeleton_add(doc_id, info)
         
         logger.info(
             "document_added_from_text",
@@ -281,14 +507,17 @@ class DocumentStore:
         
         return doc_id
     
+    # All file types the ingestion pipeline can handle natively.
+    SUPPORTED_EXTENSIONS = {"*.pdf", "*.md", "*.txt", "*.text", "*.markdown", "*.docx"}
+
     def batch_ingest(
         self,
         sources: str | Path | list[str | Path],
         recursive: bool = False,
-        glob_pattern: str = "*.pdf",
+        glob_pattern: str | None = None,
         metadata: dict[str, Any] | None = None,
         skip_existing: bool = True,
-        max_workers: int = 1,
+        max_workers: int = 4,
         build_kg: bool = True,
         on_progress: Callable[[BatchProgress], None] | None = None,
     ) -> BatchResult:
@@ -303,13 +532,14 @@ class DocumentStore:
             sources: Directory path, single file path, or list of file paths.
             recursive: When *sources* is a directory, recurse into
                 subdirectories.
-            glob_pattern: Glob used to discover files inside a directory
-                (default ``"*.pdf"``).
+            glob_pattern: Glob used to discover files inside a directory.
+                Defaults to all supported types (pdf, docx, md, txt).
+                Accepts comma-separated patterns like ``"*.pdf,*.docx"``.
             metadata: Metadata dict applied to every ingested document.
             skip_existing: Skip files whose generated doc_id is already in the
                 catalog.
-            max_workers: Number of parallel ingestion workers.  Set to 1 for
-                sequential processing.
+            max_workers: Number of parallel ingestion workers (default 4).
+                Set to 1 for sequential processing.
             build_kg: Call :meth:`build_workspace_kg` and
                 :meth:`link_entities_across_documents` after ingestion
                 (default ``True``).
@@ -324,7 +554,8 @@ class DocumentStore:
             result = store.batch_ingest("./contracts/", recursive=True)
             print(f"{result.succeeded}/{result.total} documents ingested")
         """
-        files = self._resolve_sources(sources, recursive, glob_pattern)
+        patterns = self._parse_glob_patterns(glob_pattern)
+        files = self._resolve_sources(sources, recursive, patterns)
 
         if not files:
             logger.warning("batch_ingest_no_files", sources=str(sources))
@@ -433,6 +664,10 @@ class DocumentStore:
             elapsed=result.elapsed_seconds,
         )
 
+        # Build or rebuild the collection skeleton
+        if doc_ids:
+            self._build_collection_skeleton()
+
         if build_kg and doc_ids:
             logger.info("batch_ingest_building_kg", doc_count=len(doc_ids))
             self.build_workspace_kg(doc_ids=doc_ids)
@@ -440,53 +675,78 @@ class DocumentStore:
 
         return result
 
+    @classmethod
+    def _parse_glob_patterns(cls, glob_pattern: str | None) -> list[str]:
+        """Turn *glob_pattern* into a list of individual globs.
+
+        ``None`` → all supported extensions.
+        Comma-separated strings like ``"*.pdf,*.docx"`` are split.
+        """
+        if glob_pattern is None:
+            return sorted(cls.SUPPORTED_EXTENSIONS)
+        return [p.strip() for p in glob_pattern.split(",") if p.strip()]
+
     @staticmethod
     def _resolve_sources(
         sources: str | Path | list[str | Path],
         recursive: bool,
-        glob_pattern: str,
+        glob_patterns: list[str],
     ) -> list[Path]:
-        """Normalise *sources* into a flat list of file paths."""
+        """Normalise *sources* into a de-duplicated list of file paths."""
+        seen: set[Path] = set()
+        resolved: list[Path] = []
+
+        def _add(p: Path) -> None:
+            rp = p.resolve()
+            if rp not in seen:
+                seen.add(rp)
+                resolved.append(p)
+
+        def _glob_dir(directory: Path) -> None:
+            for pattern in glob_patterns:
+                full = f"**/{pattern}" if recursive else pattern
+                for fp in sorted(directory.glob(full)):
+                    _add(fp)
+
         if isinstance(sources, (str, Path)):
             source_path = Path(sources)
             if source_path.is_dir():
-                pattern = f"**/{glob_pattern}" if recursive else glob_pattern
-                return sorted(source_path.glob(pattern))
-            if source_path.is_file():
-                return [source_path]
-            return []
+                _glob_dir(source_path)
+            elif source_path.is_file():
+                _add(source_path)
+            return resolved
 
-        resolved: list[Path] = []
         for s in sources:
             p = Path(s)
             if p.is_dir():
-                pattern = f"**/{glob_pattern}" if recursive else glob_pattern
-                resolved.extend(sorted(p.glob(pattern)))
+                _glob_dir(p)
             elif p.is_file():
-                resolved.append(p)
+                _add(p)
         return resolved
 
     def remove_document(self, doc_id: str) -> bool:
         """
         Remove a document from the store.
-        
+
         Args:
             doc_id: Document ID to remove
-            
+
         Returns:
             True if removed, False if not found
         """
-        if doc_id not in self._catalog:
-            return False
-        
-        # Delete index files
-        index_path = self.store_path / doc_id
-        delete_index(index_path)
-        
-        # Remove from catalog
-        del self._catalog[doc_id]
-        self._save_catalog()
-        
+        with self._lock:
+            if doc_id not in self._catalog:
+                return False
+
+            self._db.remove_document(doc_id)
+
+            # Invalidate cache
+            self._doc_cache.pop(doc_id, None)
+
+            # Remove from in-memory catalog
+            del self._catalog[doc_id]
+            self._update_collection_skeleton_remove(doc_id)
+
         logger.info("document_removed", doc_id=doc_id)
         return True
     
@@ -497,19 +757,24 @@ class DocumentStore:
         Returns:
             Number of documents removed
         """
-        doc_ids = list(self._catalog.keys())
-        for doc_id in doc_ids:
-            index_path = self.store_path / doc_id
-            delete_index(index_path)
+        count = self._db.clear_documents()
+
+        # Clear KG tables (they live in the same DB)
+        kg = self.get_workspace_kg()
+        try:
+            kg.clear()
+        except Exception:
+            pass
+
+        # Remove collection skeleton file
+        from rnsr.indexing.collection_skeleton import COLLECTION_SKELETON_FILE
+        cs_path = self.store_path / COLLECTION_SKELETON_FILE
+        if cs_path.exists():
+            cs_path.unlink()
+        self._collection_skeleton = None
         
-        # Also remove the workspace KG if it exists
-        kg_path = self.store_path / "workspace_kg.db"
-        if kg_path.exists():
-            kg_path.unlink()
-        
-        count = len(self._catalog)
         self._catalog.clear()
-        self._save_catalog()
+        self._doc_cache.clear()
         
         logger.info("store_cleared", documents_removed=count)
         return count
@@ -519,19 +784,36 @@ class DocumentStore:
         doc_id: str,
     ) -> tuple[dict[str, SkeletonNode], KVStore] | None:
         """
-        Load a document's index.
-        
+        Load a document's index (cached after first load).
+
         Args:
             doc_id: Document ID
-            
+
         Returns:
-            Tuple of (skeleton, kv_store) or None if not found
+            Tuple of (skeleton, kv_store, tables) or None if not found.
+            Returns None (with a warning log) when the index exists in
+            the catalog but cannot be loaded from the database.
         """
         if doc_id not in self._catalog:
             return None
-        
-        index_path = self.store_path / doc_id
-        return load_index(index_path)
+
+        if doc_id in self._doc_cache:
+            return self._doc_cache[doc_id]
+
+        try:
+            result = self._db.load_document(doc_id)
+            if result is None:
+                logger.warning("get_document_not_in_db", doc_id=doc_id)
+                return None
+            self._doc_cache[doc_id] = result
+            return result
+        except Exception as exc:
+            logger.warning(
+                "get_document_load_failed",
+                doc_id=doc_id,
+                error=str(exc),
+            )
+            return None
     
     def query(
         self,
@@ -625,13 +907,13 @@ class DocumentStore:
         """
         Get or create the workspace-wide knowledge graph.
         
-        This KG persists in ``<store_path>/workspace_kg.db`` and accumulates
+        The KG tables live inside the unified ``store.db`` and accumulate
         entities from all documents added to the store. Use it together with
         :meth:`link_entities_across_documents` and :meth:`query_cross_document`
         to enable cross-document reasoning.
         
         Returns:
-            A file-backed ``KnowledgeGraph`` shared across all documents.
+            A file-backed ``KnowledgeGraph`` sharing the unified DB file.
             
         Example:
             kg = store.get_workspace_kg()
@@ -639,66 +921,140 @@ class DocumentStore:
         """
         from rnsr.indexing.knowledge_graph import KnowledgeGraph
         
-        kg_path = self.store_path / "workspace_kg.db"
-        return KnowledgeGraph(str(kg_path))
+        return KnowledgeGraph(self._db.kg_db_path)
 
     def build_workspace_kg(
         self,
         doc_ids: list[str] | None = None,
-        max_workers: int = 8,
+        max_workers: int = 4,
+        batch_size: int = 8,
     ) -> "KnowledgeGraph":
         """
-        Build (or rebuild) the workspace KG from indexed documents.
-        
-        Extracts entities and relationships from each document and merges
-        them into the workspace KG. Then runs entity linking across all
-        document pairs to discover shared entities.
-        
+        Build (or extend) the workspace KG from indexed documents.
+
+        Extracts entities and relationships from each document's skeleton
+        nodes and merges them into the workspace KG.
+
+        Sections shorter than ``batch_size`` threshold characters are
+        batched together into a single LLM call to reduce API round-trips.
+        Documents are processed in parallel using *max_workers* threads.
+
         Args:
             doc_ids: Specific document IDs to process (default: all).
-            max_workers: Parallel extraction threads per document.
-            
+            max_workers: Number of parallel document extraction threads.
+            batch_size: Number of small sections to combine into one LLM call.
+
         Returns:
             The populated workspace ``KnowledgeGraph``.
         """
         from rnsr.indexing.knowledge_graph import KnowledgeGraph
         from rnsr.extraction import extract_entities_and_relationships
+        from rnsr.extraction.rlm_unified_extractor import (
+            extract_entities_and_relationships_batch,
+        )
 
         kg = self.get_workspace_kg()
         target_ids = doc_ids or list(self._catalog.keys())
 
-        for doc_id in target_ids:
+        _SMALL_SECTION_CHARS = 1500
+
+        def _process_document(doc_id: str) -> int:
+            """Extract entities from one document. Returns entity count."""
             index_result = self.get_document(doc_id)
             if index_result is None:
                 logger.warning("doc_not_found_for_kg", doc_id=doc_id)
-                continue
+                return 0
 
             skeleton, kv_store = index_result[:2]
 
-            # Extract entities from each node
+            small_items: list[tuple[str, str, str, str, str | None]] = []
+            entity_count = 0
+
             for node_id, node in skeleton.items():
                 content = kv_store.get(node_id) or ""
                 if len(content.strip()) < 50:
                     continue
 
-                try:
-                    result = extract_entities_and_relationships(
-                        node_id=node_id,
-                        doc_id=doc_id,
-                        header=node.header,
-                        content=content,
+                if len(content) <= _SMALL_SECTION_CHARS:
+                    small_items.append(
+                        (node_id, doc_id, node.header, content, None)
                     )
-                    for entity in result.entities:
-                        kg.add_entity(entity)
-                    for rel in result.relationships:
-                        kg.add_relationship(rel)
-                except Exception as exc:
-                    logger.debug(
-                        "workspace_kg_node_error",
-                        doc_id=doc_id,
-                        node_id=node_id,
-                        error=str(exc),
-                    )
+                    if len(small_items) >= batch_size:
+                        entity_count += _flush_batch(small_items, kg)
+                        small_items.clear()
+                else:
+                    try:
+                        result = extract_entities_and_relationships(
+                            node_id=node_id,
+                            doc_id=doc_id,
+                            header=node.header,
+                            content=content,
+                        )
+                        for entity in result.entities:
+                            kg.add_entity(entity)
+                        entity_count += len(result.entities)
+                        for rel in result.relationships:
+                            kg.add_relationship(rel)
+                    except Exception as exc:
+                        logger.debug(
+                            "workspace_kg_node_error",
+                            doc_id=doc_id,
+                            node_id=node_id,
+                            error=str(exc),
+                        )
+
+            if small_items:
+                entity_count += _flush_batch(small_items, kg)
+
+            return entity_count
+
+        def _flush_batch(
+            items: list[tuple[str, str, str, str, str | None]],
+            kg_: "KnowledgeGraph",
+        ) -> int:
+            count = 0
+            try:
+                results = extract_entities_and_relationships_batch(items)
+                for r in results:
+                    for entity in r.entities:
+                        kg_.add_entity(entity)
+                    count += len(r.entities)
+                    for rel in r.relationships:
+                        kg_.add_relationship(rel)
+            except Exception as exc:
+                logger.debug("batch_extraction_fallback", error=str(exc))
+                for nid, did, h, c, ac in items:
+                    try:
+                        r = extract_entities_and_relationships(
+                            nid, did, h, c, ancestor_context=ac,
+                        )
+                        for entity in r.entities:
+                            kg_.add_entity(entity)
+                        count += len(r.entities)
+                        for rel in r.relationships:
+                            kg_.add_relationship(rel)
+                    except Exception:
+                        pass
+            return count
+
+        if max_workers <= 1 or len(target_ids) <= 1:
+            for doc_id in target_ids:
+                _process_document(doc_id)
+        else:
+            with ThreadPoolExecutor(max_workers=max_workers) as pool:
+                futures = {
+                    pool.submit(_process_document, did): did
+                    for did in target_ids
+                }
+                for future in as_completed(futures):
+                    try:
+                        future.result()
+                    except Exception as exc:
+                        logger.debug(
+                            "workspace_kg_doc_error",
+                            doc_id=futures[future],
+                            error=str(exc),
+                        )
 
         logger.info(
             "workspace_kg_built",
@@ -712,14 +1068,20 @@ class DocumentStore:
         doc_ids: list[str] | None = None,
     ) -> list:
         """
-        Run entity linking across all document pairs in the workspace KG.
-        
-        Discovers that e.g. "GeoV William Sorenssen" in Doc A is the same
-        entity as "G. Sorenssen" in Doc B, and stores the link in the KG.
-        
+        Link entities in *doc_ids* against the full KG index.
+
+        Uses an index-lookup strategy — O(n * k) where k is the average
+        number of KG matches per entity — instead of comparing every
+        document pair which is O(n^2) and cannot scale.
+
+        Each document's entities are looked up in the KG; the
+        ``EntityLinker`` handles exact, fuzzy, and alias matching via
+        the KG's own search index.
+
         Args:
-            doc_ids: Specific document IDs to link (default: all).
-            
+            doc_ids: Document IDs whose entities should be linked
+                     (default: all documents in the store).
+
         Returns:
             List of ``EntityLink`` objects created.
         """
@@ -728,47 +1090,142 @@ class DocumentStore:
         kg = self.get_workspace_kg()
         linker = EntityLinker(kg)
         target_ids = doc_ids or list(self._catalog.keys())
-        all_links = []
+        all_links: list = []
 
-        for i, d1 in enumerate(target_ids):
-            for d2 in target_ids[i + 1:]:
-                try:
-                    links = linker.link_across_documents(d1, d2)
-                    all_links.extend(links)
-                except Exception as exc:
-                    logger.debug(
-                        "entity_link_error",
-                        doc_1=d1,
-                        doc_2=d2,
-                        error=str(exc),
-                    )
+        for doc_id in target_ids:
+            try:
+                entities = kg.find_entities_in_document(doc_id)
+                if not entities:
+                    continue
+                links = linker.link_entities(entities)
+                all_links.extend(links)
+            except Exception as exc:
+                logger.debug(
+                    "entity_link_error",
+                    doc_id=doc_id,
+                    error=str(exc),
+                )
 
         logger.info(
             "entities_linked",
-            document_pairs=len(target_ids) * (len(target_ids) - 1) // 2,
+            documents=len(target_ids),
             links_created=len(all_links),
         )
         return all_links
+
+    # Threshold: collections above this size use hierarchical navigation
+    _HIERARCHICAL_THRESHOLD = 15
 
     def query_cross_document(
         self,
         question: str,
         doc_ids: list[str] | None = None,
+        use_short_answer: bool = False,
     ) -> dict[str, Any]:
         """
         Ask a question that spans multiple documents.
-        
-        Uses the ``CrossDocNavigator`` to decompose the question, resolve
-        entities to documents, navigate each document, and synthesize a
-        combined answer.
-        
+
+        For small / scoped collections (≤ ``_HIERARCHICAL_THRESHOLD``),
+        uses the existing ``CrossDocNavigator`` which eagerly loads every
+        document.
+
+        For large / hierarchical collections, navigates the collection
+        skeleton (folder → doc stub → section) with a single
+        ``RLMNavigator``.  Documents are loaded lazily — only the ones
+        the navigator decides to "enter" are expanded from disk.
+
         Args:
             question: The cross-document question.
             doc_ids: Limit to specific documents (default: all).
-            
+            use_short_answer: When True, instruct navigators to produce
+                minimal answers (key phrases only).
+
         Returns:
             Result dictionary with ``answer``, ``documents_used``, etc.
         """
+        target_ids = doc_ids or list(self._catalog.keys())
+
+        # Use hierarchical navigation for large collections
+        use_hierarchical = (
+            len(target_ids) > self._HIERARCHICAL_THRESHOLD
+            and doc_ids is None  # hierarchical only when querying all docs
+            and self._has_collection_skeleton()
+        )
+
+        if use_hierarchical:
+            return self._query_hierarchical(question, use_short_answer=use_short_answer)
+        return self._query_cross_doc_eager(question, target_ids, use_short_answer=use_short_answer)
+
+    def _has_collection_skeleton(self) -> bool:
+        """Check whether a collection skeleton exists (in memory or on disk)."""
+        if self._collection_skeleton:
+            return True
+        loaded = self._load_collection_skeleton()
+        return loaded is not None
+
+    def _query_hierarchical(
+        self, question: str, *, use_short_answer: bool = False,
+    ) -> dict[str, Any]:
+        """Navigate the collection skeleton with a single RLMNavigator."""
+        from rnsr.agent.rlm_navigator import RLMNavigator, RLMConfig
+        from rnsr.client import _get_cached_llm_fn
+
+        if self._collection_skeleton is None:
+            self._load_collection_skeleton()
+        assert self._collection_skeleton is not None
+
+        lazy_kv = LazyKVStore(self.store_path)
+
+        # Populate overlay with collection-level summaries
+        for nid, node in self._collection_skeleton.items():
+            lazy_kv.put(nid, node.summary)
+
+        skel = ExpandableSkeleton(
+            self._collection_skeleton,
+            lazy_kv,
+            self.store_path,
+            max_loaded=5,
+            store_db=self._db,
+        )
+
+        kg = self.get_workspace_kg()
+
+        config = RLMConfig(
+            max_iterations=30,
+            max_recursion_depth=4,
+            enable_pre_filtering=True,
+            enable_verification=False,
+        )
+        navigator = RLMNavigator(
+            skeleton=skel,  # type: ignore[arg-type]
+            kv_store=lazy_kv,
+            config=config,
+            knowledge_graph=kg,
+        )
+        navigator.set_llm_function(_get_cached_llm_fn())
+
+        nav_metadata = {"use_short_answer": True} if use_short_answer else None
+        nav_result = navigator.navigate(question, metadata=nav_metadata)
+
+        docs_used = list(skel._expanded_docs.keys())
+
+        return {
+            "answer": nav_result.get("answer", "No answer found."),
+            "documents_used": docs_used,
+            "entities_involved": [],
+            "total_nodes_visited": nav_result.get("visited_nodes", 0),
+            "total_iterations": nav_result.get("iteration", 0),
+            "confidence": nav_result.get("confidence", 0.0),
+        }
+
+    def _query_cross_doc_eager(
+        self,
+        question: str,
+        target_ids: list[str],
+        *,
+        use_short_answer: bool = False,
+    ) -> dict[str, Any]:
+        """Original eager-loading cross-document query (for small collections)."""
         from rnsr.agent.cross_doc_navigator import (
             create_cross_doc_navigator,
         )
@@ -777,22 +1234,46 @@ class DocumentStore:
 
         kg = self.get_workspace_kg()
         cross_nav = create_cross_doc_navigator(kg)
-        target_ids = doc_ids or list(self._catalog.keys())
 
+        loaded = 0
         for doc_id in target_ids:
             index_result = self.get_document(doc_id)
             if index_result is None:
+                logger.warning("cross_doc_skip_document", doc_id=doc_id)
                 continue
             skeleton, kv_store = index_result[:2]
 
+            config = RLMConfig()
+            if use_short_answer:
+                config.use_short_answer = True
             navigator = RLMNavigator(
                 skeleton=skeleton,
                 kv_store=kv_store,
                 knowledge_graph=kg,
-                config=RLMConfig(),
+                config=config,
             )
             navigator.set_llm_function(_get_cached_llm_fn())
-            cross_nav.register_document(doc_id, skeleton, kv_store, navigator=navigator)
+
+            doc_title = doc_id
+            info = self._catalog.get(doc_id)
+            if info and info.title:
+                doc_title = info.title
+
+            cross_nav.register_document(
+                doc_id, skeleton, kv_store,
+                navigator=navigator, title=doc_title,
+            )
+            loaded += 1
+
+        if loaded == 0:
+            return {
+                "answer": "No documents could be loaded for querying.",
+                "documents_used": [],
+                "entities_involved": [],
+                "total_nodes_visited": 0,
+                "total_iterations": 0,
+                "confidence": 0.0,
+            }
 
         result = cross_nav.query(question)
         return {
@@ -803,6 +1284,9 @@ class DocumentStore:
             "entities_involved": [
                 e.canonical_name for e in (result.entities_involved if hasattr(result, "entities_involved") else [])
             ],
+            "total_nodes_visited": getattr(result, "total_nodes_visited", 0),
+            "total_iterations": getattr(result, "total_iterations", 0),
+            "confidence": getattr(result, "confidence", 0.0),
         }
 
     # =========================================================================

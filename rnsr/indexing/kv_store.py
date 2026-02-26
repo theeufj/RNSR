@@ -20,7 +20,7 @@ import hashlib
 import sqlite3
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Iterator, Union
+from typing import TYPE_CHECKING, Callable, Iterator, Union
 
 import structlog
 
@@ -79,8 +79,10 @@ class SQLiteKVStore:
     @contextmanager
     def _connect(self) -> Iterator[sqlite3.Connection]:
         """Context manager for database connections."""
-        conn = sqlite3.connect(self.db_path)
+        conn = sqlite3.connect(self.db_path, timeout=30.0)
         conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("PRAGMA busy_timeout=30000")
         try:
             yield conn
         finally:
@@ -373,5 +375,197 @@ class InMemoryKVStore:
         return count
 
 
-# Type alias for either store
-KVStore = Union[SQLiteKVStore, InMemoryKVStore]
+class LazyKVStore:
+    """KV store that transparently loads per-document stores on demand.
+
+    Used with hierarchical collection navigation.  Collection-level content
+    (folder summaries, doc-stub summaries) is stored in an in-memory overlay.
+    When content is requested for a document-internal node, the appropriate
+    per-document KV store is loaded from disk and cached.
+
+    The ``load_fn`` callback receives a *doc_id* and must return the
+    document's ``KVStore`` (typically by calling ``load_index``).
+    """
+
+    def __init__(
+        self,
+        store_path: Path | str,
+        load_fn: "Callable[[str], KVStore | None] | None" = None,
+        store_db: StoreDB | None = None,
+    ):
+        self._store_path = Path(store_path)
+        self._load_fn = load_fn
+        self._store_db = store_db
+
+        # In-memory overlay for collection-level nodes (folder:*, doc:*)
+        self._overlay: dict[str, str] = {}
+
+        # Per-document KV stores, loaded lazily.  doc_id → KVStore
+        self._doc_stores: dict[str, "KVStore"] = {}
+
+        # Routing table: internal node_id → doc_id
+        self._node_to_doc: dict[str, str] = {}
+
+    # ------------------------------------------------------------------
+    # Registration (called during skeleton expansion)
+    # ------------------------------------------------------------------
+
+    def register_doc_nodes(self, doc_id: str, node_ids: list[str]) -> None:
+        """Register internal node IDs so ``get()`` can route to the right store."""
+        for nid in node_ids:
+            self._node_to_doc[nid] = doc_id
+
+    def register_doc_store(self, doc_id: str, store: "KVStore") -> None:
+        """Directly cache a loaded per-document KV store."""
+        self._doc_stores[doc_id] = store
+
+    # ------------------------------------------------------------------
+    # KVStore interface
+    # ------------------------------------------------------------------
+
+    def put(self, node_id: str, content: str) -> str:
+        content_hash = hashlib.sha256(content.encode()).hexdigest()[:16]
+        self._overlay[node_id] = content
+        return content_hash
+
+    def get(self, node_id: str) -> str | None:
+        # 1. Check overlay (collection-level content)
+        if node_id in self._overlay:
+            return self._overlay[node_id]
+
+        # 2. Route to per-document store
+        doc_id = self._node_to_doc.get(node_id)
+        if doc_id is None:
+            return None
+
+        doc_store = self._get_doc_store(doc_id)
+        if doc_store is None:
+            return None
+        return doc_store.get(node_id)
+
+    def get_batch(self, node_ids: list[str]) -> dict[str, str | None]:
+        result: dict[str, str | None] = {}
+        # Group by source
+        by_doc: dict[str, list[str]] = {}
+        for nid in node_ids:
+            if nid in self._overlay:
+                result[nid] = self._overlay[nid]
+            else:
+                doc_id = self._node_to_doc.get(nid)
+                if doc_id:
+                    by_doc.setdefault(doc_id, []).append(nid)
+                else:
+                    result[nid] = None
+
+        for doc_id, nids in by_doc.items():
+            store = self._get_doc_store(doc_id)
+            if store:
+                result.update(store.get_batch(nids))
+            else:
+                for nid in nids:
+                    result[nid] = None
+        return result
+
+    def put_image(self, node_id: str, image_bytes: bytes) -> None:
+        doc_id = self._node_to_doc.get(node_id)
+        if doc_id:
+            store = self._get_doc_store(doc_id)
+            if store:
+                store.put_image(node_id, image_bytes)
+
+    def get_image(self, node_id: str) -> bytes | None:
+        doc_id = self._node_to_doc.get(node_id)
+        if doc_id:
+            store = self._get_doc_store(doc_id)
+            if store:
+                return store.get_image(node_id)
+        return None
+
+    def delete(self, node_id: str) -> bool:
+        if node_id in self._overlay:
+            del self._overlay[node_id]
+            return True
+        return False
+
+    def exists(self, node_id: str) -> bool:
+        if node_id in self._overlay:
+            return True
+        doc_id = self._node_to_doc.get(node_id)
+        if doc_id:
+            store = self._get_doc_store(doc_id)
+            if store:
+                return store.exists(node_id)
+        return False
+
+    def count(self) -> int:
+        total = len(self._overlay)
+        for store in self._doc_stores.values():
+            total += store.count()
+        return total
+
+    def get_metadata(self, node_id: str) -> dict | None:
+        doc_id = self._node_to_doc.get(node_id)
+        if doc_id:
+            store = self._get_doc_store(doc_id)
+            if store:
+                return store.get_metadata(node_id)
+        return None
+
+    def clear(self) -> int:
+        count = len(self._overlay)
+        self._overlay.clear()
+        self._node_to_doc.clear()
+        self._doc_stores.clear()
+        return count
+
+    def unload_document(self, doc_id: str) -> None:
+        """Release a loaded per-document store to free memory."""
+        self._doc_stores.pop(doc_id, None)
+        self._node_to_doc = {
+            nid: did for nid, did in self._node_to_doc.items()
+            if did != doc_id
+        }
+
+    @property
+    def loaded_doc_count(self) -> int:
+        return len(self._doc_stores)
+
+    # ------------------------------------------------------------------
+    # Internal
+    # ------------------------------------------------------------------
+
+    def _get_doc_store(self, doc_id: str) -> "KVStore | None":
+        if doc_id in self._doc_stores:
+            return self._doc_stores[doc_id]
+
+        if self._load_fn:
+            store = self._load_fn(doc_id)
+            if store:
+                self._doc_stores[doc_id] = store
+                return store
+
+        # Try unified StoreDB first
+        if self._store_db is not None:
+            try:
+                from rnsr.indexing.store_db import DocKVStore
+                store = DocKVStore(self._store_db, doc_id)
+                self._doc_stores[doc_id] = store
+                return store
+            except Exception:
+                pass
+
+        # Legacy fallback: per-doc content.db
+        db_path = self._store_path / doc_id / "content.db"
+        if db_path.exists():
+            store = SQLiteKVStore(db_path)
+            self._doc_stores[doc_id] = store
+            return store
+
+        return None
+
+
+if TYPE_CHECKING:
+    from rnsr.indexing.store_db import DocKVStore, StoreDB
+
+# Type alias for any store implementation
+KVStore = Union[SQLiteKVStore, InMemoryKVStore, LazyKVStore, "DocKVStore"]

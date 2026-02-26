@@ -316,32 +316,22 @@ class RNSRBenchmarkAdapter:
                 and not answer_result.get("variables_used")
             ):
                 try:
-                    from rnsr.agent.graph import _header_match_fallback, synthesize_answer as _synth
-                    from rnsr.agent.variable_store import VariableStore as _VS
-                    hm_vs = _VS()
-                    hm_pointers = _header_match_fallback(
-                        question=question,
-                        skeleton=skeleton,
-                        kv_store=kv_store,
-                        variable_store=hm_vs,
+                    # Header-match fallback is now built into RLMNavigator
+                    # (invoked automatically via run_navigator delegation).
+                    # This block is kept for explicit retry with fresh state.
+                    from rnsr.agent.rlm_navigator import RLMNavigator, RLMConfig
+                    hm_nav = RLMNavigator(
+                        skeleton=skeleton, kv_store=kv_store,
+                        config=RLMConfig(max_iterations=20, enable_verification=False),
                     )
-                    if hm_pointers:
-                        # Build minimal state for synthesis
-                        hm_state = dict(answer_result)
-                        hm_state.setdefault("question", question)
-                        hm_state["variables"] = hm_pointers
-                        hm_state["answer"] = ""
-                        hm_state.setdefault("metadata", metadata or {})
-                        hm_state.setdefault("confidence", 0.0)
-                        hm_state.setdefault("trace", [])
-                        synth_result = _synth(hm_state, hm_vs)
-                        hm_answer = synth_result.get("answer", "")
-                        if hm_answer and not hm_answer.strip().startswith("No relevant content found"):
-                            answer_result["answer"] = hm_answer
-                            answer_result["variables_used"] = hm_pointers
-                            answer_result["confidence"] = synth_result.get("confidence", 0.0)
-                            answer = hm_answer
-                            logger.info("used_header_match_fallback", question_preview=question[:60])
+                    hm_result = hm_nav.navigate(question, metadata=metadata)
+                    hm_answer = hm_result.get("answer", "")
+                    if hm_answer and not hm_answer.strip().startswith("No relevant content found"):
+                        answer_result["answer"] = hm_answer
+                        answer_result["variables_used"] = hm_result.get("variables_used", [])
+                        answer_result["confidence"] = hm_result.get("confidence", 0.0)
+                        answer = hm_answer
+                        logger.info("used_header_match_fallback", question_preview=question[:60])
                 except Exception as hm_e:
                     logger.warning("header_match_fallback_failed", error=str(hm_e))
 

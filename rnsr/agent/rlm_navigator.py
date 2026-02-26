@@ -20,8 +20,11 @@ This is the state-of-the-art combination of:
 
 from __future__ import annotations
 
+import ast
 import asyncio
 import json
+import math
+import operator as _operator
 import os
 import re
 from concurrent.futures import ThreadPoolExecutor
@@ -40,6 +43,422 @@ from rnsr.indexing.kv_store import KVStore
 from rnsr.models import SkeletonNode, TraceEntry
 
 logger = structlog.get_logger(__name__)
+
+
+# =============================================================================
+# Arithmetic Synthesis Utilities (ported from graph.py)
+# =============================================================================
+
+_SAFE_OPERATORS: dict[type, Any] = {
+    ast.Add: _operator.add,
+    ast.Sub: _operator.sub,
+    ast.Mult: _operator.mul,
+    ast.Div: _operator.truediv,
+    ast.FloorDiv: _operator.floordiv,
+    ast.Mod: _operator.mod,
+    ast.Pow: _operator.pow,
+    ast.USub: _operator.neg,
+    ast.UAdd: _operator.pos,
+}
+
+_SAFE_FUNCTIONS: dict[str, Any] = {
+    "abs": abs,
+    "round": round,
+    "min": min,
+    "max": max,
+    "sum": sum,
+    "int": int,
+    "float": float,
+    "sqrt": math.sqrt,
+    "ceil": math.ceil,
+    "floor": math.floor,
+    "log": math.log,
+    "log10": math.log10,
+    "pow": math.pow,
+}
+
+
+def _safe_eval_node(node: ast.AST) -> float | int:
+    """Recursively evaluate an AST node using only safe operations."""
+    if isinstance(node, ast.Constant) and isinstance(node.value, (int, float)):
+        return node.value
+    if isinstance(node, ast.UnaryOp):
+        op_type = type(node.op)
+        if op_type not in _SAFE_OPERATORS:
+            raise ValueError(f"Unsupported unary operator: {op_type.__name__}")
+        return _SAFE_OPERATORS[op_type](_safe_eval_node(node.operand))
+    if isinstance(node, ast.BinOp):
+        op_type = type(node.op)
+        if op_type not in _SAFE_OPERATORS:
+            raise ValueError(f"Unsupported binary operator: {op_type.__name__}")
+        return _SAFE_OPERATORS[op_type](_safe_eval_node(node.left), _safe_eval_node(node.right))
+    if isinstance(node, ast.Call):
+        if not isinstance(node.func, ast.Name):
+            raise ValueError("Only simple function calls are allowed (no methods)")
+        if node.func.id not in _SAFE_FUNCTIONS:
+            raise ValueError(f"Function not allowed: {node.func.id}")
+        return _SAFE_FUNCTIONS[node.func.id](*[_safe_eval_node(a) for a in node.args])
+    if isinstance(node, (ast.List, ast.Tuple)):
+        return [_safe_eval_node(elt) for elt in node.elts]  # type: ignore[return-value]
+    if isinstance(node, ast.Name):
+        if node.id == "pi":
+            return math.pi
+        if node.id == "e":
+            return math.e
+        raise ValueError(f"Variable reference not allowed: {node.id}")
+    raise ValueError(f"Unsupported AST node: {type(node).__name__}")
+
+
+def safe_math_eval(expr: str) -> float | int | None:
+    """Safely evaluate a Python math expression using AST parsing."""
+    if not expr or not expr.strip():
+        return None
+    expr = expr.strip()
+    if any(kw in expr for kw in ("import ", "__", "exec", "eval", "open", "compile")):
+        logger.warning("safe_math_eval_rejected", expr=expr[:100])
+        return None
+    try:
+        tree = ast.parse(expr, mode="eval")
+        result = _safe_eval_node(tree.body)
+        if isinstance(result, (int, float)):
+            return result
+        return None
+    except Exception:
+        return None
+
+
+_NO_COMPUTE_MARKER = "__NO_COMPUTE__"
+
+
+def _extract_code_block(response_text: str) -> str | None:
+    """Extract a Python code block from the LLM response."""
+    match = re.search(r"CODE:\s*```(?:python)?\s*\n(.*?)```", response_text, re.S)
+    if match:
+        return match.group(1).strip()
+    match = re.search(r"```(?:python)?\s*\n(.*?)```", response_text, re.S)
+    if match:
+        return match.group(1).strip()
+    return None
+
+
+def _try_compute_from_response(response_text: str, context_text: str = "") -> str | None:
+    """Parse CODE/COMPUTE/NO_COMPUTE/ANSWER from LLM response and execute."""
+    compute_expr = None
+    answer_line = None
+    no_compute_answer = None
+
+    for line in response_text.split("\n"):
+        stripped = line.strip()
+        if stripped.upper().startswith("NO_COMPUTE:"):
+            no_compute_answer = stripped[len("NO_COMPUTE:"):].strip()
+        elif stripped.upper().startswith("COMPUTE:"):
+            compute_expr = stripped[len("COMPUTE:"):].strip()
+        elif stripped.upper().startswith("ANSWER:"):
+            answer_line = stripped[len("ANSWER:"):].strip()
+
+    if no_compute_answer is not None:
+        return no_compute_answer if no_compute_answer else _NO_COMPUTE_MARKER
+
+    code_block = _extract_code_block(response_text)
+    if code_block:
+        try:
+            from rnsr.agent.repl_env import REPLEnvironment
+            from rnsr.indexing.kv_store import InMemoryKVStore
+
+            env = REPLEnvironment(document_text=context_text, skeleton={}, kv_store=InMemoryKVStore())
+            result = env.execute(code_block)
+            if result["success"] and result["output"]:
+                nums = re.findall(r'[-]?[\d,]+\.?\d*', str(result["output"]).strip())
+                if nums:
+                    num_str = nums[-1].replace(",", "")
+                    try:
+                        val = float(num_str)
+                        if val == int(val) and abs(val) < 1e15:
+                            return str(int(val))
+                        return str(val)
+                    except ValueError:
+                        pass
+        except Exception as e:
+            logger.warning("code_execution_error", error=str(e))
+
+    if compute_expr:
+        result = safe_math_eval(compute_expr)
+        if result is not None:
+            if isinstance(result, float) and result == int(result) and abs(result) < 1e15:
+                return str(int(result))
+            return str(result)
+
+    if answer_line:
+        cleaned = answer_line.replace(",", "").strip().strip("$").strip("%")
+        try:
+            val = float(cleaned)
+            if val == int(val) and abs(val) < 1e15:
+                return str(int(val))
+            return str(val)
+        except ValueError:
+            return answer_line
+
+    return None
+
+
+def _try_repl_arithmetic(question: str, context_text: str, llm_fn: Callable[[str], str]) -> str | None:
+    """Fallback: generate Python code from scratch and execute for arithmetic answers."""
+    try:
+        from rnsr.agent.repl_env import REPLEnvironment
+        from rnsr.indexing.kv_store import InMemoryKVStore
+    except ImportError:
+        return None
+
+    env = REPLEnvironment(document_text=context_text, skeleton={}, kv_store=InMemoryKVStore())
+    code_prompt = f"""You have access to a Python REPL. The variable DOC_VAR contains the document context.
+Write Python code to answer this question. The code must print() the final numeric answer.
+
+Question: {question}
+
+Write ONLY valid Python code. Use print() to output the final answer.
+```python
+val1 = 14740
+val2 = 1910
+result = (val1 + val2) / 2
+print(result)
+```
+
+Your Python code:"""
+
+    try:
+        code_response = llm_fn(code_prompt).strip()
+        code_response = re.sub(r"```python\s*", "", code_response)
+        code_response = re.sub(r"```\s*", "", code_response).strip()
+        if not code_response:
+            return None
+        result = env.execute(code_response)
+        if result["success"] and result["output"]:
+            match = re.search(r'[-]?[\d,]+\.?\d*', str(result["output"]).strip())
+            if match:
+                num_str = match.group(0).replace(",", "")
+                try:
+                    val = float(num_str)
+                    if val == int(val) and abs(val) < 1e15:
+                        return str(int(val))
+                    return str(val)
+                except ValueError:
+                    pass
+    except Exception as e:
+        logger.debug("repl_arithmetic_error", error=str(e))
+    return None
+
+
+_GROWTH_KEYWORDS = re.compile(
+    r"growth\s*rate|current\s*rate|continues?\s*to\s*grow|projection|"
+    r"will\s*(?:\w+\s+)?reach|forecast|compound|cagr",
+    re.IGNORECASE,
+)
+
+
+def _verify_and_rerun_formula(
+    question: str, original_code: str, original_answer: str,
+    context_text: str, llm_fn: Callable[[str], str],
+) -> str | None:
+    """Verify growth/projection formulas and re-execute if incorrect."""
+    if not _GROWTH_KEYWORDS.search(question):
+        return None
+    verify_prompt = f"""A Python program was written to answer this question. Your job is to check whether the formula is correct.
+
+Question: {question}
+
+Generated code:
+```python
+{original_code}
+```
+
+Computed answer: {original_answer}
+
+IMPORTANT CHECK: For questions about growth rates or projections:
+- The code MUST compute the rate FROM the data (e.g. CAGR from multiple years).
+- It must NOT use a single year-over-year percentage as "the rate" — that is a common mistake.
+- CAGR formula: (end_value / start_value) ** (1 / num_years) - 1
+
+Is the formula correct? Reply with:
+- CORRECT — if the formula is appropriate for the question.
+- INCORRECT — followed by a corrected Python code block that uses the right formula. The code must end with print(result).
+"""
+    try:
+        response = llm_fn(verify_prompt).strip()
+        if "INCORRECT" in response.upper():
+            code_match = re.search(r"```(?:python)?\s*\n(.*?)```", response, re.S)
+            if code_match:
+                try:
+                    from rnsr.agent.repl_env import REPLEnvironment
+                    from rnsr.indexing.kv_store import InMemoryKVStore
+                    env = REPLEnvironment(document_text=context_text, skeleton={}, kv_store=InMemoryKVStore())
+                    result = env.execute(code_match.group(1).strip())
+                    if result["success"] and result["output"]:
+                        nums = re.findall(r'[-]?[\d,]+\.?\d*', str(result["output"]).strip())
+                        if nums:
+                            num_str = nums[-1].replace(",", "")
+                            val = float(num_str)
+                            return str(int(val)) if val == int(val) and abs(val) < 1e15 else str(val)
+                except Exception as e:
+                    logger.warning("formula_verification_rerun_failed", error=str(e))
+    except Exception as e:
+        logger.debug("formula_verification_error", error=str(e))
+    return None
+
+
+# =============================================================================
+# Short-Answer Extraction Utilities (ported from graph.py)
+# =============================================================================
+
+def _strip_citations(text: str) -> str:
+    """Remove parenthetical citations from text."""
+    text = re.sub(r'\s*\(Source:?\s*[^)]*\)', '', text, flags=re.IGNORECASE)
+    text = re.sub(r'\s*\(Source\b[^)]*\)', '', text, flags=re.IGNORECASE)
+    text = re.sub(r'===\s*\$\w+\s*===', '', text)
+    text = re.sub(r'\$CONTEXT_\d+\$?', '', text)
+    text = re.sub(r'  +', ' ', text).strip()
+    return text
+
+
+def _extract_numeric_answer(text: str) -> str | None:
+    """Try to extract a bare numeric answer from text."""
+    if not text:
+        return None
+    first_line = _strip_citations(text.split("\n")[0].strip())
+    match = re.search(r'[-]?\$?[\d,]+\.?\d*%?', first_line)
+    if match:
+        num_str = match.group(0).replace(',', '').strip('$').strip('%')
+        try:
+            float(num_str)
+            return num_str
+        except ValueError:
+            pass
+    return None
+
+
+_UNANSWERABLE_PATTERNS = [
+    "cannot answer", "cannot determine", "not possible to determine",
+    "no relevant content", "unable to answer", "not enough information",
+    "cannot be determined", "context is empty", "information is not available",
+    "not explicitly stated", "does not contain", "not mentioned",
+    "no information", "cannot find", "i cannot answer", "unanswerable",
+    "not answerable", "insufficient information", "no answer",
+    "not provided in", "not found in",
+]
+
+
+def _extract_first_answer_phrase(text: str, max_chars: int = 300, is_arithmetic: bool = False) -> str:
+    """Extract a short answer phrase for F1-friendly evaluation."""
+    if not text or not text.strip():
+        return text
+    text = text.strip()
+    if is_arithmetic:
+        num = _extract_numeric_answer(text)
+        if num is not None:
+            return num
+    text = _strip_citations(text)
+    first_line = text.split("\n")[0].strip()
+    if not first_line:
+        first_line = text[:max_chars].strip()
+    for pattern in _UNANSWERABLE_PATTERNS:
+        if pattern in first_line.lower():
+            return "Unanswerable"
+    if len(first_line) <= max_chars:
+        return first_line
+    chunk = first_line[:max_chars]
+    last_space = chunk.rfind(" ")
+    return (chunk[:last_space + 1] if last_space >= 0 else chunk).strip()
+
+
+# =============================================================================
+# Header-Match Fallback (ported from graph.py)
+# =============================================================================
+
+def _header_match_fallback(
+    question: str,
+    skeleton: dict[str, SkeletonNode],
+    kv_store: KVStore,
+    variable_store: VariableStore,
+    min_selections: int = 2,
+    max_selections: int = 5,
+    llm_fn: Callable[[str], str] | None = None,
+) -> list[str]:
+    """Present ALL headers to the LLM and ask it to pick the most relevant sections.
+
+    Last-resort fallback when tree navigation and search refinement both fail.
+    Returns list of pointer names stored.
+    """
+    entries: list[tuple[str, str, str]] = []
+    for nid, node in skeleton.items():
+        if node.parent_id is None:
+            continue
+        preview = node.summary[:120] if node.summary else ""
+        entries.append((nid, node.header, preview))
+
+    if not entries or not llm_fn:
+        return []
+
+    header_lines = "\n".join(
+        f"{i + 1}. [{entry[0]}] {entry[1]} -- {entry[2]}"
+        for i, entry in enumerate(entries)
+    )
+
+    prompt = f"""Given this question, which document sections are most likely to contain the answer?
+You MUST pick between {min_selections} and {max_selections} sections.
+
+Question: {question}
+
+Available sections:
+{header_lines}
+
+Reply with ONLY the section numbers (comma-separated), e.g.: 2, 5, 7
+You MUST select at least {min_selections} sections, even if you are unsure."""
+
+    try:
+        response = llm_fn(prompt).strip()
+    except Exception as e:
+        logger.warning("header_match_fallback_llm_failed", error=str(e))
+        return []
+
+    selected_indices: list[int] = []
+    for token in re.split(r"[,\s]+", response):
+        token = token.strip().rstrip(".")
+        if token.isdigit():
+            idx = int(token)
+            if 1 <= idx <= len(entries):
+                selected_indices.append(idx)
+
+    if not selected_indices:
+        return []
+
+    seen: set[int] = set()
+    unique_indices: list[int] = []
+    for idx in selected_indices:
+        if idx not in seen:
+            seen.add(idx)
+            unique_indices.append(idx)
+    unique_indices = unique_indices[:max_selections]
+
+    pointers_stored: list[str] = []
+    for _rank, idx in enumerate(unique_indices):
+        node_id, header, _preview = entries[idx - 1]
+        content = kv_store.get(node_id)
+        if not content or len(content.strip()) < 20:
+            continue
+        pointer = generate_pointer_name(header)
+        base_pointer = pointer
+        counter = 2
+        while variable_store.exists(pointer):
+            pointer = f"{base_pointer}_{counter}"
+            counter += 1
+        variable_store.assign(pointer, content, source_node_id=node_id)
+        pointers_stored.append(pointer)
+
+    logger.info(
+        "header_match_fallback_stored",
+        num_selected=len(unique_indices),
+        num_stored=len(pointers_stored),
+    )
+    return pointers_stored
 
 
 # =============================================================================
@@ -782,6 +1201,9 @@ class RLMConfig:
     min_nodes_to_visit: int = 2  # Minimum nodes to visit before allowing synthesis
     min_findings_required: int = 1  # Minimum findings before synthesis allowed (quality > quantity)
 
+    # Answer format
+    use_short_answer: bool = False  # When True, produce minimal key-phrase answers
+
 
 # =============================================================================
 # Pre-Filtering Engine (Before ToT Evaluation)
@@ -1487,12 +1909,18 @@ class RLMNavigator:
         Returns:
             Dict with answer, confidence, trace, etc.
         """
+        # Merge use_short_answer from config into metadata so the
+        # synthesis prompt picks it up automatically.
+        effective_metadata = dict(metadata) if metadata else {}
+        if self.config.use_short_answer:
+            effective_metadata.setdefault("use_short_answer", True)
+
         # Initialize state
         state = RLMAgentState(
             question=question,
             root_node_id=self.root_id,
             config=self.config,
-            metadata=metadata,
+            metadata=effective_metadata,
         )
         
         # Ensure LLM is configured
@@ -1530,6 +1958,30 @@ class RLMNavigator:
                         answer_preview=state.answer[:100] if state.answer else "",
                     )
                     state = self._refine_search_strategy(state)
+            
+            # Header-match fallback: if no variables were found OR the answer
+            # is still inconclusive after all refinement attempts, present ALL
+            # section headers to the LLM and let it pick the right ones.
+            needs_fallback = (
+                not state.variables
+                or self._answer_is_inconclusive(state.answer)
+            )
+            if needs_fallback and self._llm_fn:
+                logger.info("header_match_fallback_triggered")
+                fallback_pointers = _header_match_fallback(
+                    question=state.question,
+                    skeleton=self.skeleton,
+                    kv_store=self.kv_store,
+                    variable_store=self.variable_store,
+                    llm_fn=self._llm_fn,
+                )
+                if fallback_pointers:
+                    state.variables.extend(fallback_pointers)
+                    state.add_trace(
+                        "navigation",
+                        f"Header-match fallback stored {len(fallback_pointers)} sections",
+                    )
+                    state = self._phase_synthesize(state)
             
             # Phase 5: Verification (if enabled)
             if self.config.enable_verification:
@@ -1795,10 +2247,32 @@ Respond with JSON only:"""
         return "traverse"
     
     def _do_expand(self, state: RLMAgentState, node: SkeletonNode) -> RLMAgentState:
-        """Expand current node: fetch content and store as variable."""
+        """Expand current node: fetch content, optionally run vision analysis, and store as variable."""
         content = self.kv_store.get(node.node_id)
         
         if content:
+            # Vision augmentation: if node has an associated image, analyze it
+            if hasattr(self.kv_store, "get_image"):
+                try:
+                    image_bytes = self.kv_store.get_image(node.node_id)
+                    if image_bytes:
+                        from rnsr.ingestion.vision_retrieval import VisionLLM, VisionConfig
+                        vision_prompt = (
+                            f"Analyze this document image. For charts/graphs, extract EXACT data values. "
+                            f"For tables, extract all rows and columns as pipe-separated text. "
+                            f"For forms, extract all field labels and values. "
+                            f"Question context: {state.question}"
+                        )
+                        vision_analysis = VisionLLM(VisionConfig()).analyze_image(image_bytes, vision_prompt)
+                        content = f"{content}\n\n[VISION ANALYSIS]\n{vision_analysis}"
+                        state.add_trace(
+                            "variable_stitching",
+                            f"Vision analysis for node {node.node_id}",
+                            {"node_id": node.node_id, "analysis_chars": len(vision_analysis)},
+                        )
+                except Exception as e:
+                    logger.debug("vision_analysis_skipped", node_id=node.node_id, error=str(e))
+
             pointer = generate_pointer_name(node.header)
             self.variable_store.assign(pointer, content, node.node_id)
             state.variables.append(pointer)
@@ -2262,10 +2736,22 @@ Generate 2-3 SIMPLE patterns, one per line:"""
         last_code = None
         
         # Iterative code generation loop
+        consecutive_empty = 0
         for iteration in range(self.config.rlm_max_search_iterations):
             # Get current REPL state
             repl_state = self.nav_repl.get_state()
             current_node = self.skeleton.get(repl_state["current_node_id"])
+            findings_count = len(repl_state.get("findings", []))
+
+            # Hard exit: if we've had 4+ consecutive iterations with no findings,
+            # the document genuinely doesn't contain relevant content
+            if consecutive_empty >= 4 and findings_count == 0:
+                logger.info(
+                    "rlm_exhausted_search",
+                    iterations=iteration,
+                    consecutive_empty=consecutive_empty,
+                )
+                break
             
             # Log iteration start with full state
             logger.info(
@@ -2273,7 +2759,7 @@ Generate 2-3 SIMPLE patterns, one per line:"""
                 iteration=iteration,
                 current_node=current_node.header if current_node else "root",
                 current_node_id=repl_state["current_node_id"],
-                findings_count=len(repl_state.get("findings", [])),
+                findings_count=findings_count,
                 visited_nodes=len(state.visited_nodes),
                 nav_history=len(repl_state.get("navigation_history", [])),
             )
@@ -2401,6 +2887,13 @@ Generate Python code only, no explanations:
                     last_error = exec_result["error"]
                 else:
                     last_error = None  # Clear error on success
+
+                # Track consecutive iterations with no findings
+                current_findings = len(self.nav_repl._get_findings())
+                if current_findings == 0:
+                    consecutive_empty += 1
+                else:
+                    consecutive_empty = 0
                 
                 state.add_trace(
                     "rlm_navigation",
@@ -2453,8 +2946,12 @@ Generate Python code only, no explanations:
                     # Secondary: if no findings yet, must explore more nodes
                     needs_more_findings = findings_count < self.config.min_findings_required
                     needs_more_nodes = findings_count == 0 and nodes_visited < self.config.min_nodes_to_visit
+
+                    # Allow exit after 3+ iterations even with 0 findings -
+                    # the document genuinely may not contain relevant content
+                    exhausted_search = iteration >= 3 and findings_count == 0
                     
-                    if needs_more_findings or needs_more_nodes:
+                    if (needs_more_findings or needs_more_nodes) and not exhausted_search:
                         logger.debug(
                             "forcing_more_exploration",
                             nodes=nodes_visited,
@@ -2725,8 +3222,31 @@ JSON only:"""
             state.confidence = 0.5
             return state
         
-        # Handle multiple choice
+        # Detect question type from metadata
         options = state.metadata.get("options")
+        metadata = state.metadata
+        requires_arithmetic = metadata.get("requires_arithmetic", False)
+        answer_type = metadata.get("answer_type", "")
+        is_arithmetic = (
+            requires_arithmetic
+            or answer_type in ("arithmetic", "counting", "multi-span")
+            or "hybrid-arithmetic" in metadata.get("reasoning_type", "")
+            or "hybrid-counting" in metadata.get("reasoning_type", "")
+        )
+
+        # --- Vision augmentation: collect image bytes from visited nodes ---
+        image_bytes = None
+        if state.visited_nodes:
+            for node_id in state.visited_nodes:
+                try:
+                    if hasattr(self.kv_store, "get_image"):
+                        img = self.kv_store.get_image(node_id)
+                        if img:
+                            image_bytes = img
+                            break
+                except Exception:
+                    pass
+
         if options:
             options_text = "\n".join(f"{chr(65+i)}. {opt}" for i, opt in enumerate(options))
             synthesis_prompt = f"""Based on the context, answer this multiple-choice question.
@@ -2740,6 +3260,47 @@ Context:
 {context_text}
 
 Respond with ONLY the letter and full option text (e.g., "A. [option text]"):"""
+        elif is_arithmetic:
+            synthesis_prompt = f"""Answer the question using the provided context.
+
+RULES:
+1. PREFER exact numeric values from tables over approximate values from narrative text.
+2. If values are in "thousands" or "millions", convert to the unit the question requests.
+3. You must NEVER do arithmetic in your head. ALL computation must be done via Python code.
+4. If the question asks for a year or a name (no math needed), you may answer directly.
+5. GROWTH RATE / PROJECTION RULE: When the question asks about a "growth rate", "current rate", "continues to grow", or future projections, you MUST:
+   a) Extract ALL available data points across multiple years.
+   b) Compute the Compound Annual Growth Rate (CAGR) from the data.
+   c) Apply the CAGR for the projection period.
+
+DECIDE: Does this question require mathematical computation?
+
+OPTION A — If YES:
+You MUST write Python code. Do NOT compute the answer yourself.
+1. Extract the exact values from the context.
+2. Write a Python code block that computes the answer.
+3. The code MUST call print() with the final numeric result.
+
+Format:
+EXTRACTED VALUES:
+- value_1 = <number> (source: "<quote>")
+
+CODE:
+```python
+value_1 = <number>
+result = <computation>
+print(result)
+```
+
+OPTION B — If NO (direct lookup, comparison, "which year", etc.):
+Output: NO_COMPUTE: <direct answer>
+
+Question: {state.question}
+
+Context:
+{context_text}
+
+Response (use CODE or NO_COMPUTE):"""
         else:
             # Build entity context from KG if available
             entity_context_text = ""
@@ -2764,79 +3325,109 @@ Respond with ONLY the letter and full option text (e.g., "A. [option text]"):"""
                         + "\n".join(entity_lines)
                     )
 
+            use_short = metadata.get("use_short_answer", False)
+            if use_short:
+                format_block = """CRITICAL FORMAT RULE:
+Line 1 MUST be ONLY the bare minimal answer — key words/phrases only, NO full sentences.
+If the answer cannot be found, write exactly: "Unanswerable"
+Line 2+: Optional supporting evidence with citations."""
+            else:
+                format_block = """FORMAT RULES:
+- Start with the direct answer in 1-2 sentences. No preamble, no headers, no markdown formatting.
+- If you quote from the document, cite the section header.
+- Do NOT produce bullet lists, tables, or multi-section analyses unless the question asks for a list.
+- Keep your total response under 200 words."""
+
             synthesis_prompt = f"""You have access to the following document sections. Answer the question using ONLY these sections.
 
-STRICT GROUNDING RULES:
-1. Every claim MUST be supported by text from the sections below
-2. Use exact quotes from the document when stating facts
-3. If the answer requires information not in these sections, say "The provided sections do not contain this information"
-4. Do NOT use any knowledge outside these sections
-5. Do NOT paraphrase or infer beyond what is explicitly stated
-6. Be comprehensive - use all relevant information from the sections
-7. When asked "who is X" — look for names, dates of birth, nationalities, and other identifying information in the sections
+GROUNDING RULES:
+1. Every claim MUST be supported by text from the sections below.
+2. Section headers ARE factual content — a section labelled "MAGISTRATES COURT of WESTERN AUSTRALIA" means that text appears in the document and can be stated as a fact.
+3. You MAY combine information from adjacent or related sections.
+4. Do NOT use any knowledge outside these sections.
+5. Give a DIRECT answer first. Do NOT hedge or say "cannot be determined" when the information IS present.
+6. If the answer is a name, date, number, or short phrase — just state it.
 
-CITATION RULES:
-- Each section is labelled  === Section: <header>  [contains ¶N, ¶M, ...] ===
-  The "[contains ¶N, ¶M]" tag lists paragraph numbers that actually appear
-  in that section's text. Use ONLY those numbers when citing paragraphs.
-- When referencing content, cite the section header and, if applicable, the
-  exact paragraph number from the [contains …] tag.
-  Example: (Section: "Liability Clause", ¶46)
-- If a section has NO [contains …] tag, do NOT cite any paragraph number
-  for that section — cite only the section header.
-- NEVER guess, infer, or calculate a paragraph number. If a paragraph
-  number does not appear in a [contains …] tag, you must NOT cite it.
-- NEVER add citation markers like P11, P48, (P12), [1], etc.
+{format_block}
 
 Question: {state.question}
 
 Document Sections:
 {context_text}{entity_context_text}
 
-Answer (grounded in document sections):"""
+Answer:"""
         
-        # Log synthesis inputs
         logger.info(
             "synthesis_start",
             question=state.question,
             num_variables=len(state.variables),
             context_length=len(context_text),
-            context_preview=context_text[:300],
+            is_arithmetic=is_arithmetic,
         )
         
         try:
-            answer = self._llm_fn(synthesis_prompt)
-            state.answer = answer.strip()
-            # Base initial confidence on having evidence, but verification will adjust
-            # More variables = more evidence, but capped at 0.7 until verified
+            # --- Multimodal synthesis: use image if available ---
+            if image_bytes:
+                try:
+                    from rnsr.llm import get_llm
+                    llm_obj = get_llm()
+                    if hasattr(llm_obj, "complete_with_image"):
+                        answer = str(llm_obj.complete_with_image(synthesis_prompt, image_bytes)).strip()
+                        logger.info("multimodal_synthesis_used", question=state.question[:80])
+                    else:
+                        answer = self._llm_fn(synthesis_prompt).strip()
+                except Exception:
+                    answer = self._llm_fn(synthesis_prompt).strip()
+            else:
+                answer = self._llm_fn(synthesis_prompt).strip()
+            
+            state.answer = answer
             state.confidence = min(0.7, 0.3 + len(state.variables) * 0.1)
             
-            # Log the synthesized answer
-            logger.info(
-                "synthesis_complete",
-                question=state.question,
-                answer_length=len(state.answer),
-                answer_preview=state.answer[:300],
-                initial_confidence=state.confidence,
-            )
+            # --- Arithmetic code execution pipeline ---
+            if is_arithmetic and not options and state.answer:
+                original_code = _extract_code_block(state.answer)
+                computed = _try_compute_from_response(state.answer, context_text=context_text)
+                if computed is not None:
+                    if computed != _NO_COMPUTE_MARKER:
+                        state.answer = computed
+                        logger.info("arithmetic_code_execution_used", result=computed)
+                        if original_code:
+                            verified = _verify_and_rerun_formula(
+                                state.question, original_code, state.answer,
+                                context_text, self._llm_fn,
+                            )
+                            if verified is not None:
+                                state.answer = verified
+                else:
+                    repl_answer = _try_repl_arithmetic(state.question, context_text, self._llm_fn)
+                    if repl_answer is not None:
+                        state.answer = repl_answer
+                        logger.info("repl_arithmetic_fallback_used", result=repl_answer)
             
             # Normalize multiple choice answer
             if options:
                 state.answer = self._normalize_mc_answer(state.answer, options)
             
-            # Post-synthesis grounding check: verify key claims exist in source
-            # Only run if verification is enabled - this check is too strict for
-            # table-heavy financial documents where text extraction loses structure
+            # Short-answer extraction for benchmark compatibility
+            if not options and metadata.get("use_short_answer"):
+                state.answer = _extract_first_answer_phrase(
+                    state.answer, is_arithmetic=is_arithmetic,
+                )
+            
+            logger.info(
+                "synthesis_complete",
+                question=state.question,
+                answer_length=len(state.answer) if state.answer else 0,
+                answer_preview=(state.answer or "")[:300],
+                initial_confidence=state.confidence,
+            )
+            
+            # Post-synthesis grounding check
             if self.config.enable_verification:
                 grounded, issues = self._verify_answer_grounded(state.answer, context_text)
-                logger.info(
-                    "grounding_check_result",
-                    is_grounded=grounded,
-                    issues=issues if not grounded else None,
-                )
                 if not grounded:
                     logger.warning("answer_grounding_issues", issues=issues)
-                    # Reduce confidence if grounding issues found
                     state.confidence = max(0.3, state.confidence - 0.2)
                 
         except Exception as e:
@@ -3078,6 +3669,12 @@ JSON only:"""
             
             critic_passed = critic_result.verified
             
+            # Cap confidence with the critic's confidence (e.g. "can't find"
+            # answers get verified=True but confidence=0.3, preventing
+            # downstream early termination on non-answers).
+            if critic_result.confidence is not None:
+                confidence = min(confidence, critic_result.confidence)
+            
             if not critic_passed:
                 logger.warning(
                     "critic_loop_rejected_answer",
@@ -3095,9 +3692,10 @@ JSON only:"""
                 # Reduce confidence since critic found issues
                 confidence = min(confidence * 0.5, 0.3)
         
-        # Final decision: both stages must pass
+        # Final decision: both stages must pass for full confidence.
+        # When rejected, keep the original answer at low confidence so
+        # cross-document synthesis can still use it as evidence.
         if not is_valid or confidence < min_confidence_threshold or not critic_passed:
-            # Reject the answer - don't hallucinate
             rejection_reason = []
             if not is_valid:
                 rejection_reason.append("validation failed")
@@ -3105,16 +3703,15 @@ JSON only:"""
                 rejection_reason.append(f"low confidence ({confidence:.2f})")
             if not critic_passed and critic_result:
                 rejection_reason.append(f"critic rejected: {critic_result.rejection_reason}")
-            
-            state.answer = "I cannot answer this from the provided text."
-            state.confidence = 0.0
+
+            state.confidence = 0.15
             state.add_trace(
                 "verification",
-                f"Answer REJECTED: {', '.join(rejection_reason)}",
+                f"Answer LOW-CONFIDENCE: {', '.join(rejection_reason)}",
                 {"issues": issues, "rejected": True, "critic_passed": critic_passed},
             )
             logger.info(
-                "answer_rejected",
+                "answer_low_confidence",
                 is_valid=is_valid,
                 confidence=confidence,
                 critic_passed=critic_passed,

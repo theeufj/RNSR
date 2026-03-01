@@ -1162,8 +1162,8 @@ class RLMConfig:
     """Configuration for the RLM Navigator."""
     
     # Recursion control
-    max_recursion_depth: int = 3  # Max depth for recursive sub-LLM calls
-    max_iterations: int = 30  # Max navigation iterations
+    max_recursion_depth: int = 5  # Max depth for recursive sub-LLM calls
+    max_iterations: int = 50  # Max navigation iterations
     
     # Tree of Thoughts parameters
     top_k: int = 3  # Base children to explore
@@ -1192,8 +1192,8 @@ class RLMConfig:
     
     # RLM Navigation Mode (LLM writes code to search document)
     use_rlm_navigation: bool = True  # Use LLM code generation for navigation
-    rlm_max_search_iterations: int = 10  # Max code generation iterations per navigation
-    rlm_search_depth: int = 3  # How many levels deep to search in one iteration
+    rlm_max_search_iterations: int = 15  # Max code generation iterations per navigation
+    rlm_search_depth: int = 99  # How many levels deep to search in one iteration (unlimited)
     rlm_min_content_length: int = 50  # Minimum useful content length
     rlm_max_content_for_specific: int = 3000  # Content longer than this suggests broad section
     
@@ -2743,9 +2743,9 @@ Generate 2-3 SIMPLE patterns, one per line:"""
             current_node = self.skeleton.get(repl_state["current_node_id"])
             findings_count = len(repl_state.get("findings", []))
 
-            # Hard exit: if we've had 4+ consecutive iterations with no findings,
+            # Hard exit: if we've had 6+ consecutive iterations with no findings,
             # the document genuinely doesn't contain relevant content
-            if consecutive_empty >= 4 and findings_count == 0:
+            if consecutive_empty >= 6 and findings_count == 0:
                 logger.info(
                     "rlm_exhausted_search",
                     iterations=iteration,
@@ -2837,6 +2837,8 @@ IMPORTANT:
 - Use store_finding() when you find relevant information
 - Call ready_to_synthesize() when you have enough information
 - Keep searching until you find SPECIFIC content that answers the query
+- For questions about NAMES (judges, signatories), DATES (of orders, judgments), or CITATIONS: search the FIRST and LAST sections of the document — metadata like case citations, judge names, dates of judgment, and signatures typically appear at the very beginning or very end
+- search_tree() searches unlimited depth — use it freely without depth limits
 
 Generate Python code only, no explanations:
 ```python
@@ -3341,12 +3343,15 @@ Line 2+: Optional supporting evidence with citations."""
             synthesis_prompt = f"""You have access to the following document sections. Answer the question using ONLY these sections.
 
 GROUNDING RULES:
-1. Every claim MUST be supported by text from the sections below.
+1. Every claim MUST be supported by text from the sections below. Never infer or assume facts not explicitly stated.
 2. Section headers ARE factual content — a section labelled "MAGISTRATES COURT of WESTERN AUSTRALIA" means that text appears in the document and can be stated as a fact.
 3. You MAY combine information from adjacent or related sections.
-4. Do NOT use any knowledge outside these sections.
+4. Do NOT use any knowledge outside these sections. If the document discusses multiple cases or sub-matters, answer ONLY about the case the question asks about.
 5. Give a DIRECT answer first. Do NOT hedge or say "cannot be determined" when the information IS present.
 6. If the answer is a name, date, number, or short phrase — just state it.
+7. For DATES: look for explicit date strings in the text (e.g. "12 March 2025", "1-Mar-24"). Prefer dates that directly relate to the question's context (e.g. "Date of Judgment" for when judgment was given, "Date of Order" for when an order was made). Do not confuse dates from different events.
+8. For NUMBERS and AMOUNTS: quote the exact figure from the text. Do not sum, average, or derive values unless the question specifically asks for a calculation. If a table row or clause states a specific value, prefer that over computed totals.
+9. For NAMES of judges, parties, or signatories: search section headers, case headings, and signature blocks — these often appear at the very start or very end of a document.
 
 {format_block}
 

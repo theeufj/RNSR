@@ -24,6 +24,7 @@ import faulthandler
 import gc
 import json
 import os
+import random
 import re
 import sys
 import time
@@ -412,6 +413,17 @@ def main() -> None:
         help="Max directories to process (0 = all, default: 4)",
     )
     parser.add_argument(
+        "--random",
+        action="store_true",
+        help="Randomly sample directories instead of taking the first N",
+    )
+    parser.add_argument(
+        "--seed",
+        type=int,
+        default=None,
+        help="Random seed for reproducible sampling (implies --random)",
+    )
+    parser.add_argument(
         "--force-reingest",
         action="store_true",
         help="Re-ingest documents even if a store already exists",
@@ -441,7 +453,11 @@ def main() -> None:
         sys.exit(1)
 
     if args.limit > 0:
-        case_dirs = case_dirs[: args.limit]
+        if args.random or args.seed is not None:
+            rng = random.Random(args.seed)
+            case_dirs = rng.sample(case_dirs, min(args.limit, len(case_dirs)))
+        else:
+            case_dirs = case_dirs[: args.limit]
 
     print(f"\n{'=' * 100}")
     print(f"  Matter AI Tests — {len(case_dirs)} case directories")

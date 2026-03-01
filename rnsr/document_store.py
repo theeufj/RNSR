@@ -1191,8 +1191,8 @@ class DocumentStore:
         kg = self.get_workspace_kg()
 
         config = RLMConfig(
-            max_iterations=30,
-            max_recursion_depth=4,
+            max_iterations=50,
+            max_recursion_depth=5,
             enable_pre_filtering=True,
             enable_verification=False,
         )

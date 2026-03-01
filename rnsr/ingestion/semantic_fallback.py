@@ -159,7 +159,7 @@ def _try_pattern_based_headers(text: str, title: str) -> DocumentTree | None:
     # Build hierarchical tree from detected sections.
     # Attach any preamble (text before the first header) to the root so
     # letterhead info like dates, references, and addresses is preserved.
-    preamble_text = '\n'.join(preamble_lines).strip() if preamble_lines else None
+    preamble_text = '\n'.join(preamble_lines).strip() if preamble_lines else ""
     root = DocumentNode(id="root", level=0, header=title, content=preamble_text)
     total_nodes = 1
     

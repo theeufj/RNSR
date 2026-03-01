@@ -56,8 +56,8 @@ Search direct children's headers and content.
 Returns: [{"node_id": str, "header": str, "level": int, "matches": int, "score": float, "preview": str, "has_children": bool}]
 Results are sorted by SCORE (higher = more specific/relevant), not just match count.
 
-### search_tree(pattern, max_depth=3) -> list
-Search ENTIRE subtree (breadth-first).
+### search_tree(pattern) -> list
+Search ENTIRE subtree (breadth-first, unlimited depth).
 Returns: [{"node_id": str, "header": str, "level": int, "depth_from_current": int, "matches": int, "score": float, "path": str}]
 Results are sorted by SCORE which favors SPECIFIC sections over broad containers.
 USE THIS for broad exploration - it searches all nested sections!

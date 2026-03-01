@@ -135,9 +135,11 @@ Unlike traditional RAG systems that chunk documents and lose context, RNSR:
 1. **Preserves Document Structure** - Maintains hierarchical relationships between sections
 2. **Knowledge Graph Grounding** - Extracts entities (companies, amounts, dates) and verifies relationships
 3. **RLM Navigation** - LLM writes code to navigate the document tree, finding relevant sections deterministically
-4. **Provenance Tracking** - Every answer includes exact citations to source text
-5. **Source Grounding** - Regex pre-scanning and post-validation ensure extracted facts exist in the source text
-6. **No Guessing** - If information isn't found, RNSR says so rather than hallucinating
+4. **Cross-Doc KG Disambiguation** - When multiple documents give conflicting answers, entity relationships and document context from the Knowledge Graph resolve which answer is authoritative
+5. **Unified Atomic Storage** - All document data lives in a single WAL-mode SQLite database per workspace, eliminating the file-locking and corruption issues that plague multi-file stores
+6. **Provenance Tracking** - Every answer includes exact citations to source text
+7. **Source Grounding** - Regex pre-scanning and post-validation ensure extracted facts exist in the source text
+8. **No Guessing** - If information isn't found, RNSR says so rather than hallucinating
 
 ## Overview
 
@@ -157,10 +159,14 @@ RNSR combines neural and symbolic approaches to achieve accurate document unders
 |---------|-------------|
 | **🏆 100% FinanceBench** | Only retrieval system to achieve perfect accuracy on the industry benchmark |
 | **Zero Hallucinations** | Grounded answers with provenance - if not found, says so |
+| **Multi-Format Ingestion** | Ingest PDF, DOCX, XLSX, CSV, MSG, and image files — not just PDFs |
+| **VLM OCR** | Scanned/image-only PDFs are transcribed by Gemini/Anthropic/OpenAI vision models instead of tesseract, with automatic provider fallback |
+| **Unified Store (StoreDB)** | Single SQLite database per workspace with WAL mode, atomic transactions, and automatic migration from legacy multi-file stores |
 | **Hierarchical Extraction** | Preserves document structure (sections, subsections, paragraphs) |
 | **Knowledge Graph** | LLM-driven entity & relationship extraction with adaptive type learning and parallel processing |
 | **Persistent KG** | File-backed knowledge graphs that survive across sessions and documents |
-| **Multi-Document Workspace** | Upload multiple PDFs, build a workspace-wide KG, and query across all of them |
+| **Multi-Document Workspace** | Upload multiple documents, build a workspace-wide KG, and query across all of them |
+| **Cross-Doc KG Disambiguation** | When documents disagree, entity relationships and document titles are fed into synthesis prompts so the LLM resolves conflicts using KG context rather than frequency |
 | **Cross-Document Entity Linking** | Automatically discovers that "G. Sorenssen" in Doc A is "GeoV William Sorenssen" in Doc B |
 | **Timeline Extraction** | Automatically builds chronological timelines of events from the knowledge graph |
 | **Contradiction Detection** | Six-strategy detection: KG relationships, subject-gated heuristics, LLM semantic analysis, structure-parallel section matching, entity-centric comparison, and relationship divergence |
@@ -171,7 +177,6 @@ RNSR combines neural and symbolic approaches to achieve accurate document unders
 | **LLM Response Cache** | Semantic-aware caching for 10x cost/speed improvement |
 | **Self-Reflection** | Iterative self-correction improves answer quality |
 | **Multi-Document Detection** | Automatically splits bundled PDFs |
-| **Vision Mode** | OCR-free analysis for scanned documents and charts |
 
 ## Installation
 
@@ -488,12 +493,12 @@ Manage multiple documents, build a workspace-wide knowledge graph, and ask quest
 ```python
 from rnsr import DocumentStore
 
-# Create or open a document store
+# Create or open a document store (backed by a single StoreDB SQLite file)
 store = DocumentStore("./my_documents/")
 
-# Add documents
+# Add documents — PDF, DOCX, XLSX, CSV, MSG, and images are all supported
 store.add_document("contract_a.pdf")
-store.add_document("contract_b.pdf", metadata={"year": 2024})
+store.add_document("contract_b.docx", metadata={"year": 2024})
 
 # Build workspace knowledge graph & link entities across documents
 kg = store.build_workspace_kg()
@@ -506,7 +511,14 @@ print(result["answer"])
 print(f"Documents used: {result['documents_used']}")
 ```
 
-The demo UI includes a **Multi-Document** tab where you can upload multiple PDFs, build the workspace KG, and run cross-document queries interactively.
+**How cross-document disambiguation works:** When documents give conflicting answers, the `CrossDocNavigator` enriches its synthesis prompt with:
+
+- **Document titles** — human-readable names instead of opaque hashes, so the LLM can reason about document *types* (e.g. "Costs Agreement" vs "Invoice Cover Letter").
+- **Knowledge Graph context** — entity relationships, entity-document mappings, and cross-document links are injected directly into the prompt. The synthesis rules instruct the LLM to pick the most *contextually relevant* answer rather than the most *frequent* one.
+
+All workspace data — skeletons, KV content, knowledge graphs, and the catalog — is persisted in a single WAL-mode SQLite database (`store.db`) per workspace via `StoreDB`, providing atomic transactions and eliminating the file-locking issues of legacy multi-file stores.
+
+The demo UI includes a **Multi-Document** tab where you can upload multiple documents, build the workspace KG, and run cross-document queries interactively.
 
 ### Batch Ingestion
 
@@ -718,24 +730,34 @@ graph LR
 
 ### Document Ingestion Pipeline
 
+RNSR ingests PDFs, DOCX, XLSX, CSV, MSG, and image files through a unified pipeline:
+
 ```mermaid
 flowchart TD
-    A["📄 PDF Input"] --> B["Font Histogram Analysis"]
-    B --> C["Header Classification<br>(H1 / H2 / H3)"]
-    C --> D{"Multiple Documents?"}
-    D -->|"Yes (page-number resets)"| E["Split into Sub-Documents"]
-    D -->|No| F["Build Hierarchical Tree"]
-    E --> F
-    F --> G["Skeleton Index<br>(lightweight summaries)"]
-    F --> H["KV Store<br>(full section content)"]
-    F --> I["Table Detection<br>& Parsing"]
+    INPUT["📄 Document Input"] --> FMT{"File Format?"}
 
-    style A fill:#e1f5fe
-    style F fill:#fff3e0
-    style G fill:#e8f5e9
-    style H fill:#e8f5e9
-    style I fill:#e8f5e9
+    FMT -->|PDF| EXTRACT{"Has extractable text?"}
+    FMT -->|DOCX/XLSX/CSV/MSG| TEXT["Extract Text"]
+    FMT -->|"Image (PNG/JPG/...)"| VLM_IMG["VLM Transcription"]
+
+    EXTRACT -->|Yes| T1["Tier 1: Font Histogram"]
+    EXTRACT -->|No| T3
+
+    T1 -->|Success| TREE["Build Hierarchical Tree"]
+    T1 -->|Fail| T2["Tier 2: Semantic Splitter"]
+    T2 -->|Success| TREE
+    T2 -->|Fail| T3["Tier 3: VLM OCR"]
+    T3 --> TREE
+
+    TEXT --> TREE
+    VLM_IMG --> TREE
+
+    TREE --> SKEL["Skeleton Index"]
+    TREE --> KV["Unified Store (StoreDB)"]
+    TREE --> TBL["Table Detection"]
 ```
+
+**Tier 3 (VLM OCR)** renders each PDF page to a 300 DPI image with PyMuPDF, then transcribes via Gemini/Anthropic/OpenAI vision with automatic provider fallback. Tesseract is kept as a legacy fallback only.
 
 ### Query Processing
 
@@ -900,19 +922,23 @@ graph TD
     DS["document_store.py<br>Multi-Doc Workspace"]
 
     subgraph INGESTION ["ingestion/"]
-        P["pipeline.py"]
+        P["pipeline.py<br>Multi-Format Orchestrator"]
         FH["font_histogram.py"]
         HC["header_classifier.py"]
         TB["tree_builder.py"]
         TP["table_parser.py"]
         CP["chart_parser.py"]
+        OCR["ocr_fallback.py<br>VLM OCR"]
     end
 
     subgraph INDEXING ["indexing/"]
+        SDB["store_db.py<br>Unified SQLite Store"]
         SI["skeleton_index.py"]
         KV["kv_store.py"]
         KGR["knowledge_graph.py"]
         SS["semantic_search.py"]
+        CS["collection_skeleton.py"]
+        ES["expandable_skeleton.py"]
     end
 
     subgraph EXTRACTION ["extraction/"]
@@ -984,14 +1010,18 @@ rnsr/
 │   ├── timeline_extractor.py # Chronological timeline extraction
 │   └── models.py            # Entity/Relationship models
 ├── indexing/                # Index construction
+│   ├── store_db.py          # Unified WAL-mode SQLite store per workspace
 │   ├── skeleton_index.py    # Summary generation
+│   ├── collection_skeleton.py  # Collection-level skeleton builder
+│   ├── expandable_skeleton.py  # Lazy skeleton expansion
 │   ├── knowledge_graph.py   # Entity/relationship storage (SQLite-backed)
 │   ├── kv_store.py          # SQLite/in-memory storage
 │   └── semantic_search.py   # Optional vector search
 ├── ingestion/               # Document processing
-│   ├── pipeline.py          # Main ingestion orchestrator
+│   ├── pipeline.py          # Multi-format ingestion orchestrator (PDF, DOCX, XLSX, CSV, MSG, images)
 │   ├── font_histogram.py    # Font-based structure detection
 │   ├── header_classifier.py # H1/H2/H3 classification
+│   ├── ocr_fallback.py      # VLM OCR via Gemini/Anthropic/OpenAI vision (tesseract as legacy fallback)
 │   ├── table_parser.py      # Table extraction
 │   ├── chart_parser.py      # Chart interpretation
 │   └── tree_builder.py      # Hierarchical tree construction

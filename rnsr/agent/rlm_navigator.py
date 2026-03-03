@@ -1807,6 +1807,7 @@ class RLMNavigator:
         tables: list | None = None,
         doc_profile: dict | None = None,
         doc_title: str | None = None,
+        embedding_index=None,
     ):
         self.skeleton = skeleton
         self.kv_store = kv_store
@@ -1827,6 +1828,8 @@ class RLMNavigator:
         
         # NavigationREPL for RLM-style code generation navigation
         self.nav_repl = create_navigation_repl(skeleton, kv_store, tables=tables)
+        if embedding_index is not None:
+            self.nav_repl.set_embedding_index(embedding_index)
         
         # LLM function
         self._llm_fn: Callable[[str], str] | None = None
@@ -1991,11 +1994,15 @@ class RLMNavigator:
             # Phase 2: Query decomposition
             state = self._phase_decompose(state)
             
-            # Recursive navigate-synthesize loop: if the answer is
-            # inconclusive ("sections do not contain…"), refine the
-            # search strategy and retry up to max_recursion_depth times.
-            max_attempts = 1 + self.config.max_recursion_depth
-            for attempt in range(max_attempts):
+            # Recursive navigate-synthesize loop with adaptive retry depth.
+            # Simple factual queries get fewer retries; complex analytical
+            # queries keep the full budget.
+            base_max = 1 + self.config.max_recursion_depth
+            max_attempts = base_max
+            for attempt in range(base_max):
+                if attempt >= max_attempts:
+                    break
+
                 # Phase 3: Tree navigation with ToT
                 state = self._phase_navigate(state)
                 
@@ -2006,6 +2013,10 @@ class RLMNavigator:
                 state = self._phase_synthesize(state)
                 
                 if not self._answer_is_inconclusive(state.answer):
+                    # Adaptive: if first attempt yielded good confidence,
+                    # cap remaining retries to save LLM calls.
+                    if attempt == 0 and state.confidence >= 0.7:
+                        max_attempts = min(max_attempts, attempt + 2)
                     break
                 
                 if attempt < max_attempts - 1:
@@ -3870,11 +3881,24 @@ JSON only:"""
         min_confidence_threshold = 0.7
         
         # Stage 2: STRICT CRITIC LOOP (Red Team verification)
-        # Only run critic if standard verification passed
+        # Skip the expensive critic call entirely when standard verification
+        # already shows very high confidence and the answer is substantive.
         critic_passed = True
         critic_result = None
-        
-        if is_valid and confidence >= min_confidence_threshold and state.answer:
+
+        answer_is_unknown = self._answer_is_inconclusive(state.answer)
+        skip_critic = (
+            is_valid
+            and confidence >= 0.95
+            and not answer_is_unknown
+        )
+        if skip_critic:
+            logger.info(
+                "critic_skipped_high_confidence",
+                confidence=confidence,
+            )
+
+        if is_valid and confidence >= min_confidence_threshold and state.answer and not skip_critic:
             state.add_trace("verification", "Running strict critic loop")
             
             # Use LLM function for strict verification

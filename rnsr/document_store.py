@@ -435,6 +435,14 @@ class DocumentStore:
             self._catalog[doc_id] = info
             self._update_collection_skeleton_add(doc_id, info)
         
+        # Build section embedding index for O(log s) retrieval
+        try:
+            from rnsr.indexing.section_embeddings import SectionEmbeddingIndex
+            emb_idx = SectionEmbeddingIndex(self._store_path)
+            emb_idx.build(skeleton, kv_store, doc_id, replace=True)
+        except Exception as e:
+            logger.warning("section_embeddings_build_failed", error=str(e))
+
         logger.info(
             "document_added",
             doc_id=doc_id,
@@ -935,6 +943,7 @@ class DocumentStore:
         doc_ids: list[str] | None = None,
         max_workers: int = 4,
         batch_size: int = 8,
+        max_level: int | None = None,
     ) -> "KnowledgeGraph":
         """
         Build (or extend) the workspace KG from indexed documents.
@@ -950,6 +959,9 @@ class DocumentStore:
             doc_ids: Specific document IDs to process (default: all).
             max_workers: Number of parallel document extraction threads.
             batch_size: Number of small sections to combine into one LLM call.
+            max_level: If set, only extract KG from sections at tree depth
+                <= max_level (0 = root only, 1 = root + first children).
+                Deeper sections can be extracted on-demand later.
 
         Returns:
             The populated workspace ``KnowledgeGraph``.
@@ -978,6 +990,10 @@ class DocumentStore:
             entity_count = 0
 
             for node_id, node in skeleton.items():
+                # Lazy KG: skip deep sections when max_level is set
+                if max_level is not None and node.level > max_level:
+                    continue
+
                 content = kv_store.get(node_id) or ""
                 if len(content.strip()) < 50:
                     continue
@@ -1362,6 +1378,16 @@ class DocumentStore:
             # Attach document profile for identity anchoring
             doc_profile = profiles.get(doc_id) if profiles else None
 
+            # Load embedding index for O(log s) section retrieval
+            emb_index = None
+            try:
+                from rnsr.indexing.section_embeddings import SectionEmbeddingIndex
+                emb_index = SectionEmbeddingIndex(self._store_path)
+                if not emb_index.is_ready:
+                    emb_index = None
+            except Exception:
+                pass
+
             navigator = RLMNavigator(
                 skeleton=skeleton,
                 kv_store=kv_store,
@@ -1370,6 +1396,7 @@ class DocumentStore:
                 tables=tables,
                 doc_profile=doc_profile,
                 doc_title=doc_title,
+                embedding_index=emb_index,
             )
             navigator.set_llm_function(_get_cached_llm_fn())
 

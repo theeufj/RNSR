@@ -1805,12 +1805,16 @@ class RLMNavigator:
         config: RLMConfig | None = None,
         knowledge_graph=None,
         tables: list | None = None,
+        doc_profile: dict | None = None,
+        doc_title: str | None = None,
     ):
         self.skeleton = skeleton
         self.kv_store = kv_store
         self.config = config or RLMConfig()
         self.knowledge_graph = knowledge_graph
         self.tables = tables or []
+        self.doc_profile = doc_profile
+        self.doc_title = doc_title
         
         # Initialize components
         self.variable_store = VariableStore()
@@ -1836,6 +1840,44 @@ class RLMNavigator:
             if node.level == 0:
                 return node.node_id
         raise ValueError("No root node found in skeleton")
+
+    def _build_identity_block(self) -> str:
+        """Build a DOCUMENT IDENTITY block from the profile and title.
+
+        Returns an empty string when no useful identity data is available.
+        """
+        if not self.doc_profile and not self.doc_title:
+            return ""
+
+        parts: list[str] = ["DOCUMENT IDENTITY:"]
+
+        title = self.doc_title or ""
+        profile = self.doc_profile or {}
+
+        citation = profile.get("citation", "")
+        label = f'"{title}"'
+        if citation:
+            label += f" {citation}"
+        parts.append(f"This document is: {label}")
+
+        parties = profile.get("parties")
+        if parties and isinstance(parties, list) and len(parties) > 0:
+            parts.append(f"Parties: {', '.join(parties)}")
+
+        doc_type = profile.get("document_type")
+        if doc_type:
+            parts.append(f"Type: {doc_type}")
+
+        judge = profile.get("judge")
+        if judge:
+            parts.append(f"Judge: {judge}")
+
+        parts.append(
+            "Answer questions about THIS case/document. If it discusses "
+            "other cases or proceedings, only report facts that pertain "
+            "to the case identified above."
+        )
+        return "\n".join(parts)
     
     def set_llm_function(self, llm_fn: Callable[[str], str]) -> None:
         """Configure the LLM function for all components."""
@@ -1930,6 +1972,19 @@ class RLMNavigator:
         logger.info("rlm_navigation_started", question=question[:100])
         
         try:
+            # Phase 0: Inject entity priority nodes from KG resolver
+            entity_priority = effective_metadata.get("entity_priority_nodes")
+            if entity_priority:
+                valid_nodes = [
+                    nid for nid in entity_priority if nid in self.skeleton
+                ]
+                if valid_nodes:
+                    state.nodes_to_visit = valid_nodes + state.nodes_to_visit
+                    logger.info(
+                        "entity_priority_nodes_injected",
+                        count=len(valid_nodes),
+                    )
+
             # Phase 1: Pre-filtering with keyword extraction
             state = self._phase_pre_filter(state)
             
@@ -1943,6 +1998,9 @@ class RLMNavigator:
             for attempt in range(max_attempts):
                 # Phase 3: Tree navigation with ToT
                 state = self._phase_navigate(state)
+                
+                # Phase 3b: Re-rank sections and enrich with siblings
+                state = self._phase_rerank_sections(state)
                 
                 # Phase 4: Synthesis
                 state = self._phase_synthesize(state)
@@ -1959,6 +2017,37 @@ class RLMNavigator:
                     )
                     state = self._refine_search_strategy(state)
             
+            # Low-confidence retry: if the synthesis produced an answer but
+            # with low confidence, supplement with header-matched sections
+            # and re-synthesize before giving up.
+            low_confidence_retry = (
+                state.variables
+                and not self._answer_is_inconclusive(state.answer)
+                and state.confidence < 0.5
+            )
+            if low_confidence_retry and self._llm_fn:
+                logger.info(
+                    "low_confidence_retry",
+                    confidence=state.confidence,
+                    answer_preview=(state.answer or "")[:100],
+                )
+                extra_pointers = _header_match_fallback(
+                    question=state.question,
+                    skeleton=self.skeleton,
+                    kv_store=self.kv_store,
+                    variable_store=self.variable_store,
+                    llm_fn=self._llm_fn,
+                    min_selections=2,
+                    max_selections=4,
+                )
+                if extra_pointers:
+                    state.variables.extend(extra_pointers)
+                    state.add_trace(
+                        "low_confidence_retry",
+                        f"Added {len(extra_pointers)} sections for retry",
+                    )
+                    state = self._phase_synthesize(state)
+
             # Header-match fallback: if no variables were found OR the answer
             # is still inconclusive after all refinement attempts, present ALL
             # section headers to the LLM and let it pick the right ones.
@@ -2219,7 +2308,137 @@ Respond with JSON only:"""
         )
         
         return state
-    
+
+    # ------------------------------------------------------------------
+    # Phase 3b – Section re-ranking & sibling enrichment
+    # ------------------------------------------------------------------
+
+    def _phase_rerank_sections(self, state: RLMAgentState) -> RLMAgentState:
+        """Re-rank collected sections against the question and add siblings.
+
+        After navigation stores candidate sections as variables, this phase
+        uses a single lightweight LLM call to rank them by relevance and
+        injects adjacent sibling nodes of the best match so the synthesis
+        prompt has broader local context (e.g. the costs order sitting
+        right after the main judgment section).
+        """
+        if not state.variables or not self._llm_fn:
+            return state
+
+        # Collect section metadata for re-ranking
+        section_info: list[tuple[str, str, str, str | None]] = []
+        for pointer in state.variables:
+            stored = self.variable_store._metadata.get(pointer)
+            if not stored:
+                continue
+            node = self.skeleton.get(stored.source_node_id)
+            if not node:
+                continue
+            content = self.variable_store.resolve(pointer) or ""
+            preview = content[:200].replace("\n", " ")
+            section_info.append(
+                (pointer, node.header, preview, stored.source_node_id)
+            )
+
+        if len(section_info) <= 1:
+            # Nothing to re-rank; still try sibling enrichment
+            if section_info:
+                self._enrich_with_siblings(state, section_info[0][3])
+            return state
+
+        # Build a lightweight ranking prompt
+        lines = []
+        for i, (_, header, preview, _) in enumerate(section_info):
+            lines.append(f"{i + 1}. {header}: {preview}")
+
+        rank_prompt = (
+            "Rank these document sections by relevance to the question. "
+            "Return ONLY the numbers in order of relevance (most relevant first), "
+            "comma-separated.\n\n"
+            f"Question: {state.question}\n\n"
+            "Sections:\n" + "\n".join(lines) + "\n\nRanking:"
+        )
+
+        try:
+            response = self._llm_fn(rank_prompt).strip()
+            indices: list[int] = []
+            for tok in re.split(r"[,\s]+", response):
+                tok = tok.strip().rstrip(".")
+                if tok.isdigit():
+                    idx = int(tok)
+                    if 1 <= idx <= len(section_info) and idx not in indices:
+                        indices.append(idx)
+
+            if indices:
+                # Reorder variables to match the LLM's ranking
+                ranked_pointers = [section_info[i - 1][0] for i in indices]
+                for ptr in state.variables:
+                    if ptr not in ranked_pointers:
+                        ranked_pointers.append(ptr)
+                state.variables = ranked_pointers
+
+                # Enrich with siblings of the top-ranked section
+                best_node_id = section_info[indices[0] - 1][3]
+                self._enrich_with_siblings(state, best_node_id)
+
+                logger.info(
+                    "sections_reranked",
+                    original_order=[s[1][:40] for s in section_info],
+                    new_order=[
+                        section_info[i - 1][1][:40] for i in indices
+                    ],
+                )
+        except Exception as exc:
+            logger.warning("section_reranking_failed", error=str(exc))
+
+        return state
+
+    def _enrich_with_siblings(
+        self, state: RLMAgentState, node_id: str | None
+    ) -> None:
+        """Add immediately adjacent sibling nodes to state variables."""
+        if not node_id:
+            return
+        node = self.skeleton.get(node_id)
+        if not node or not node.parent_id:
+            return
+        parent = self.skeleton.get(node.parent_id)
+        if not parent:
+            return
+
+        try:
+            idx = parent.child_ids.index(node_id)
+        except ValueError:
+            return
+
+        siblings_to_add = []
+        if idx > 0:
+            siblings_to_add.append(parent.child_ids[idx - 1])
+        if idx < len(parent.child_ids) - 1:
+            siblings_to_add.append(parent.child_ids[idx + 1])
+
+        for sib_id in siblings_to_add:
+            sib_node = self.skeleton.get(sib_id)
+            if not sib_node:
+                continue
+            content = self.kv_store.get(sib_id)
+            if not content or len(content.strip()) < 20:
+                continue
+            pointer = generate_pointer_name(sib_node.header)
+            if self.variable_store.exists(pointer):
+                continue
+            self.variable_store.assign(pointer, content, source_node_id=sib_id)
+            state.variables.append(pointer)
+            if sib_id not in state.visited_nodes:
+                state.visited_nodes.append(sib_id)
+
+        if siblings_to_add:
+            logger.info(
+                "siblings_enriched",
+                target_node=node_id,
+                siblings_added=len(siblings_to_add),
+            )
+
     def _decide_action(
         self,
         state: RLMAgentState,
@@ -2820,6 +3039,7 @@ CURRENT STATE:
 - Iteration: {iteration + 1} of {self.config.rlm_max_search_iterations}
 {error_feedback}{broad_content_guidance}{persistence_guidance}
 QUERY: {state.current_sub_question or state.question}
+{self._build_identity_block()}
 
 Your task: Write Python code to search for information relevant to the query.
 Use the available functions to search content, navigate to relevant sections, 
@@ -2837,8 +3057,6 @@ IMPORTANT:
 - Use store_finding() when you find relevant information
 - Call ready_to_synthesize() when you have enough information
 - Keep searching until you find SPECIFIC content that answers the query
-- For questions about NAMES (judges, signatories), DATES (of orders, judgments), or CITATIONS: search the FIRST and LAST sections of the document — metadata like case citations, judge names, dates of judgment, and signatures typically appear at the very beginning or very end
-- search_tree() searches unlimited depth — use it freely without depth limits
 
 Generate Python code only, no explanations:
 ```python
@@ -3340,8 +3558,11 @@ Line 2+: Optional supporting evidence with citations."""
 - Do NOT produce bullet lists, tables, or multi-section analyses unless the question asks for a list.
 - Keep your total response under 200 words."""
 
-            synthesis_prompt = f"""You have access to the following document sections. Answer the question using ONLY these sections.
+            identity_block = self._build_identity_block()
+            identity_section = f"\n{identity_block}\n" if identity_block else ""
 
+            synthesis_prompt = f"""You have access to the following document sections. Answer the question using ONLY these sections.
+{identity_section}
 GROUNDING RULES:
 1. Every claim MUST be supported by text from the sections below. Never infer or assume facts not explicitly stated.
 2. Section headers ARE factual content — a section labelled "MAGISTRATES COURT of WESTERN AUSTRALIA" means that text appears in the document and can be stated as a fact.
@@ -3349,9 +3570,6 @@ GROUNDING RULES:
 4. Do NOT use any knowledge outside these sections. If the document discusses multiple cases or sub-matters, answer ONLY about the case the question asks about.
 5. Give a DIRECT answer first. Do NOT hedge or say "cannot be determined" when the information IS present.
 6. If the answer is a name, date, number, or short phrase — just state it.
-7. For DATES: look for explicit date strings in the text (e.g. "12 March 2025", "1-Mar-24"). Prefer dates that directly relate to the question's context (e.g. "Date of Judgment" for when judgment was given, "Date of Order" for when an order was made). Do not confuse dates from different events.
-8. For NUMBERS and AMOUNTS: quote the exact figure from the text. Do not sum, average, or derive values unless the question specifically asks for a calculation. If a table row or clause states a specific value, prefer that over computed totals.
-9. For NAMES of judges, parties, or signatories: search section headers, case headings, and signature blocks — these often appear at the very start or very end of a document.
 
 {format_block}
 

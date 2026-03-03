@@ -1037,17 +1037,29 @@ class RNSRClient:
                 batch_ids = [item[0] for item in batch]
                 future_to_meta[fut] = ("batch", batch_ids)
 
-            # Collect all results as they complete
+            # Collect all results as they complete.
+            # Timeout prevents indefinite hangs on stuck LLM calls.
+            _FUTURE_TIMEOUT = 300  # 5 minutes per extraction task
             for future in as_completed(future_to_meta):
                 kind, meta = future_to_meta[future]
                 try:
                     if kind == "single":
-                        result = future.result()
+                        result = future.result(timeout=_FUTURE_TIMEOUT)
                         _add_result_to_kg(result)
                     else:
-                        results = future.result()
+                        results = future.result(timeout=_FUTURE_TIMEOUT)
                         for result in results:
                             _add_result_to_kg(result)
+                except TimeoutError:
+                    if kind == "single":
+                        nodes_done += 1
+                    logger.warning(
+                        "extraction_timeout",
+                        kind=kind,
+                        meta=meta,
+                        timeout_s=_FUTURE_TIMEOUT,
+                        progress=f"{nodes_done}/{total_nodes}",
+                    )
                 except Exception as exc:
                     if kind == "single":
                         nodes_done += 1

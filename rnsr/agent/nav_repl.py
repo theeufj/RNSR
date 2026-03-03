@@ -722,42 +722,54 @@ class NavigationREPL:
     def _search_tree(self, pattern: str, max_depth: int = 99, **kwargs: Any) -> list[dict[str, Any]]:
         """
         Search the entire subtree from current position.
-        
+
         Breadth-first search that exhausts the full tree.
         Returns all matching nodes sorted by relevance.
         max_depth limits how deep the BFS descends from the current node.
         """
+        import time as _time
+        _deadline = _time.monotonic() + 60  # 60s safety limit
+
         logger.info(
             "search_tree_start",
             pattern=pattern,
             from_node=self.current_node_id,
         )
-        
+
         try:
             regex = re.compile(pattern, re.IGNORECASE)
         except re.error as e:
             return [{"error": f"Invalid regex: {e}"}]
-        
+
         results = []
         visited = set()
-        
+
         # BFS queue: (node_id, depth)
         queue = [(self.current_node_id, 0)]
-        
+
         while queue:
+            if _time.monotonic() > _deadline:
+                logger.warning(
+                    "search_tree_timeout",
+                    pattern=pattern,
+                    visited=len(visited),
+                    results_so_far=len(results),
+                )
+                break
+
             node_id, depth = queue.pop(0)
-            
+
             if node_id in visited:
                 continue
             visited.add(node_id)
-            
+
             if depth > max_depth:
                 continue
-            
+
             node = self.skeleton.get(node_id)
             if not node:
                 continue
-            
+
             # Skip nodes not in allowed set (ToT constraint)
             # But still traverse children in case they are allowed
             if not self._is_node_allowed(node_id):
@@ -765,12 +777,12 @@ class NavigationREPL:
                     if child_id not in visited:
                         queue.append((child_id, depth + 1))
                 continue
-            
+
             # Search this node
             content = self.kv_store.get(node_id) or ""
             header_matches = len(regex.findall(node.header))
             content_matches = len(regex.findall(content))
-            
+
             if header_matches > 0 or content_matches > 0:
                 score = calculate_specificity_score(
                     header_matches=header_matches,
@@ -780,7 +792,7 @@ class NavigationREPL:
                     header=node.header,
                     query_keywords=self.extracted_keywords,
                 )
-                
+
                 results.append({
                     "node_id": node_id,
                     "header": node.header,
@@ -790,7 +802,7 @@ class NavigationREPL:
                     "score": round(score, 2),
                     "path": self._get_path_to_node(node_id),
                 })
-            
+
             # Add children to queue
             for child_id in node.child_ids:
                 if child_id not in visited:
@@ -811,9 +823,11 @@ class NavigationREPL:
     
     def _get_path_to_node(self, target_id: str) -> str:
         """Get the path from root to a node."""
-        path = []
-        current = target_id
-        while current:
+        path: list[str] = []
+        seen: set[str] = set()
+        current: str | None = target_id
+        while current and current not in seen:
+            seen.add(current)
             node = self.skeleton.get(current)
             if node:
                 path.insert(0, node.header[:30])

@@ -26,6 +26,7 @@ Agent Decision Protocol:
 
 from __future__ import annotations
 
+import os
 from typing import Any
 
 import structlog
@@ -174,24 +175,26 @@ def _get_llm_for_summary(provider: str | None = None) -> Any:
     
     provider = provider.lower()
     
+    _timeout = int(os.environ.get("RNSR_LLM_TIMEOUT", "120"))
+
     try:
         if provider == "gemini":
             from llama_index.llms.gemini import Gemini
             
             logger.info("using_gemini_llm")
-            return Gemini(model="gemini-2.5-flash")
+            return Gemini(model="gemini-2.5-flash", request_timeout=_timeout)
         
         elif provider == "anthropic":
             from llama_index.llms.anthropic import Anthropic
             
             logger.info("using_anthropic_llm")
-            return Anthropic(model="claude-sonnet-4-5")
+            return Anthropic(model="claude-sonnet-4-5", timeout=_timeout)
         
         elif provider == "openai":
             from llama_index.llms.openai import OpenAI
             
             logger.info("using_openai_llm")
-            return OpenAI(model="gpt-5-mini")
+            return OpenAI(model="gpt-5-mini", timeout=_timeout)
         
         else:
             logger.warning("unknown_llm_provider", provider=provider)

@@ -418,6 +418,7 @@ class DocumentStore:
             source_path=str(source_path),
             skeleton=skeleton,
             kv_store=kv_store,
+            tables=result.tables,
             metadata=metadata,
         )
         
@@ -620,9 +621,14 @@ class DocumentStore:
                 future_to_path = {
                     pool.submit(_ingest_one, fp): fp for fp in files
                 }
+                _INGEST_TIMEOUT = 600  # 10 min per document
                 for future in as_completed(future_to_path):
                     fpath = future_to_path[future]
-                    status, doc_id, error = future.result()
+                    try:
+                        status, doc_id, error = future.result(timeout=_INGEST_TIMEOUT)
+                    except TimeoutError:
+                        logger.warning("ingest_timeout", file=str(fpath), timeout_s=_INGEST_TIMEOUT)
+                        status, doc_id, error = "failed", None, f"Timed out after {_INGEST_TIMEOUT}s"
                     completed += 1
                     if status == "success":
                         succeeded += 1
@@ -838,9 +844,10 @@ class DocumentStore:
         index_result = self.get_document(doc_id)
         if index_result is None:
             raise IndexingError(f"Document not found: {doc_id}")
-        
-        skeleton, kv_store = index_result
-        nav_result = run_navigator(question, skeleton, kv_store)
+
+        skeleton, kv_store = index_result[:2]
+        tables = index_result[2] if len(index_result) > 2 else None
+        nav_result = run_navigator(question, skeleton, kv_store, tables=tables)
         return nav_result.get("answer", "No answer found.")
     
     def list_documents(self) -> list[dict[str, Any]]:
@@ -1046,9 +1053,16 @@ class DocumentStore:
                     pool.submit(_process_document, did): did
                     for did in target_ids
                 }
+                _KG_DOC_TIMEOUT = 300  # 5 min per doc KG
                 for future in as_completed(futures):
                     try:
-                        future.result()
+                        future.result(timeout=_KG_DOC_TIMEOUT)
+                    except TimeoutError:
+                        logger.warning(
+                            "workspace_kg_doc_timeout",
+                            doc_id=futures[future],
+                            timeout_s=_KG_DOC_TIMEOUT,
+                        )
                     except Exception as exc:
                         logger.debug(
                             "workspace_kg_doc_error",
@@ -1061,7 +1075,80 @@ class DocumentStore:
             documents=len(target_ids),
             stats=kg.get_stats(),
         )
+
+        # Build document profiles from KG entities (no extra LLM calls)
+        self._build_document_profiles(kg, target_ids)
+
         return kg
+
+    def _build_document_profiles(
+        self,
+        kg: "KnowledgeGraph",
+        doc_ids: list[str],
+    ) -> None:
+        """Extract structured profiles from KG entities for each document."""
+        from rnsr.indexing.document_profile import extract_profile
+
+        for doc_id in doc_ids:
+            info = self._catalog.get(doc_id)
+            if info is None:
+                continue
+
+            # Get root and tail content for regex fallback
+            index_result = self.get_document(doc_id)
+            root_content: str | None = None
+            tail_content: str | None = None
+            page_count: int | None = None
+            if index_result:
+                skeleton, kv_store = index_result[:2]
+                for node in skeleton.values():
+                    if node.level == 0:
+                        root_content = kv_store.get(node.node_id)
+                        if root_content:
+                            root_content = root_content[:2000]
+                        for cid in node.child_ids[:2]:
+                            c = kv_store.get(cid)
+                            if c:
+                                root_content = (root_content or "") + "\n" + c[:1000]
+                        page_count_meta = node.metadata.get("total_pages")
+                        if page_count_meta:
+                            page_count = int(page_count_meta)
+                        break
+                # Get tail content from the last node
+                all_nodes = list(skeleton.values())
+                if len(all_nodes) > 1:
+                    last_node = all_nodes[-1]
+                    tail_content = kv_store.get(last_node.node_id)
+                    if tail_content:
+                        tail_content = tail_content[-1000:]
+
+            try:
+                profile = extract_profile(
+                    kg=kg,
+                    doc_id=doc_id,
+                    title=info.title,
+                    root_content=root_content,
+                    tail_content=tail_content,
+                    page_count=page_count,
+                )
+                # Store profile in catalog metadata
+                info.metadata["profile"] = profile.model_dump(exclude_none=True)
+                self._db.update_catalog_metadata(doc_id, info.metadata)
+            except Exception as exc:
+                logger.debug(
+                    "profile_extraction_failed",
+                    doc_id=doc_id,
+                    error=str(exc),
+                )
+
+    def get_document_profiles(self) -> dict[str, dict]:
+        """Return all document profiles keyed by doc_id."""
+        profiles: dict[str, dict] = {}
+        for doc_id, info in self._catalog.items():
+            profile = info.metadata.get("profile")
+            if profile:
+                profiles[doc_id] = profile
+        return profiles
 
     def link_entities_across_documents(
         self,
@@ -1230,10 +1317,29 @@ class DocumentStore:
             create_cross_doc_navigator,
         )
         from rnsr.agent.rlm_navigator import RLMNavigator, RLMConfig
+        from rnsr.agent.kg_resolver import KGResolver
         from rnsr.client import _get_cached_llm_fn
 
         kg = self.get_workspace_kg()
+
+        # KG-first resolution: try answering from profiles and entities
+        # before spinning up expensive per-document navigation.
+        profiles = self.get_document_profiles()
+        resolver = KGResolver(kg, profiles)
+        resolution = resolver.try_resolve(question, doc_ids=target_ids)
+        if resolution.resolved and resolution.answer:
+            return {
+                "answer": resolution.answer,
+                "documents_used": target_ids,
+                "entities_involved": [],
+                "total_nodes_visited": 0,
+                "total_iterations": 0,
+                "confidence": resolution.confidence,
+                "kg_resolved": True,
+            }
+
         cross_nav = create_cross_doc_navigator(kg)
+        cross_nav._kg_resolver = resolver
 
         loaded = 0
         for doc_id in target_ids:
@@ -1242,22 +1348,30 @@ class DocumentStore:
                 logger.warning("cross_doc_skip_document", doc_id=doc_id)
                 continue
             skeleton, kv_store = index_result[:2]
+            tables = index_result[2] if len(index_result) > 2 else None
 
             config = RLMConfig()
             if use_short_answer:
                 config.use_short_answer = True
-            navigator = RLMNavigator(
-                skeleton=skeleton,
-                kv_store=kv_store,
-                knowledge_graph=kg,
-                config=config,
-            )
-            navigator.set_llm_function(_get_cached_llm_fn())
 
             doc_title = doc_id
             info = self._catalog.get(doc_id)
             if info and info.title:
                 doc_title = info.title
+
+            # Attach document profile for identity anchoring
+            doc_profile = profiles.get(doc_id) if profiles else None
+
+            navigator = RLMNavigator(
+                skeleton=skeleton,
+                kv_store=kv_store,
+                knowledge_graph=kg,
+                config=config,
+                tables=tables,
+                doc_profile=doc_profile,
+                doc_title=doc_title,
+            )
+            navigator.set_llm_function(_get_cached_llm_fn())
 
             cross_nav.register_document(
                 doc_id, skeleton, kv_store,

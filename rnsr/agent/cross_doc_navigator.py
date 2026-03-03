@@ -544,7 +544,34 @@ class CrossDocNavigator:
         doc_id = task["doc_id"]
         
         try:
-            nav_result = navigator.navigate(task["sub_query"])
+            # KG-first: try resolving before full navigation
+            resolver = getattr(self, "_kg_resolver", None)
+            if resolver is not None:
+                resolution = resolver.try_resolve(
+                    task["sub_query"], doc_ids=[doc_id]
+                )
+                if resolution.resolved and resolution.answer:
+                    return DocumentResult(
+                        doc_id=doc_id,
+                        doc_title=self._get_doc_title(doc_id),
+                        answer=resolution.answer,
+                        entities_found=task["entities"],
+                        confidence=resolution.confidence,
+                        nodes_visited=0,
+                        iterations=0,
+                    )
+                # Pass entity guidance to navigator
+                nav_metadata: dict[str, Any] | None = None
+                if resolution.entity_node_ids:
+                    nav_metadata = {
+                        "entity_priority_nodes": resolution.entity_node_ids
+                    }
+            else:
+                nav_metadata = None
+
+            nav_result = navigator.navigate(
+                task["sub_query"], metadata=nav_metadata
+            )
             
             visited = nav_result.get("visited_nodes", [])
             return DocumentResult(
@@ -826,11 +853,7 @@ Answer:"""
 5. When documents DISAGREE, use the Knowledge Graph context (entity relationships, document types, entity-document mapping) to determine the MOST CONTEXTUALLY RELEVANT answer. Do NOT pick an answer just because more documents mention it — frequency is NOT correctness. Consider which document type is most likely to contain the authoritative answer for this specific question.
 6. Keep the answer under 3 sentences unless the question requires more detail.
 7. NEVER wrap the answer in "Entity Tracking", "Timeline", "Analysis", "Comprehensive", or any report-style formatting.
-8. Ignore any formatting in the document findings — rewrite in plain, concise prose.
-9. For DATES: prefer the exact date string from the source document. Do not confuse dates from different events or documents. If the question asks "when" something happened, cite the date that corresponds to THAT specific event.
-10. For NUMBERS and AMOUNTS: quote the exact figure from the most authoritative document (e.g. a financial statement over a letter). Do not sum or derive values unless the question explicitly asks for a total or calculation.
-11. For NAMES (judges, signatories, parties): check document headers, case headings, signature blocks, and the opening/closing of letters — these are the most reliable sources.
-12. When the question asks about CURRENT status (employment, value, etc.), prefer the most RECENT document by date. When it asks about a specific point in time, use the document from that period."""
+8. Ignore any formatting in the document findings — rewrite in plain, concise prose."""
 
     def _synthesize_comparison(
         self,

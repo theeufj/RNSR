@@ -241,6 +241,19 @@ class StoreDB:
             conn.commit()
         logger.info("document_saved_to_db", doc_id=doc_id, nodes=len(skeleton))
 
+    def update_catalog_metadata(
+        self,
+        doc_id: str,
+        metadata: dict[str, Any],
+    ) -> None:
+        """Update only the metadata column for an existing catalog entry."""
+        with self._connect() as conn:
+            conn.execute(
+                "UPDATE catalog SET metadata = ? WHERE doc_id = ?",
+                (json.dumps(metadata), doc_id),
+            )
+            conn.commit()
+
     def load_document(
         self, doc_id: str,
     ) -> tuple[dict[str, SkeletonNode], DocKVStore, list[DetectedTable]] | None:

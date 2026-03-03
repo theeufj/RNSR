@@ -265,6 +265,9 @@ def _count_nodes(node: DocumentNode) -> int:
 def extract_raw_text(pdf_path: Path | str) -> str:
     """
     Extract all text from a PDF as a single string.
+
+    Uses hybrid OCR: pages with embedded text are extracted normally,
+    blank (scanned) pages are sent to VLM OCR.
     
     Args:
         pdf_path: Path to the PDF file.
@@ -272,14 +275,187 @@ def extract_raw_text(pdf_path: Path | str) -> str:
     Returns:
         Full text content of the document.
     """
+    from rnsr.ingestion.ocr_fallback import hybrid_extract_pages
+
     pdf_path = Path(pdf_path)
-    doc = fitz.open(pdf_path)
-    
-    # get_text() returns str when called with no args or "text"
-    full_text = "\n\n".join(str(page.get_text()) for page in doc)
-    doc.close()
-    
-    return full_text
+    page_texts = hybrid_extract_pages(pdf_path)
+    return "\n\n".join(page_texts)
+
+
+_VLM_HEADING_PROMPT = """You are a document structure analyst. Given a sample of document text, identify ALL lines that serve as section headings or titles.
+
+Rules:
+- Return ONLY the exact heading text, one per line, in the order they appear.
+- Include ALL levels of headings (main sections, sub-sections, etc.).
+- Do NOT include body text, sentences, or descriptions.
+- Do NOT modify the heading text — return it exactly as it appears.
+- If there are no clear headings, return the single word: NONE
+
+Document text sample:
+---
+{sample}
+---
+
+Headings (one per line):"""
+
+
+def _try_vlm_heading_discovery(
+    full_text: str,
+    title: str,
+) -> DocumentTree | None:
+    """Use a VLM to discover section headings from the document text.
+
+    Instead of relying on hardcoded regex patterns, this asks the LLM to
+    read a sample of the text and identify which lines are headings. The
+    discovered headings are then used to split the full text into sections.
+
+    Returns ``None`` if the VLM is unavailable or finds no headings.
+    """
+    try:
+        from rnsr.llm import get_llm, LLMProvider
+    except Exception:
+        return None
+
+    sample_size = min(len(full_text), 6000)
+    sample = full_text[:sample_size]
+
+    try:
+        llm = get_llm(provider=LLMProvider.GEMINI, enable_fallback=True)
+        prompt = _VLM_HEADING_PROMPT.format(sample=sample)
+        response = str(llm.complete(prompt)).strip()
+    except Exception as e:
+        logger.debug("vlm_heading_discovery_failed", error=str(e))
+        return None
+
+    if not response or response.upper() == "NONE":
+        return None
+
+    candidate_headings = [
+        line.strip() for line in response.split("\n")
+        if line.strip() and len(line.strip()) >= 2
+    ]
+
+    if len(candidate_headings) < 2:
+        return None
+
+    heading_set = set(candidate_headings)
+
+    lines = full_text.split("\n")
+    sections: list[dict] = []
+    current_content_lines: list[str] = []
+
+    for line in lines:
+        stripped = line.strip()
+        if stripped in heading_set:
+            if sections or current_content_lines:
+                if sections:
+                    sections[-1]["content"] = "\n".join(current_content_lines).strip()
+                current_content_lines = []
+            sections.append({"header": stripped, "content": "", "level": 1})
+        else:
+            current_content_lines.append(line)
+
+    if sections:
+        sections[-1]["content"] = "\n".join(current_content_lines).strip()
+
+    if len(sections) < 2:
+        return None
+
+    preamble_text = ""
+    if not sections[0].get("content") and current_content_lines:
+        pass
+    first_section_idx = next(
+        (i for i, line in enumerate(lines) if line.strip() in heading_set),
+        None,
+    )
+    if first_section_idx and first_section_idx > 0:
+        preamble_text = "\n".join(lines[:first_section_idx]).strip()
+
+    root = DocumentNode(
+        id="root", level=0, header=title, content=preamble_text or ""
+    )
+    for i, sec in enumerate(sections):
+        child = DocumentNode(
+            id=f"section_{i}",
+            level=sec["level"],
+            header=sec["header"],
+            content=sec["content"] or "",
+        )
+        root.children.append(child)
+
+    total_nodes = 1 + len(root.children)
+    logger.info(
+        "vlm_heading_discovery_success",
+        path=title,
+        sections=len(sections),
+        headings_found=len(candidate_headings),
+    )
+    return DocumentTree(
+        title=title,
+        root=root,
+        total_nodes=total_nodes,
+        ingestion_tier=2,
+        ingestion_method="vlm_heading_discovery",
+    )
+
+
+def _try_page_level_split(
+    pdf_path: Path | str,
+) -> DocumentTree | None:
+    """Split a multi-page PDF into one node per page.
+
+    This is a better intermediate fallback than pure size-based chunking
+    because it preserves natural page boundaries and attaches ``page_num``
+    metadata to each node.
+
+    Returns ``None`` for single-page PDFs (nothing to split).
+    """
+    from rnsr.ingestion.ocr_fallback import hybrid_extract_pages
+
+    page_texts = hybrid_extract_pages(pdf_path)
+    non_empty = [t for t in page_texts if t.strip()]
+
+    if len(non_empty) < 2:
+        return None
+
+    title = Path(pdf_path).stem
+
+    root = DocumentNode(id="root", level=0, header=title, content="")
+    for i, text in enumerate(page_texts):
+        if not text.strip():
+            continue
+        header = _infer_page_header(text, i + 1)
+        child = DocumentNode(
+            id=f"page_{i + 1:03d}",
+            level=1,
+            header=header,
+            content=text,
+            page_num=i,
+        )
+        root.children.append(child)
+
+    total_nodes = 1 + len(root.children)
+    logger.info(
+        "page_level_split_success",
+        path=str(pdf_path),
+        pages=total_nodes - 1,
+    )
+    return DocumentTree(
+        title=title,
+        root=root,
+        total_nodes=total_nodes,
+        ingestion_tier=2,
+        ingestion_method="page_split",
+    )
+
+
+def _infer_page_header(text: str, page_num: int) -> str:
+    """Derive a short header from the first meaningful line of a page."""
+    for line in text.split("\n"):
+        stripped = line.strip()
+        if len(stripped) >= 3:
+            return stripped[:80]
+    return f"Page {page_num}"
 
 
 def try_semantic_splitter_ingestion(
@@ -290,9 +466,11 @@ def try_semantic_splitter_ingestion(
     TIER 2 Fallback: Use semantic splitting for flat text documents.
     
     When Font Histogram detects no font variance, this method:
-    1. First tries PATTERN-BASED header detection (regex for "1. HEADING", etc.)
-    2. If that fails, falls back to embedding-based semantic splitting
-    3. Generates synthetic section headers as last resort
+    1. Pattern-based header detection (regex for "1. HEADING", etc.)
+    2. VLM heading discovery (LLM identifies headings from a text sample)
+    3. Page-level splitting (1 node per page)
+    4. Embedding-based semantic splitting
+    5. Size-based chunking as last resort
     
     Args:
         pdf_path: Path to the PDF file.
@@ -305,12 +483,11 @@ def try_semantic_splitter_ingestion(
     
     logger.info("using_semantic_splitter", path=str(pdf_path))
     
-    # Extract raw text
+    # Extract raw text (with hybrid OCR for blank pages)
     full_text = extract_raw_text(pdf_path)
     
     if not full_text.strip():
         logger.warning("no_text_extracted", path=str(pdf_path))
-        # Return minimal tree
         root = DocumentNode(id="root", level=0, header="Document")
         return DocumentTree(
             title="Empty Document",
@@ -333,7 +510,29 @@ def try_semantic_splitter_ingestion(
         )
         return pattern_tree
     
-    logger.debug("pattern_based_headers_failed_trying_semantic")
+    # =========================================================================
+    # STEP 1.5: VLM heading discovery — ask the LLM to identify headings
+    # instead of relying on hardcoded regex patterns
+    # =========================================================================
+    vlm_tree = _try_vlm_heading_discovery(full_text, pdf_path.stem)
+    if vlm_tree:
+        logger.info(
+            "vlm_heading_discovery_used",
+            sections=vlm_tree.total_nodes - 1,
+            path=str(pdf_path),
+        )
+        return vlm_tree
+
+    # =========================================================================
+    # STEP 2: Page-level splitting for multi-page PDFs
+    # Preserves natural page boundaries instead of arbitrary size-based chunks
+    # =========================================================================
+    if str(pdf_path).lower().endswith(".pdf"):
+        page_tree = _try_page_level_split(pdf_path)
+        if page_tree:
+            return page_tree
+    
+    logger.debug("all_heading_methods_failed_trying_semantic")
     
     # =========================================================================
     # STEP 2: Fall back to semantic splitting

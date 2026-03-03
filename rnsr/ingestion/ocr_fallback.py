@@ -231,6 +231,69 @@ def _build_tree_from_ocr(
     )
 
 
+def hybrid_extract_pages(pdf_path: Path | str) -> list[str]:
+    """Extract text per page, using VLM OCR for pages with no extractable text.
+
+    This handles mixed PDFs (some pages are text, some are scanned images)
+    by running VLM OCR only on the blank pages and using PyMuPDF text
+    extraction for pages that have embedded text.
+
+    Returns:
+        List of text strings, one per page.
+    """
+    import fitz
+
+    pdf_path = Path(pdf_path)
+    doc = fitz.open(pdf_path)
+    page_count = len(doc)
+
+    page_texts: list[str] = []
+    blank_indices: list[int] = []
+
+    for i in range(page_count):
+        text = doc[i].get_text().strip()
+        if text:
+            page_texts.append(text)
+        else:
+            page_texts.append("")
+            blank_indices.append(i)
+
+    if not blank_indices:
+        doc.close()
+        return page_texts
+
+    logger.info(
+        "hybrid_ocr_needed",
+        path=str(pdf_path),
+        total_pages=page_count,
+        blank_pages=len(blank_indices),
+    )
+
+    try:
+        from rnsr.llm import get_llm, LLMProvider
+
+        llm = get_llm(provider=LLMProvider.GEMINI, enable_fallback=True)
+
+        for idx in blank_indices:
+            page = doc[idx]
+            pix = page.get_pixmap(dpi=300)
+            image_bytes = pix.tobytes("png")
+            try:
+                text = str(
+                    llm.complete_with_image(_VLM_TRANSCRIPTION_PROMPT, image_bytes)
+                ).strip()
+            except Exception as e:
+                logger.warning("hybrid_ocr_page_failed", page=idx, error=str(e))
+                text = ""
+            page_texts[idx] = text
+            logger.debug("hybrid_ocr_page_done", page=idx + 1, chars=len(text))
+    except Exception as e:
+        logger.warning("hybrid_ocr_vlm_unavailable", error=str(e))
+
+    doc.close()
+    return page_texts
+
+
 def has_extractable_text(pdf_path: Path | str) -> bool:
     """
     Check if a PDF has extractable text.

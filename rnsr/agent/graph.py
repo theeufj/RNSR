@@ -2812,6 +2812,7 @@ def run_navigator(
     tot_selection_threshold: float = 0.4,
     tot_dead_end_threshold: float = 0.1,
     enable_header_fallback: bool = False,
+    tables: list | None = None,
 ) -> dict[str, Any]:
     """
     Run the navigator agent on a question.
@@ -2851,6 +2852,7 @@ def run_navigator(
         skeleton=skeleton,
         kv_store=kv_store,
         config=config,
+        tables=tables,
     )
 
     return navigator.navigate(question, metadata=metadata)

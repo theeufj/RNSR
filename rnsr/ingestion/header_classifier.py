@@ -458,7 +458,8 @@ class HeaderClassifier:
         
         A span is a header candidate if:
         1. Font size > header_threshold by at least font_tolerance, OR
-        2. Bold text significantly larger than body size
+        2. Bold text at or above body size (bold at body size is a common
+           heading style in court judgments, contracts, and legal documents)
         
         A span is NOT a header candidate if:
         1. Text matches caption patterns (Figure X, Table X, etc.)
@@ -472,14 +473,15 @@ class HeaderClassifier:
         
         # Require significant size difference (font tolerance)
         size_above_threshold = span.font_size - analysis.header_threshold
-        size_above_body = span.font_size - analysis.body_size
         
         # Size-based detection with tolerance
         if size_above_threshold >= self.font_tolerance:
             return True
         
-        # Bold text must be significantly larger than body (not just slightly bold)
-        if span.is_bold and size_above_body >= self.font_tolerance:
+        # Bold text at or above body size is treated as a header.
+        # Many documents (court judgments, legal agreements) use bold at
+        # body size for section headings.
+        if span.is_bold and span.font_size >= analysis.body_size:
             return True
         
         return False

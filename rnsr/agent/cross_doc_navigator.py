@@ -81,11 +81,11 @@ class CrossDocAnswer:
 QUERY_ENTITY_EXTRACTION_PROMPT = """Analyze this query and extract entities that need to be tracked across documents.
 
 Query: {query}
-
+{conversation_context}
 Extract:
 1. People mentioned (names, roles)
 2. Organizations mentioned
-3. Documents or sections referenced
+3. Documents or sections referenced — pay special attention to implicit references. If previous Q&A context is provided, resolve pronouns and phrases like "this application", "the document", "this form" to the specific document they refer to based on the conversation history.
 4. Key legal concepts or events
 5. Dates or time periods
 
@@ -105,6 +105,17 @@ Respond with JSON only:"""
 
 
 # =============================================================================
+_STOP_WORDS = frozenset({
+    "the", "is", "in", "at", "of", "and", "or", "to", "a", "an", "for",
+    "on", "with", "by", "from", "as", "into", "this", "that", "it",
+    "its", "are", "was", "were", "be", "been", "has", "have", "had",
+    "do", "does", "did", "not", "but", "what", "which", "who", "whom",
+    "how", "when", "where", "why", "can", "could", "will", "would",
+    "shall", "should", "may", "might", "must", "under", "about", "each",
+    "made", "does", "document", "documents",
+})
+
+
 # Cross-Document Navigator
 # =============================================================================
 
@@ -180,12 +191,19 @@ class CrossDocNavigator:
         
         logger.info("document_registered", doc_id=doc_id, title=title or doc_id)
     
-    def query(self, question: str) -> CrossDocAnswer:
+    def query(
+        self,
+        question: str,
+        conversation_context: list[dict[str, str]] | None = None,
+    ) -> CrossDocAnswer:
         """
         Execute a cross-document query.
         
         Args:
             question: The user's question.
+            conversation_context: Previous Q&A pairs for resolving
+                ambiguous references (e.g. "this application").
+                Each dict has ``question`` and ``answer`` keys.
             
         Returns:
             CrossDocAnswer with synthesized result.
@@ -198,7 +216,7 @@ class CrossDocNavigator:
             "timestamp": datetime.now(timezone.utc).isoformat(),
         })
         
-        query_analysis = self._analyze_query(question)
+        query_analysis = self._analyze_query(question, conversation_context)
         
         trace.append({
             "step": "query_analyzed",
@@ -247,11 +265,16 @@ class CrossDocNavigator:
             "timestamp": datetime.now(timezone.utc).isoformat(),
         })
         
+        title_scores = {
+            t["doc_id"]: t.get("title_score", 0)
+            for t in retrieval_plan
+        }
         answer = self._synthesize_answer(
             question,
             query_analysis,
             document_results,
             doc_entities,
+            title_scores=title_scores,
         )
         
         answer.trace = trace
@@ -265,12 +288,17 @@ class CrossDocNavigator:
         
         return answer
     
-    def _analyze_query(self, question: str) -> CrossDocQuery:
+    def _analyze_query(
+        self,
+        question: str,
+        conversation_context: list[dict[str, str]] | None = None,
+    ) -> CrossDocQuery:
         """
         Analyze the query to extract entities and determine query type.
         
         Args:
             question: The user's question.
+            conversation_context: Recent Q&A pairs for disambiguation.
             
         Returns:
             CrossDocQuery with extracted information.
@@ -283,7 +311,20 @@ class CrossDocNavigator:
             return result
         
         try:
-            prompt = QUERY_ENTITY_EXTRACTION_PROMPT.format(query=question)
+            ctx_block = ""
+            if conversation_context:
+                recent = conversation_context[-3:]
+                lines = ["Previous Q&A context (most recent last):"]
+                for pair in recent:
+                    lines.append(f"  Q: {pair['question']}")
+                    answer_preview = pair["answer"][:200]
+                    lines.append(f"  A: {answer_preview}")
+                ctx_block = "\n".join(lines) + "\n"
+
+            prompt = QUERY_ENTITY_EXTRACTION_PROMPT.format(
+                query=question,
+                conversation_context=ctx_block,
+            )
             response = self._llm_fn(prompt)
             
             # Parse JSON response
@@ -351,6 +392,73 @@ class CrossDocNavigator:
         
         return doc_entities
     
+    def _resolve_docs_mentioned(
+        self, documents_mentioned: list[str],
+    ) -> set[str]:
+        """Fuzzy-match ``documents_mentioned`` strings against registered doc titles.
+
+        Returns a set of doc_ids whose titles match at least one mention.
+        """
+        matched: set[str] = set()
+        if not documents_mentioned:
+            return matched
+        for mention in documents_mentioned:
+            mention_lower = mention.lower()
+            mention_words = set(re.findall(r"[a-z0-9]+", mention_lower))
+            for doc_id, title in self._doc_titles.items():
+                title_lower = title.lower()
+                if mention_lower in title_lower or title_lower in mention_lower:
+                    matched.add(doc_id)
+                    continue
+                title_words = set(re.findall(r"[a-z0-9]+", title_lower))
+                if len(mention_words & title_words) >= 2:
+                    matched.add(doc_id)
+        if matched:
+            logger.info(
+                "docs_mentioned_resolved",
+                mentions=documents_mentioned,
+                matched_doc_ids=list(matched),
+            )
+        return matched
+
+    def _compute_title_score(
+        self,
+        doc_id: str,
+        question: str,
+        documents_mentioned: list[str] | None = None,
+    ) -> float:
+        """Score a document's relevance based on title vs query term overlap.
+
+        Higher scores mean the document title better matches the question.
+        Used to prioritise navigation order so the most relevant document
+        is queried first.
+        """
+        title = self._doc_titles.get(doc_id, "").lower()
+        if not title:
+            return 0.0
+
+        title_words = set(re.findall(r"[a-z0-9]+", title))
+        query_words = {
+            w for w in re.findall(r"[a-z0-9]+", question.lower())
+            if w not in self._STOPWORDS and len(w) > 2
+        }
+
+        overlap = title_words & query_words
+        score = len(overlap) * 2.0
+
+        if documents_mentioned:
+            for mention in documents_mentioned:
+                mention_lower = mention.lower()
+                if mention_lower in title or title in mention_lower:
+                    score += 10.0
+                    break
+                mention_words = set(re.findall(r"[a-z0-9]+", mention_lower))
+                mention_overlap = title_words & mention_words
+                if len(mention_overlap) >= 2:
+                    score += 5.0
+
+        return score
+
     def _plan_retrieval(
         self,
         question: str,
@@ -363,23 +471,24 @@ class CrossDocNavigator:
         Documents with entity matches get entity-focused sub-queries.
         All other registered documents are still searched with the
         original question so that no document is silently skipped.
-        
+
+        Tasks are sorted by title relevance so the most likely target
+        document is navigated first.
+
         Args:
             question: Original question.
             query: Analyzed query.
             doc_entities: Entities by document.
-            
+
         Returns:
-            List of retrieval tasks.
+            List of retrieval tasks sorted by title relevance.
         """
         tasks = []
         planned_doc_ids: set[str] = set()
-        
+
         for doc_id, entities in doc_entities.items():
             entity_names = [e.canonical_name for e in entities]
-            
-            # Always keep the original question so key terms (e.g. "jaws of
-            # life") are not dropped.  Add entity context as a hint only.
+
             if query.query_type == "entity_tracking":
                 entity_hint = ", ".join(entity_names[:3])
                 sub_query = f"{question}\n\nFocus on entities: {entity_hint}"
@@ -390,28 +499,36 @@ class CrossDocNavigator:
                 sub_query = f"{question}\n\nKey entities: {entity_hint}"
             else:
                 sub_query = question
-            
+
             target_nodes = set()
             for entity in entities:
                 target_nodes.update(entity.node_ids)
-            
+
+            title_score = self._compute_title_score(
+                doc_id, question, query.documents_mentioned,
+            )
             tasks.append({
                 "doc_id": doc_id,
                 "sub_query": sub_query,
                 "entities": entities,
                 "target_nodes": list(target_nodes),
+                "title_score": title_score,
             })
             planned_doc_ids.add(doc_id)
-        
-        # For small document collections (<= 10 docs), query every
-        # document — filtering is counterproductive when the collection
-        # is small and the cost of querying all docs is low.
+
         all_registered = set(self.navigators.keys()) | set(self._kv_stores.keys())
         _SMALL_COLLECTION_THRESHOLD = 10
         skip_filtering = len(all_registered) <= _SMALL_COLLECTION_THRESHOLD
 
+        mentioned_doc_ids = self._resolve_docs_mentioned(query.documents_mentioned)
+
         for doc_id in all_registered - planned_doc_ids:
-            if not skip_filtering and not self._doc_has_keyword_overlap(doc_id, question):
+            force_include = doc_id in mentioned_doc_ids
+            if (
+                not force_include
+                and not skip_filtering
+                and not self._doc_has_keyword_overlap(doc_id, question)
+            ):
                 logger.debug(
                     "fallback_doc_skipped",
                     doc_id=doc_id,
@@ -419,17 +536,31 @@ class CrossDocNavigator:
                 )
                 continue
 
+            title_score = self._compute_title_score(
+                doc_id, question, query.documents_mentioned,
+            )
             tasks.append({
                 "doc_id": doc_id,
                 "sub_query": question,
                 "entities": [],
                 "target_nodes": [],
+                "title_score": title_score,
             })
             logger.debug(
                 "fallback_doc_included",
                 doc_id=doc_id,
-                reason="small collection — querying all docs" if skip_filtering
-                       else "keyword overlap found, searching with original query",
+                title_score=title_score,
+                reason="documents_mentioned match" if force_include
+                       else ("small collection — querying all docs" if skip_filtering
+                             else "keyword overlap found, searching with original query"),
+            )
+
+        tasks.sort(key=lambda t: t.get("title_score", 0), reverse=True)
+
+        if tasks:
+            logger.info(
+                "retrieval_plan_ordered",
+                order=[(t["doc_id"], self._doc_titles.get(t["doc_id"], ""), t.get("title_score", 0)) for t in tasks[:5]],
             )
         
         return tasks
@@ -443,10 +574,10 @@ class CrossDocNavigator:
     })
 
     def _doc_has_keyword_overlap(self, doc_id: str, question: str) -> bool:
-        """Check if a document's skeleton has any keyword overlap with the query."""
+        """Check if a document's title or skeleton has any keyword overlap with the query."""
         skeleton = self._skeletons.get(doc_id)
         if not skeleton:
-            return True  # no metadata to filter on -- keep it safe
+            return True
 
         query_words = {
             w for w in re.findall(r"[a-z0-9]+", question.lower())
@@ -456,6 +587,9 @@ class CrossDocNavigator:
             return True
 
         doc_text_parts: list[str] = []
+        title = self._doc_titles.get(doc_id, "")
+        if title:
+            doc_text_parts.append(title.lower())
         for node in skeleton.values():
             doc_text_parts.append(node.header.lower())
             doc_text_parts.append(node.summary.lower())
@@ -483,11 +617,19 @@ class CrossDocNavigator:
             List of per-document results.
         """
         results = []
-        
+
+        max_title_score = max(
+            (t.get("title_score", 0) for t in tasks), default=0,
+        )
+        for task in tasks:
+            task["_is_primary"] = (
+                max_title_score > 0
+                and task.get("title_score", 0) == max_title_score
+            )
+
         for i, task in enumerate(tasks):
             doc_id = task["doc_id"]
             
-            # Check if we have a navigator for this document
             if doc_id in self.navigators:
                 navigator = self.navigators[doc_id]
                 result = self._navigate_with_navigator(task, navigator)
@@ -544,7 +686,6 @@ class CrossDocNavigator:
         doc_id = task["doc_id"]
         
         try:
-            # KG-first: try resolving before full navigation
             resolver = getattr(self, "_kg_resolver", None)
             if resolver is not None:
                 resolution = resolver.try_resolve(
@@ -560,7 +701,6 @@ class CrossDocNavigator:
                         nodes_visited=0,
                         iterations=0,
                     )
-                # Pass entity guidance to navigator
                 nav_metadata: dict[str, Any] | None = None
                 if resolution.entity_node_ids:
                     nav_metadata = {
@@ -568,6 +708,12 @@ class CrossDocNavigator:
                     }
             else:
                 nav_metadata = None
+
+            if task.get("_is_primary") or task.get("title_score", 0) > 0:
+                if nav_metadata is None:
+                    nav_metadata = {}
+                nav_metadata["primary_document"] = bool(task.get("_is_primary"))
+                nav_metadata["title_score"] = task.get("title_score", 0)
 
             nav_result = navigator.navigate(
                 task["sub_query"], metadata=nav_metadata
@@ -700,22 +846,92 @@ Answer:"""
         lower = answer.lower()
         return any(pat in lower for pat in cls._NEGATIVE_ANSWER_PATTERNS)
 
+    @staticmethod
+    def _format_results_with_priority(
+        results: list[DocumentResult],
+        title_scores: dict[str, float] | None = None,
+        question: str = "",
+    ) -> str:
+        """Format per-document results with relevance labels and confidence.
+
+        When title scores are tied, a lightweight answer-relevance heuristic
+        (keyword overlap between the question and each answer) is used to
+        break the tie so the synthesis LLM sees the most relevant answer
+        first and clearly labelled.
+
+        If multiple substantive results share the same title score (tie),
+        they are labelled "TIED CANDIDATE" so the synthesis LLM must decide
+        which answer best addresses the question on semantic merit rather
+        than being biased by a misleading "PRIMARY SOURCE" label.
+        """
+        if not results:
+            return ""
+
+        def _answer_relevance(answer: str, q: str) -> float:
+            """Score how directly an answer addresses the question words."""
+            if not q or not answer:
+                return 0.0
+            q_words = {
+                w for w in re.sub(r"[^\w\s]", "", q.lower()).split()
+                if len(w) > 2 and w not in _STOP_WORDS
+            }
+            a_lower = answer.lower()
+            if not q_words:
+                return 0.0
+            return sum(1 for w in q_words if w in a_lower) / len(q_words)
+
+        def _sort_key(r: DocumentResult) -> tuple[float, float, float]:
+            ts = title_scores.get(r.doc_id, 0) if title_scores else 0
+            ar = _answer_relevance(r.answer, question)
+            return (ts, ar, r.confidence)
+
+        scored = sorted(results, key=_sort_key, reverse=True)
+
+        top_ts = title_scores.get(scored[0].doc_id, 0) if title_scores and scored else 0
+        tied_at_top = sum(
+            1 for r in scored
+            if title_scores and title_scores.get(r.doc_id, 0) == top_ts and top_ts > 0
+        ) if title_scores else 0
+
+        parts: list[str] = []
+        for r in scored:
+            ts = title_scores.get(r.doc_id, 0) if title_scores else 0
+            if tied_at_top > 1 and ts == top_ts and top_ts > 0:
+                label = "TIED CANDIDATE — evaluate answer quality"
+            elif ts == top_ts and top_ts > 0 and tied_at_top <= 1:
+                label = "PRIMARY SOURCE (highest relevance)"
+            elif title_scores and ts > 0:
+                label = "SUPPORTING SOURCE"
+            else:
+                label = "Document"
+            conf_tag = f" [confidence: {r.confidence:.2f}]" if r.confidence > 0 else ""
+            parts.append(
+                f"{label}: {r.doc_title}{conf_tag}\nFindings: {r.answer}"
+            )
+        return "\n\n".join(parts)
+
     def _synthesize_answer(
         self,
         question: str,
         query: CrossDocQuery,
         results: list[DocumentResult],
         doc_entities: dict[str, list[Entity]],
+        *,
+        title_scores: dict[str, float] | None = None,
     ) -> CrossDocAnswer:
         """
         Synthesize the final cross-document answer.
-        
+
+        Results are ordered by title relevance so the most relevant
+        document appears first and is tagged as PRIMARY SOURCE.
+
         Args:
             question: Original question.
             query: Analyzed query.
             results: Per-document results.
             doc_entities: Entities by document.
-            
+            title_scores: Per-document title relevance scores.
+
         Returns:
             Final CrossDocAnswer.
         """
@@ -732,10 +948,30 @@ Answer:"""
         if not useful_results:
             useful_results = results
 
+        def _answer_relevance(answer: str) -> float:
+            q_words = {
+                w for w in re.sub(r"[^\w\s]", "", question.lower()).split()
+                if len(w) > 2 and w not in _STOP_WORDS
+            }
+            if not q_words or not answer:
+                return 0.0
+            a_lower = answer.lower()
+            return sum(1 for w in q_words if w in a_lower) / len(q_words)
+
+        useful_results = sorted(
+            useful_results,
+            key=lambda r: (
+                title_scores.get(r.doc_id, 0) if title_scores else 0,
+                _answer_relevance(r.answer),
+                r.confidence,
+            ),
+            reverse=True,
+        )
+
         all_entities = []
         for entities in doc_entities.values():
             all_entities.extend(entities)
-        
+
         relationships: list[Relationship] = []
         entity_ids = {e.id for e in all_entities}
         for entity_id in entity_ids:
@@ -750,24 +986,26 @@ Answer:"""
         )
 
         best_confidence = max(r.confidence for r in results) if results else 0.0
-        
+
         if not self._llm_fn:
             answer = self._simple_synthesis(question, useful_results)
         elif query.query_type == "comparison":
             answer = self._synthesize_comparison(
-                question, useful_results, entity_context,
+                question, useful_results, entity_context, title_scores=title_scores,
             )
         elif query.query_type == "timeline":
             answer = self._synthesize_timeline(
                 question, useful_results, all_entities, entity_context,
+                title_scores=title_scores,
             )
         elif query.query_type == "entity_tracking":
             answer = self._synthesize_entity_tracking(
                 question, useful_results, all_entities, entity_context,
+                title_scores=title_scores,
             )
         else:
             answer = self._synthesize_general(
-                question, useful_results, entity_context,
+                question, useful_results, entity_context, title_scores=title_scores,
             )
         
         total_nodes = sum(r.nodes_visited for r in results)
@@ -850,7 +1088,14 @@ Answer:"""
 2. FORBIDDEN: markdown headers (#, ##), section titles, bullet lists, "Overview", "Summary", "Conclusion" sections. Write plain prose only.
 3. Do NOT hedge or say "cannot be determined" when the information IS present in the findings.
 4. If multiple documents provide the same answer, state it once — do not repeat per document.
-5. When documents DISAGREE, use the Knowledge Graph context (entity relationships, document types, entity-document mapping) to determine the MOST CONTEXTUALLY RELEVANT answer. Do NOT pick an answer just because more documents mention it — frequency is NOT correctness. Consider which document type is most likely to contain the authoritative answer for this specific question.
+5. When documents DISAGREE, apply these tiebreakers IN ORDER:
+   a. Prefer the source labelled "PRIMARY SOURCE (highest relevance)" — it was selected by relevance scoring.
+   b. When sources are labelled "TIED CANDIDATE", you MUST judge which answer most directly and specifically answers the question. Ignore confidence scores for tied candidates — they only measure how easy the answer was to find, NOT how correct it is. Instead, prefer the answer that:
+      - Is SPECIFIC and CONCRETE over one that is GENERIC or SELF-REFERENTIAL. For example, "That my driver licence disqualification is removed" is a specific order, while "orders in terms of the draft Consent Orders" is self-referential (it just says "the orders that are in the orders document") and gives no substantive information.
+      - States a specific rule, form, provision, fact, name, amount, or date that IS the answer, over one that references these things generically or procedurally.
+      - Directly addresses the question's intent rather than providing procedural or administrative context from a different document type.
+      - Comes from the document whose type/purpose most closely matches what the question is asking about.
+   c. Do NOT pick an answer just because it has higher confidence or because more documents mention it.
 6. Keep the answer under 3 sentences unless the question requires more detail.
 7. NEVER wrap the answer in "Entity Tracking", "Timeline", "Analysis", "Comprehensive", or any report-style formatting.
 8. Ignore any formatting in the document findings — rewrite in plain, concise prose."""
@@ -860,15 +1105,14 @@ Answer:"""
         question: str,
         results: list[DocumentResult],
         entity_context: str = "",
+        *,
+        title_scores: dict[str, float] | None = None,
     ) -> str:
         """Synthesize a comparison answer."""
         if not self._llm_fn:
             return self._simple_synthesis(question, results)
 
-        results_text = "\n\n".join([
-            f"Document: {r.doc_title}\nFindings: {r.answer}"
-            for r in results
-        ])
+        results_text = self._format_results_with_priority(results, title_scores, question)
 
         kg_block = ""
         if entity_context:
@@ -896,15 +1140,14 @@ Answer:"""
         results: list[DocumentResult],
         entities: list[Entity],
         entity_context: str = "",
+        *,
+        title_scores: dict[str, float] | None = None,
     ) -> str:
         """Synthesize a timeline answer."""
         if not self._llm_fn:
             return self._simple_synthesis(question, results)
 
-        results_text = "\n\n".join([
-            f"Document: {r.doc_title}\nFindings: {r.answer}"
-            for r in results
-        ])
+        results_text = self._format_results_with_priority(results, title_scores, question)
 
         kg_block = ""
         if entity_context:
@@ -932,15 +1175,14 @@ Answer:"""
         results: list[DocumentResult],
         entities: list[Entity],
         entity_context: str = "",
+        *,
+        title_scores: dict[str, float] | None = None,
     ) -> str:
         """Synthesize an entity tracking answer."""
         if not self._llm_fn:
             return self._simple_synthesis(question, results)
 
-        results_text = "\n\n".join([
-            f"Document: {r.doc_title}\nFindings: {r.answer}"
-            for r in results
-        ])
+        results_text = self._format_results_with_priority(results, title_scores, question)
 
         kg_block = ""
         if entity_context:
@@ -967,15 +1209,14 @@ Answer:"""
         question: str,
         results: list[DocumentResult],
         entity_context: str = "",
+        *,
+        title_scores: dict[str, float] | None = None,
     ) -> str:
         """Synthesize a general cross-document answer."""
         if not self._llm_fn:
             return self._simple_synthesis(question, results)
 
-        results_text = "\n\n".join([
-            f"Document: {r.doc_title}\nFindings: {r.answer}"
-            for r in results
-        ])
+        results_text = self._format_results_with_priority(results, title_scores, question)
 
         kg_block = ""
         if entity_context:

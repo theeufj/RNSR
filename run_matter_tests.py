@@ -256,12 +256,16 @@ def evaluate_questions(
 ) -> list[QuestionResult]:
     """Run each question against the store and judge the answer."""
     results: list[QuestionResult] = []
+    conversation_context: list[dict[str, str]] = []
 
     for i, (question, expected) in enumerate(qa_pairs):
         print(f"    Q{i + 1}/{len(qa_pairs)}: {question[:80]}...")
         t0 = time.monotonic()
         try:
-            resp = store.query_cross_document(question)
+            resp = store.query_cross_document(
+                question,
+                conversation_context=conversation_context if conversation_context else None,
+            )
             answer = resp.get("answer", "") if isinstance(resp, dict) else str(resp)
             nodes_visited = resp.get("total_nodes_visited", 0) if isinstance(resp, dict) else 0
             iterations = resp.get("total_iterations", 0) if isinstance(resp, dict) else 0
@@ -297,6 +301,8 @@ def evaluate_questions(
 
         verdict = "CORRECT" if correct else ("ERROR" if correct is None else "WRONG")
         print(f"      {verdict} ({elapsed:.1f}s, {nodes_visited} nodes, {iterations} iters, conf={confidence:.2f}) — {reasoning[:60]}")
+
+        conversation_context.append({"question": question, "answer": answer[:300]})
 
     return results
 

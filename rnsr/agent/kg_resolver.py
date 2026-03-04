@@ -46,8 +46,9 @@ _INTENT_PATTERNS: list[_IntentPattern] = [
     _IntentPattern(
         "court",
         [
-            # Negative lookahead prevents matching "court orders/order"
-            re.compile(r"\b(?:which\s+court|what\s+court|name\s+of\s+(?:the\s+)?court)(?!\s+order)", re.I),
+            # Only match metadata-style court questions ("which court heard this"),
+            # NOT document-content questions ("which courts are identified/listed in section X")
+            re.compile(r"\b(?:which\s+court|what\s+court|name\s+of\s+(?:the\s+)?court)(?!\s+order)(?!s?\s+(?:are|is|were)\s+(?:identified|listed|mentioned|named|set out))", re.I),
             re.compile(r"\bcourt\s+(?:was|that|where)\b", re.I),
         ],
     ),

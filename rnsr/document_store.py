@@ -438,7 +438,7 @@ class DocumentStore:
         # Build section embedding index for O(log s) retrieval
         try:
             from rnsr.indexing.section_embeddings import SectionEmbeddingIndex
-            emb_idx = SectionEmbeddingIndex(self._store_path)
+            emb_idx = SectionEmbeddingIndex(self.store_path)
             emb_idx.build(skeleton, kv_store, doc_id, replace=True)
         except Exception as e:
             logger.warning("section_embeddings_build_failed", error=str(e))
@@ -1224,6 +1224,7 @@ class DocumentStore:
         question: str,
         doc_ids: list[str] | None = None,
         use_short_answer: bool = False,
+        conversation_context: list[dict[str, str]] | None = None,
     ) -> dict[str, Any]:
         """
         Ask a question that spans multiple documents.
@@ -1242,6 +1243,8 @@ class DocumentStore:
             doc_ids: Limit to specific documents (default: all).
             use_short_answer: When True, instruct navigators to produce
                 minimal answers (key phrases only).
+            conversation_context: Previous Q&A pairs for resolving
+                ambiguous references across sequential questions.
 
         Returns:
             Result dictionary with ``answer``, ``documents_used``, etc.
@@ -1257,7 +1260,11 @@ class DocumentStore:
 
         if use_hierarchical:
             return self._query_hierarchical(question, use_short_answer=use_short_answer)
-        return self._query_cross_doc_eager(question, target_ids, use_short_answer=use_short_answer)
+        return self._query_cross_doc_eager(
+            question, target_ids,
+            use_short_answer=use_short_answer,
+            conversation_context=conversation_context,
+        )
 
     def _has_collection_skeleton(self) -> bool:
         """Check whether a collection skeleton exists (in memory or on disk)."""
@@ -1327,6 +1334,7 @@ class DocumentStore:
         target_ids: list[str],
         *,
         use_short_answer: bool = False,
+        conversation_context: list[dict[str, str]] | None = None,
     ) -> dict[str, Any]:
         """Original eager-loading cross-document query (for small collections)."""
         from rnsr.agent.cross_doc_navigator import (
@@ -1382,7 +1390,7 @@ class DocumentStore:
             emb_index = None
             try:
                 from rnsr.indexing.section_embeddings import SectionEmbeddingIndex
-                emb_index = SectionEmbeddingIndex(self._store_path)
+                emb_index = SectionEmbeddingIndex(self.store_path)
                 if not emb_index.is_ready:
                     emb_index = None
             except Exception:
@@ -1416,7 +1424,7 @@ class DocumentStore:
                 "confidence": 0.0,
             }
 
-        result = cross_nav.query(question)
+        result = cross_nav.query(question, conversation_context=conversation_context)
         return {
             "answer": result.answer if hasattr(result, "answer") else str(result),
             "documents_used": [

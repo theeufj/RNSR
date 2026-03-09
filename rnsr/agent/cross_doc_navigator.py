@@ -82,10 +82,20 @@ QUERY_ENTITY_EXTRACTION_PROMPT = """Analyze this query and extract entities that
 
 Query: {query}
 {conversation_context}
+{available_documents}
+{document_coverage}
 Extract:
 1. People mentioned (names, roles)
 2. Organizations mentioned
-3. Documents or sections referenced — pay special attention to implicit references. If previous Q&A context is provided, resolve pronouns and phrases like "this application", "the document", "this form" to the specific document they refer to based on the conversation history.
+3. Documents or sections referenced — IMPORTANT disambiguation rules:
+   a. If previous Q&A context exists, check whether the current question CONTINUES discussing the same document or SHIFTS to a different one. Look for topic changes — e.g. if prior questions were about a driver licence application but this question asks about "consent orders" or "the Court section", it is shifting to a different document.
+   b. If the question uses generic phrases like "the document", "the letter", "this application", "this form", consider ALL available documents (listed above) and determine which one the question most likely refers to based on the question's specific content (e.g. keywords, legal concepts mentioned).
+   c. When a question asks about something that clearly matches a specific document title (e.g. "Agreement for Sale of Shares"), reference that document even if the conversation was previously about a different document.
+   d. If the question asks about content that exists in multiple documents (e.g. "What is the reference number on the letter?" when there are multiple letters), try to determine which document is most relevant from the question's context and conversation flow.
+   e. DOCUMENT SHIFT DETECTION: When the conversation has asked MULTIPLE consecutive questions answered from the same document and the current question uses a GENERIC reference ("the document", "the letter", "this form") or asks a generic identity/meta question (title, date, reference number, court details, page count) that could apply to ANY document, prefer referencing a document that has NOT YET been discussed (see document coverage above). In a sequential Q&A review session, generic questions after exhausting one document's content typically signal a transition to the next document.
+   f. TOPIC CONTINUITY: Conversely, when the current question asks about specific details that logically continue the same topic as recent questions (e.g. asking about "the recipient's address" after asking "who is the letter addressed to"), keep referencing the SAME document even if many questions have been asked about it.
+   g. REFERENCE RESOLUTION: References like "this application", "this document", "the letter" ALWAYS refer to the MOST RECENTLY discussed document from the conversation context, unless the question introduces content that clearly belongs to a different document. If Q6 was about "Application for Consent Orders", then Q7's "this application" refers to the consent orders — NOT an application discussed in Q1-Q5. Always check the LAST Q&A pair first.
+   h. SEQUENTIAL REVIEW — LETTER/DOCUMENT TYPE SELECTION: When transitioning to a new document type (e.g., from a costs agreement to "the letter") and MULTIPLE documents of that type exist, prefer the one whose title/topic is most thematically connected to what was just discussed. For example, after discussing a costs agreement, an "Invoice Cover Letter" is more relevant than a "Survey letter" or a general correspondence letter. Include the most likely document in documents_referenced.
 4. Key legal concepts or events
 5. Dates or time periods
 
@@ -244,7 +254,10 @@ class CrossDocNavigator:
             "timestamp": datetime.now(timezone.utc).isoformat(),
         })
         
-        retrieval_plan = self._plan_retrieval(question, query_analysis, doc_entities)
+        retrieval_plan = self._plan_retrieval(
+            question, query_analysis, doc_entities,
+            conversation_context=conversation_context,
+        )
         
         # Step 4: Execute per-document navigation
         trace.append({
@@ -275,6 +288,7 @@ class CrossDocNavigator:
             document_results,
             doc_entities,
             title_scores=title_scores,
+            conversation_context=conversation_context,
         )
         
         answer.trace = trace
@@ -319,11 +333,24 @@ class CrossDocNavigator:
                     lines.append(f"  Q: {pair['question']}")
                     answer_preview = pair["answer"][:200]
                     lines.append(f"  A: {answer_preview}")
+                    if pair.get("source_document"):
+                        lines.append(f"  Source document: {pair['source_document']}")
                 ctx_block = "\n".join(lines) + "\n"
+
+            docs_block = ""
+            if self._doc_titles:
+                doc_lines = ["Available documents in this collection:"]
+                for doc_id, title in self._doc_titles.items():
+                    doc_lines.append(f"  - {title}")
+                docs_block = "\n".join(doc_lines) + "\n"
+
+            coverage_block = self._build_document_coverage(conversation_context)
 
             prompt = QUERY_ENTITY_EXTRACTION_PROMPT.format(
                 query=question,
                 conversation_context=ctx_block,
+                available_documents=docs_block,
+                document_coverage=coverage_block,
             )
             response = self._llm_fn(prompt)
             
@@ -464,6 +491,7 @@ class CrossDocNavigator:
         question: str,
         query: CrossDocQuery,
         doc_entities: dict[str, list[Entity]],
+        conversation_context: list[dict[str, str]] | None = None,
     ) -> list[dict[str, Any]]:
         """
         Plan the retrieval strategy for each document.
@@ -473,12 +501,15 @@ class CrossDocNavigator:
         original question so that no document is silently skipped.
 
         Tasks are sorted by title relevance so the most likely target
-        document is navigated first.
+        document is navigated first.  When conversation context is
+        available, recently-discussed documents are deprioritized for
+        generic-reference questions to encourage exploration.
 
         Args:
             question: Original question.
             query: Analyzed query.
             doc_entities: Entities by document.
+            conversation_context: Prior Q&A pairs with source_document.
 
         Returns:
             List of retrieval tasks sorted by title relevance.
@@ -555,6 +586,9 @@ class CrossDocNavigator:
                              else "keyword overlap found, searching with original query"),
             )
 
+        self._apply_freshness_adjustments(tasks, question, conversation_context)
+        self._apply_continuity_boost(tasks, question, conversation_context)
+
         tasks.sort(key=lambda t: t.get("title_score", 0), reverse=True)
 
         if tasks:
@@ -565,6 +599,152 @@ class CrossDocNavigator:
         
         return tasks
 
+    def _apply_freshness_adjustments(
+        self,
+        tasks: list[dict[str, Any]],
+        question: str,
+        conversation_context: list[dict[str, str]] | None,
+    ) -> None:
+        """Adjust title scores to deprioritize recently-discussed documents.
+
+        Only activates when the question uses generic references (e.g.
+        "the document", "the letter") so that specific-detail questions
+        keep using the same document.  Documents discussed many times
+        receive a penalty proportional to their discussion count,
+        while undiscussed documents receive a small boost.
+        """
+        if not conversation_context or not self._doc_titles:
+            return
+
+        if not self._GENERIC_REF_RE.search(question):
+            return
+
+        title_to_docid: dict[str, str] = {}
+        for doc_id, title in self._doc_titles.items():
+            title_to_docid[title.lower()] = doc_id
+
+        discussed_doc_ids: set[str] = set()
+        discussion_counts: dict[str, int] = {}
+
+        for pair in conversation_context:
+            src = pair.get("source_document", "")
+            if not src:
+                continue
+            src_lower = src.lower()
+            matched_id: str | None = None
+            for t_lower, did in title_to_docid.items():
+                if src_lower in t_lower or t_lower in src_lower:
+                    matched_id = did
+                    break
+            if matched_id:
+                discussed_doc_ids.add(matched_id)
+                discussion_counts[matched_id] = (
+                    discussion_counts.get(matched_id, 0) + 1
+                )
+
+        for task in tasks:
+            count = discussion_counts.get(task["doc_id"], 0)
+            if count >= 2:
+                penalty = -1.5 * count
+                task["title_score"] = task.get("title_score", 0) + penalty
+                logger.info(
+                    "freshness_penalty_applied",
+                    doc_id=task["doc_id"],
+                    title=self._doc_titles.get(task["doc_id"], ""),
+                    penalty=penalty,
+                    discussion_count=count,
+                )
+
+        recent_reversed = list(reversed(
+            [did for pair in conversation_context
+             for did in [self._match_source_to_docid(
+                 pair.get("source_document", ""), title_to_docid)]
+             if did]
+        ))
+        most_recent = recent_reversed[0] if recent_reversed else None
+        most_recent_consecutive = 0
+        if most_recent:
+            for did in recent_reversed:
+                if did == most_recent:
+                    most_recent_consecutive += 1
+                else:
+                    break
+
+        if most_recent_consecutive >= 3:
+            all_task_ids = {t["doc_id"] for t in tasks}
+            undiscussed = all_task_ids - discussed_doc_ids
+            if undiscussed:
+                for task in tasks:
+                    if task["doc_id"] in undiscussed:
+                        task["title_score"] = task.get("title_score", 0) + 1.0
+        elif most_recent:
+            for task in tasks:
+                if task["doc_id"] == most_recent:
+                    task["title_score"] = task.get("title_score", 0) + 2.0
+                    logger.info(
+                        "continuity_boost_in_freshness",
+                        doc_id=most_recent,
+                        title=self._doc_titles.get(most_recent, ""),
+                        boost=2.0,
+                        consecutive=most_recent_consecutive,
+                    )
+                    break
+
+    @staticmethod
+    def _match_source_to_docid(
+        src: str, title_to_docid: dict[str, str],
+    ) -> str | None:
+        if not src:
+            return None
+        src_lower = src.lower()
+        for t_lower, did in title_to_docid.items():
+            if src_lower in t_lower or t_lower in src_lower:
+                return did
+        return None
+
+    def _apply_continuity_boost(
+        self,
+        tasks: list[dict[str, Any]],
+        question: str,
+        conversation_context: list[dict[str, str]] | None,
+    ) -> None:
+        """Boost the most-recently-discussed document for topic continuity.
+
+        Activates when the question does NOT signal a document switch
+        (no generic reference pattern) AND no document has positive
+        title_score from keyword matching.  This handles implicit
+        continuation where consecutive questions ask about properties
+        of the same document without explicitly naming it.
+        """
+        if not conversation_context or not self._doc_titles:
+            return
+        if self._GENERIC_REF_RE.search(question):
+            return
+        max_ts = max((t.get("title_score", 0) for t in tasks), default=0)
+        if max_ts > 0:
+            return
+
+        recent_srcs = [
+            p.get("source_document", "")
+            for p in conversation_context[-3:]
+            if p.get("source_document")
+        ]
+        if not recent_srcs or len(set(recent_srcs)) != 1:
+            return
+
+        cont_lower = recent_srcs[0].lower()
+        for task in tasks:
+            title = self._doc_titles.get(task["doc_id"], "").lower()
+            if cont_lower in title or title in cont_lower:
+                task["title_score"] = task.get("title_score", 0) + 5.0
+                logger.info(
+                    "continuity_boost_applied",
+                    doc_id=task["doc_id"],
+                    title=self._doc_titles.get(task["doc_id"], ""),
+                    boost=5.0,
+                )
+                break
+
     _STOPWORDS = frozenset({
         "a", "an", "the", "is", "are", "was", "were", "in", "on", "at",
         "to", "for", "of", "and", "or", "not", "it", "this", "that",
@@ -572,6 +752,15 @@ class CrossDocNavigator:
         "had", "do", "does", "did", "will", "would", "could", "should",
         "what", "when", "where", "who", "how", "which", "there", "about",
     })
+
+    _GENERIC_REF_RE = re.compile(
+        r'\b(?:the|this)\s+(?:document|letter|form|application|agreement|contract)\b'
+        r'|\bwhat\s+is\s+the\s+(?:title|date|heading)\b'
+        r'|\bhow\s+many\s+pages\b'
+        r'|\b(?:the|this)\s+\S+\s+section\b'
+        r'|\bunder\s+(?:the|which)\b',
+        re.IGNORECASE,
+    )
 
     def _doc_has_keyword_overlap(self, doc_id: str, question: str) -> bool:
         """Check if a document's title or skeleton has any keyword overlap with the query."""
@@ -918,6 +1107,7 @@ Answer:"""
         doc_entities: dict[str, list[Entity]],
         *,
         title_scores: dict[str, float] | None = None,
+        conversation_context: list[dict[str, str]] | None = None,
     ) -> CrossDocAnswer:
         """
         Synthesize the final cross-document answer.
@@ -991,21 +1181,27 @@ Answer:"""
             answer = self._simple_synthesis(question, useful_results)
         elif query.query_type == "comparison":
             answer = self._synthesize_comparison(
-                question, useful_results, entity_context, title_scores=title_scores,
+                question, useful_results, entity_context,
+                title_scores=title_scores,
+                conversation_context=conversation_context,
             )
         elif query.query_type == "timeline":
             answer = self._synthesize_timeline(
                 question, useful_results, all_entities, entity_context,
                 title_scores=title_scores,
+                conversation_context=conversation_context,
             )
         elif query.query_type == "entity_tracking":
             answer = self._synthesize_entity_tracking(
                 question, useful_results, all_entities, entity_context,
                 title_scores=title_scores,
+                conversation_context=conversation_context,
             )
         else:
             answer = self._synthesize_general(
-                question, useful_results, entity_context, title_scores=title_scores,
+                question, useful_results, entity_context,
+                title_scores=title_scores,
+                conversation_context=conversation_context,
             )
         
         total_nodes = sum(r.nodes_visited for r in results)
@@ -1082,13 +1278,90 @@ Answer:"""
             if result.answer:
                 parts.append(f"**{result.doc_title}**:\n{result.answer}")
         return "\n\n".join(parts) if parts else "No answers found."
+
+    def _format_conversation_context(
+        self,
+        conversation_context: list[dict[str, str]] | None,
+    ) -> str:
+        """Build a conversation context block for synthesis prompts.
+
+        Includes the 3 most recent Q&A pairs plus a document coverage
+        summary showing which documents have/haven't been discussed.
+        """
+        if not conversation_context:
+            return ""
+        recent = conversation_context[-3:]
+        lines = ["\nConversation context (previous Q&A, most recent last):"]
+        for pair in recent:
+            lines.append(f"  Q: {pair['question']}")
+            lines.append(f"  A: {pair['answer'][:150]}")
+            if pair.get("source_document"):
+                lines.append(f"  (from: {pair['source_document']})")
+
+        coverage = self._build_document_coverage(conversation_context)
+        if coverage:
+            lines.append(coverage)
+        return "\n".join(lines) + "\n"
+
+    def _build_document_coverage(
+        self,
+        conversation_context: list[dict[str, str]] | None,
+    ) -> str:
+        """Summarise which documents have/haven't been discussed yet.
+
+        Used both in query analysis and synthesis prompts so the LLM
+        knows which documents are fresh and which have already been
+        covered by prior Q&A pairs.
+        """
+        if not conversation_context or not self._doc_titles:
+            return ""
+
+        discussed_titles: dict[str, int] = {}
+        for pair in conversation_context:
+            src = pair.get("source_document", "")
+            if src:
+                discussed_titles[src] = discussed_titles.get(src, 0) + 1
+
+        all_titles = set(self._doc_titles.values())
+
+        discussed_matched: set[str] = set()
+        for title in all_titles:
+            t_lower = title.lower()
+            for src_title in discussed_titles:
+                s_lower = src_title.lower()
+                if s_lower in t_lower or t_lower in s_lower:
+                    discussed_matched.add(title)
+                    break
+
+        not_discussed = all_titles - discussed_matched
+
+        if not discussed_matched and not not_discussed:
+            return ""
+
+        lines = ["Document coverage in this conversation:"]
+        if discussed_matched:
+            d_list = ", ".join(sorted(discussed_matched))
+            lines.append(f"  ALREADY DISCUSSED: {d_list}")
+        if not_discussed:
+            nd_list = ", ".join(sorted(not_discussed))
+            lines.append(f"  NOT YET DISCUSSED: {nd_list}")
+        lines.append(
+            "When the question uses generic references, prefer answering "
+            "from NOT YET DISCUSSED documents."
+        )
+        return "\n".join(lines)
     
     _CROSS_DOC_RULES = """RULES (STRICTLY FOLLOW ALL):
 1. Give a DIRECT, CONCISE answer — start with the answer itself, not analysis or preamble.
 2. FORBIDDEN: markdown headers (#, ##), section titles, bullet lists, "Overview", "Summary", "Conclusion" sections. Write plain prose only.
 3. Do NOT hedge or say "cannot be determined" when the information IS present in the findings.
 4. If multiple documents provide the same answer, state it once — do not repeat per document.
-5. When documents DISAGREE, apply these tiebreakers IN ORDER:
+5. When the question asks about a SPECIFIC item (e.g. "the reference number on the letter", "the recipient's address") and multiple documents contain similar items, choose the answer from the document that the question is most likely referring to. Consider:
+   - Which document the PRIMARY SOURCE label points to.
+   - Whether the question specifies any distinguishing details (dates, names, types).
+   - The conversation context: if prior questions established a specific document as the topic, the current question likely refers to that same document UNLESS the question introduces new content that better matches a different document.
+   - Give ONE definitive answer, not multiple alternatives.
+6. When documents DISAGREE, apply these tiebreakers IN ORDER:
    a. Prefer the source labelled "PRIMARY SOURCE (highest relevance)" — it was selected by relevance scoring.
    b. When sources are labelled "TIED CANDIDATE", you MUST judge which answer most directly and specifically answers the question. Ignore confidence scores for tied candidates — they only measure how easy the answer was to find, NOT how correct it is. Instead, prefer the answer that:
       - Is SPECIFIC and CONCRETE over one that is GENERIC or SELF-REFERENTIAL. For example, "That my driver licence disqualification is removed" is a specific order, while "orders in terms of the draft Consent Orders" is self-referential (it just says "the orders that are in the orders document") and gives no substantive information.
@@ -1096,9 +1369,12 @@ Answer:"""
       - Directly addresses the question's intent rather than providing procedural or administrative context from a different document type.
       - Comes from the document whose type/purpose most closely matches what the question is asking about.
    c. Do NOT pick an answer just because it has higher confidence or because more documents mention it.
-6. Keep the answer under 3 sentences unless the question requires more detail.
-7. NEVER wrap the answer in "Entity Tracking", "Timeline", "Analysis", "Comprehensive", or any report-style formatting.
-8. Ignore any formatting in the document findings — rewrite in plain, concise prose."""
+7. Keep the answer under 3 sentences unless the question requires more detail.
+8. NEVER wrap the answer in "Entity Tracking", "Timeline", "Analysis", "Comprehensive", or any report-style formatting.
+9. Ignore any formatting in the document findings — rewrite in plain, concise prose.
+10. DOCUMENT PROGRESSION: When the conversation context shows that previous questions were answered from specific documents and the "Document coverage" section lists documents as NOT YET DISCUSSED, consider whether the current question is about an undiscussed document. Generic references ("the document", "the letter") after a series of questions from the same document often indicate a shift to a new, undiscussed document. Prefer answers from NOT YET DISCUSSED documents when the question is generic.
+11. METADATA CONTINUATION: When consecutive questions ask about properties of the same correspondence (e.g. Q1: "What is the date?", Q2: "What is the name of the firm?", Q3: "What is the reference number?"), they ALL refer to the SAME document. Use conversation context to identify which document was the source for the most recent answer and continue using that document. Do NOT switch to a different document for follow-up metadata questions.
+12. THEMATIC LETTER SELECTION: When transitioning from one document type to another (e.g. costs agreement → "the letter") and multiple letters exist, prefer the letter whose topic is most thematically connected to what was just discussed. For example, after billing/costs discussions, an "Invoice Cover Letter" is more relevant than a "Survey letter"."""
 
     def _synthesize_comparison(
         self,
@@ -1107,12 +1383,14 @@ Answer:"""
         entity_context: str = "",
         *,
         title_scores: dict[str, float] | None = None,
+        conversation_context: list[dict[str, str]] | None = None,
     ) -> str:
         """Synthesize a comparison answer."""
         if not self._llm_fn:
             return self._simple_synthesis(question, results)
 
         results_text = self._format_results_with_priority(results, title_scores, question)
+        conv_block = self._format_conversation_context(conversation_context)
 
         kg_block = ""
         if entity_context:
@@ -1121,7 +1399,7 @@ Answer:"""
         prompt = f"""Answer the question by comparing information from multiple documents.
 
 {self._CROSS_DOC_RULES}
-{kg_block}
+{kg_block}{conv_block}
 Question: {question}
 
 Document findings:
@@ -1142,12 +1420,14 @@ Answer:"""
         entity_context: str = "",
         *,
         title_scores: dict[str, float] | None = None,
+        conversation_context: list[dict[str, str]] | None = None,
     ) -> str:
         """Synthesize a timeline answer."""
         if not self._llm_fn:
             return self._simple_synthesis(question, results)
 
         results_text = self._format_results_with_priority(results, title_scores, question)
+        conv_block = self._format_conversation_context(conversation_context)
 
         kg_block = ""
         if entity_context:
@@ -1156,7 +1436,7 @@ Answer:"""
         prompt = f"""Answer the question using information from multiple documents.
 
 {self._CROSS_DOC_RULES}
-{kg_block}
+{kg_block}{conv_block}
 Question: {question}
 
 Document findings:
@@ -1177,12 +1457,14 @@ Answer:"""
         entity_context: str = "",
         *,
         title_scores: dict[str, float] | None = None,
+        conversation_context: list[dict[str, str]] | None = None,
     ) -> str:
         """Synthesize an entity tracking answer."""
         if not self._llm_fn:
             return self._simple_synthesis(question, results)
 
         results_text = self._format_results_with_priority(results, title_scores, question)
+        conv_block = self._format_conversation_context(conversation_context)
 
         kg_block = ""
         if entity_context:
@@ -1191,7 +1473,7 @@ Answer:"""
         prompt = f"""Answer the question using information from multiple documents.
 
 {self._CROSS_DOC_RULES}
-{kg_block}
+{kg_block}{conv_block}
 Question: {question}
 
 Document findings:
@@ -1211,12 +1493,14 @@ Answer:"""
         entity_context: str = "",
         *,
         title_scores: dict[str, float] | None = None,
+        conversation_context: list[dict[str, str]] | None = None,
     ) -> str:
         """Synthesize a general cross-document answer."""
         if not self._llm_fn:
             return self._simple_synthesis(question, results)
 
         results_text = self._format_results_with_priority(results, title_scores, question)
+        conv_block = self._format_conversation_context(conversation_context)
 
         kg_block = ""
         if entity_context:
@@ -1225,7 +1509,7 @@ Answer:"""
         prompt = f"""Answer the question using information from multiple documents.
 
 {self._CROSS_DOC_RULES}
-{kg_block}
+{kg_block}{conv_block}
 Question: {question}
 
 Document findings:

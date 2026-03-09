@@ -302,7 +302,16 @@ def evaluate_questions(
         verdict = "CORRECT" if correct else ("ERROR" if correct is None else "WRONG")
         print(f"      {verdict} ({elapsed:.1f}s, {nodes_visited} nodes, {iterations} iters, conf={confidence:.2f}) — {reasoning[:60]}")
 
-        conversation_context.append({"question": question, "answer": answer[:300]})
+        source_doc = ""
+        if isinstance(resp, dict):
+            docs_used = resp.get("documents_used", [])
+            primary_doc = resp.get("primary_document", "")
+            source_doc = primary_doc or (docs_used[0] if docs_used else "")
+        conversation_context.append({
+            "question": question,
+            "answer": answer[:300],
+            "source_document": source_doc,
+        })
 
     return results
 

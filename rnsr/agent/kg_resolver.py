@@ -143,7 +143,7 @@ class KGResolver:
             return guidance
 
         # Try profile-based resolution first
-        answer = self._resolve_from_profiles(intent, doc_ids)
+        answer = self._resolve_from_profiles(intent, doc_ids, question=question)
         if answer:
             logger.info("kg_resolved_from_profile", intent=intent, answer=answer[:80])
             return KGResolution(
@@ -234,9 +234,38 @@ class KGResolver:
     # ------------------------------------------------------------------
 
     def _resolve_from_profiles(
-        self, intent: str, doc_ids: list[str] | None
+        self, intent: str, doc_ids: list[str] | None, question: str = ""
     ) -> str | None:
         targets = doc_ids or list(self._profiles.keys())
+
+        # When multiple documents exist and the question mentions a
+        # specific one by name, resolve only from that document's profile.
+        if len(targets) > 1 and question:
+            q_lower = question.lower()
+            q_words = set(re.findall(r"[a-z0-9]+", q_lower))
+            best_did: str | None = None
+            best_overlap = 0
+            for did in targets:
+                profile = self._profiles.get(did)
+                if profile is None:
+                    continue
+                title = ""
+                if isinstance(profile, dict):
+                    title = profile.get("title", "") or profile.get("doc_type", "")
+                else:
+                    title = getattr(profile, "title", "") or getattr(profile, "doc_type", "")
+                if not title:
+                    title = did
+                title_lower = title.lower()
+                title_words = set(re.findall(r"[a-z0-9]+", title_lower))
+                overlap = len(q_words & title_words)
+                if title_lower in q_lower or q_lower in title_lower:
+                    overlap += 10
+                if overlap > best_overlap:
+                    best_overlap = overlap
+                    best_did = did
+            if best_did and best_overlap >= 2:
+                targets = [best_did]
 
         for did in targets:
             profile = self._profiles.get(did)

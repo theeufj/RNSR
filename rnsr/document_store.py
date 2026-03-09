@@ -1163,7 +1163,9 @@ class DocumentStore:
         for doc_id, info in self._catalog.items():
             profile = info.metadata.get("profile")
             if profile:
-                profiles[doc_id] = profile
+                profile_with_title = dict(profile)
+                profile_with_title["title"] = info.title
+                profiles[doc_id] = profile_with_title
         return profiles
 
     def link_entities_across_documents(
@@ -1425,11 +1427,21 @@ class DocumentStore:
             }
 
         result = cross_nav.query(question, conversation_context=conversation_context)
+        doc_results = result.document_results if hasattr(result, "document_results") else []
+        docs_used_titles = []
+        primary_doc = ""
+        best_conf = -1.0
+        for r in doc_results:
+            title = r.doc_title if hasattr(r, "doc_title") and r.doc_title else r.doc_id
+            docs_used_titles.append(title)
+            conf = r.confidence if hasattr(r, "confidence") else 0.0
+            if conf > best_conf and r.answer and not cross_nav._is_negative_answer(r.answer):
+                best_conf = conf
+                primary_doc = title
         return {
             "answer": result.answer if hasattr(result, "answer") else str(result),
-            "documents_used": [
-                r.doc_id for r in (result.document_results if hasattr(result, "document_results") else [])
-            ],
+            "documents_used": docs_used_titles,
+            "primary_document": primary_doc,
             "entities_involved": [
                 e.canonical_name for e in (result.entities_involved if hasattr(result, "entities_involved") else [])
             ],

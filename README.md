@@ -234,13 +234,20 @@ RNSR_EXTRACTION_MODEL=gemini-2.5-flash
 ```python
 from rnsr import RNSRClient
 
-# Simple one-line Q&A
+# Option A: auto-detect provider from env vars / .env file
 client = RNSRClient()
+
+# Option B: pass API key directly (recommended for PyPI installs)
+client = RNSRClient(api_key="your-key", llm_provider="gemini")
+
+# Option C: explicit provider + model, key from env
+client = RNSRClient(llm_provider="anthropic", llm_model="claude-sonnet-4-5")
+
+# Simple one-line Q&A
 answer = client.ask("contract.pdf", "What are the payment terms?")
 print(answer)
 
 # Advanced navigation with Knowledge Graph (recommended for best accuracy)
-# This matches the benchmark's zero-hallucination performance
 result = client.ask_advanced(
     "complex_report.pdf",
     "Compare liability clauses in sections 5 and 8",
@@ -1040,9 +1047,15 @@ rnsr/
 ```python
 from rnsr import RNSRClient
 
+# Auto-detect provider from environment variables or .env file
+client = RNSRClient()
+
+# Explicit provider + API key (recommended for PyPI installs)
 client = RNSRClient(
-    llm_provider="anthropic",  # or "openai", "gemini"
-    llm_model="claude-sonnet-4-5"
+    api_key="your-key",
+    llm_provider="gemini",        # "openai", "anthropic", or "gemini"
+    llm_model="gemini-2.5-flash", # optional model override
+    cache_dir="./rnsr_cache",     # optional index cache
 )
 
 # Simple query
@@ -1051,6 +1064,15 @@ answer = client.ask("document.pdf", "What is the main topic?")
 # Vision mode (for scanned docs)
 answer = client.ask_vision("scanned.pdf", "What does the chart show?")
 ```
+
+#### `RNSRClient` Constructor Parameters
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `cache_dir` | `str \| Path \| None` | `None` | Directory for caching indexes. Persists and reuses indexes when set. |
+| `llm_provider` | `str \| None` | `None` | LLM provider (`"openai"`, `"anthropic"`, `"gemini"`). Auto-detected from available API keys when omitted. |
+| `llm_model` | `str \| None` | `None` | Model name override. Uses the provider's default when omitted. |
+| `api_key` | `str \| None` | `None` | API key for the LLM provider. When `llm_provider` is also set, the key is injected only for that provider; otherwise it is set for all three. |
 
 ### Low-Level API
 
@@ -1094,6 +1116,12 @@ record = tracker.create_provenance_record(answer, question, variables)
 ```
 
 ## Configuration
+
+RNSR supports three configuration methods (highest priority first):
+
+1. **Programmatic** — pass `api_key`, `llm_provider`, and `llm_model` directly to `RNSRClient()` or `DocumentStore()`.
+2. **`.env` file** — place a `.env` file in your working directory (or the project root for dev checkouts). RNSR loads it automatically via `python-dotenv`.
+3. **System environment variables** — export the variables in your shell.
 
 ### Environment Variables
 

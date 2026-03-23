@@ -172,7 +172,7 @@ def ingest_case(
     result = store.batch_ingest(
         sources=files,
         build_kg=False,
-        skip_existing=True,
+        skip_existing=not force,
     )
     for err in result.errors:
         errors.append(f"{err['file']}: {err['error']}")
@@ -449,6 +449,11 @@ def main() -> None:
         default=None,
         help="Path for aggregate JSON (default: <test-dir>/matter_test_results.json)",
     )
+    parser.add_argument(
+        "--resume",
+        action="store_true",
+        help="Resume from existing results file, skipping already-evaluated cases",
+    )
     args = parser.parse_args()
 
     if not args.test_dir.is_dir():
@@ -474,17 +479,37 @@ def main() -> None:
         else:
             case_dirs = case_dirs[: args.limit]
 
+    case_results: list[CaseResult] = []
+    completed_dirs: set[str] = set()
+
+    if args.resume and output_path.exists():
+        with open(output_path) as f:
+            prev = json.load(f)
+        for prev_case in prev.get("cases", []):
+            completed_dirs.add(prev_case["directory"])
+            case_results.append(CaseResult(**{
+                k: v for k, v in prev_case.items()
+                if k != "question_results" and k != "ingestion_errors"
+            },
+                question_results=[QuestionResult(**qr) for qr in prev_case.get("question_results", [])],
+                ingestion_errors=prev_case.get("ingestion_errors", []),
+            ))
+        print(f"  Resuming — {len(completed_dirs)} cases already evaluated")
+
     print(f"\n{'=' * 100}")
     print(f"  Matter AI Tests — {len(case_dirs)} case directories")
     print(f"{'=' * 100}\n")
 
-    case_results: list[CaseResult] = []
     wall_start = time.monotonic()
 
     for idx, case_dir in enumerate(case_dirs):
         rel = case_dir.relative_to(args.test_dir)
         print(f"\n[{idx + 1}/{len(case_dirs)}] {rel}")
         print(f"  {'-' * 60}")
+
+        if str(rel) in completed_dirs:
+            print("  SKIP — already evaluated (--resume)")
+            continue
 
         # 1. Find questions.csv
         qcsv = _find_questions_csv(case_dir)

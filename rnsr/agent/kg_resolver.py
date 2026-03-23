@@ -71,7 +71,7 @@ _INTENT_PATTERNS: list[_IntentPattern] = [
     _IntentPattern(
         "parties",
         [
-            re.compile(r"\bwho\s+(?:is|are|was|were)\s+the\s+(?:applicant|respondent|plaintiff|defendant|appellant|claimant|parties)\b", re.I),
+            re.compile(r"\bwho\s+(?:is|are|was|were)\s+the\s+(?:applicant|respondent|plaintiff|defendant|appellant|claimant|parties)(?!['\u2018\u2019]s)\b", re.I),
         ],
     ),
     _IntentPattern(

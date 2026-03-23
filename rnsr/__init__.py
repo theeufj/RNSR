@@ -24,11 +24,19 @@ Key Features:
 
 Usage:
     from rnsr import RNSRClient
-    
-    # Simple one-line Q&A
+
+    # Auto-detect provider from env vars or .env file
     client = RNSRClient()
+
+    # Pass API key directly (recommended for PyPI installs)
+    client = RNSRClient(api_key="your-key", llm_provider="gemini")
+
+    # Explicit provider + model, key from env
+    client = RNSRClient(llm_provider="anthropic", llm_model="claude-sonnet-4-5")
+
+    # Simple one-line Q&A
     answer = client.ask("contract.pdf", "What are the payment terms?")
-    
+
     # Advanced RLM navigation with full features
     result = client.ask_advanced(
         "complex_report.pdf",
@@ -36,25 +44,21 @@ Usage:
         enable_verification=True,
         max_recursion_depth=3,
     )
-    
-    # Vision-based analysis (for scanned docs, charts)
-    result = client.ask_vision(
-        "scanned_document.pdf",
-        "What does the revenue chart show?",
-    )
-    
+
     # Low-level API
     from rnsr import ingest_document, build_skeleton_index, run_rlm_navigator
-    
+
     result = ingest_document("contract.pdf")
     skeleton, kv_store = build_skeleton_index(result.tree)
     answer = run_rlm_navigator("What are the terms?", skeleton, kv_store)
-    
+
 LLM Provider Configuration:
-    Set one of these environment variables:
-    - GOOGLE_API_KEY (Gemini)
-    - OPENAI_API_KEY (OpenAI)
-    - ANTHROPIC_API_KEY (Anthropic)
+    1. Pass api_key directly to RNSRClient() or DocumentStore()
+    2. Place a .env file in your working directory
+    3. Set environment variables:
+       - GOOGLE_API_KEY (Gemini)
+       - OPENAI_API_KEY (OpenAI)
+       - ANTHROPIC_API_KEY (Anthropic)
 """
 
 __version__ = "0.3.1"

@@ -453,12 +453,19 @@ class CrossDocNavigator:
         doc_id: str,
         question: str,
         documents_mentioned: list[str] | None = None,
+        *,
+        is_generic_reference: bool = False,
     ) -> float:
         """Score a document's relevance based on title vs query term overlap.
 
         Higher scores mean the document title better matches the question.
         Used to prioritise navigation order so the most relevant document
         is queried first.
+
+        When *is_generic_reference* is True the boost from
+        ``documents_mentioned`` is reduced because the LLM's resolution
+        of a generic phrase like "the letter" to a specific document
+        title is unreliable.
         """
         title = self._doc_titles.get(doc_id, "").lower()
         if not title:
@@ -473,16 +480,21 @@ class CrossDocNavigator:
         overlap = title_words & query_words
         score = len(overlap) * 2.0
 
+        exact_boost = 3.0 if is_generic_reference else 10.0
+        partial_boost = 2.0 if is_generic_reference else 5.0
+
         if documents_mentioned:
+            best_mention_boost = 0.0
             for mention in documents_mentioned:
                 mention_lower = mention.lower()
                 if mention_lower in title or title in mention_lower:
-                    score += 10.0
-                    break
-                mention_words = set(re.findall(r"[a-z0-9]+", mention_lower))
-                mention_overlap = title_words & mention_words
-                if len(mention_overlap) >= 2:
-                    score += 5.0
+                    best_mention_boost = max(best_mention_boost, exact_boost)
+                else:
+                    mention_words = set(re.findall(r"[a-z0-9]+", mention_lower))
+                    mention_overlap = title_words & mention_words
+                    if len(mention_overlap) >= 2:
+                        best_mention_boost = max(best_mention_boost, partial_boost)
+            score += best_mention_boost
 
         return score
 
@@ -517,6 +529,8 @@ class CrossDocNavigator:
         tasks = []
         planned_doc_ids: set[str] = set()
 
+        is_generic = bool(self._GENERIC_REF_RE.search(question))
+
         for doc_id, entities in doc_entities.items():
             entity_names = [e.canonical_name for e in entities]
 
@@ -537,6 +551,7 @@ class CrossDocNavigator:
 
             title_score = self._compute_title_score(
                 doc_id, question, query.documents_mentioned,
+                is_generic_reference=is_generic,
             )
             tasks.append({
                 "doc_id": doc_id,
@@ -569,6 +584,7 @@ class CrossDocNavigator:
 
             title_score = self._compute_title_score(
                 doc_id, question, query.documents_mentioned,
+                is_generic_reference=is_generic,
             )
             tasks.append({
                 "doc_id": doc_id,
@@ -605,13 +621,21 @@ class CrossDocNavigator:
         question: str,
         conversation_context: list[dict[str, str]] | None,
     ) -> None:
-        """Adjust title scores to deprioritize recently-discussed documents.
+        """Adjust title scores based on conversation history.
 
         Only activates when the question uses generic references (e.g.
-        "the document", "the letter") so that specific-detail questions
-        keep using the same document.  Documents discussed many times
-        receive a penalty proportional to their discussion count,
-        while undiscussed documents receive a small boost.
+        "the document", "the letter").  Applies three mechanisms:
+
+        1. **Dominant-document boost** — the document that was the source
+           for the majority of recent answers gets a proportional boost
+           and is exempt from penalty (handles multi-question sequences
+           about the same document).
+        2. **Freshness penalty** — documents discussed many times but NOT
+           dominant receive a penalty to encourage progression.
+        3. **Transition boost** — when a single undiscussed document
+           remains and the most-recent document has been used >=2 times
+           consecutively, the undiscussed document is boosted to match
+           the top score (natural document progression).
         """
         if not conversation_context or not self._doc_titles:
             return
@@ -630,29 +654,11 @@ class CrossDocNavigator:
             src = pair.get("source_document", "")
             if not src:
                 continue
-            src_lower = src.lower()
-            matched_id: str | None = None
-            for t_lower, did in title_to_docid.items():
-                if src_lower in t_lower or t_lower in src_lower:
-                    matched_id = did
-                    break
+            matched_id = self._match_source_to_docid(src, title_to_docid)
             if matched_id:
                 discussed_doc_ids.add(matched_id)
                 discussion_counts[matched_id] = (
                     discussion_counts.get(matched_id, 0) + 1
-                )
-
-        for task in tasks:
-            count = discussion_counts.get(task["doc_id"], 0)
-            if count >= 2:
-                penalty = -1.5 * count
-                task["title_score"] = task.get("title_score", 0) + penalty
-                logger.info(
-                    "freshness_penalty_applied",
-                    doc_id=task["doc_id"],
-                    title=self._doc_titles.get(task["doc_id"], ""),
-                    penalty=penalty,
-                    discussion_count=count,
                 )
 
         recent_reversed = list(reversed(
@@ -670,24 +676,103 @@ class CrossDocNavigator:
                 else:
                     break
 
+        window = min(5, len(recent_reversed))
+        recent_window = recent_reversed[:window] if window else []
+        window_counts: dict[str, int] = {}
+        for did in recent_window:
+            window_counts[did] = window_counts.get(did, 0) + 1
+        dominant = max(window_counts, key=window_counts.get) if window_counts else None
+        dominant_ratio = window_counts.get(dominant, 0) / window if dominant and window else 0
+
+        exempt_from_penalty: set[str] = set()
+        if most_recent and most_recent_consecutive < 3:
+            exempt_from_penalty.add(most_recent)
+        if dominant and dominant_ratio >= 0.5:
+            exempt_from_penalty.add(dominant)
+            dominant_boost = dominant_ratio * 5.0
+            for task in tasks:
+                if task["doc_id"] == dominant:
+                    task["title_score"] = task.get("title_score", 0) + dominant_boost
+                    logger.info(
+                        "dominant_doc_boost",
+                        doc_id=dominant,
+                        title=self._doc_titles.get(dominant, ""),
+                        boost=round(dominant_boost, 1),
+                        ratio=round(dominant_ratio, 2),
+                        window=window,
+                    )
+                    break
+
+        for task in tasks:
+            if task["doc_id"] in exempt_from_penalty:
+                continue
+            count = discussion_counts.get(task["doc_id"], 0)
+            if count >= 2:
+                penalty = -1.5 * count
+                task["title_score"] = task.get("title_score", 0) + penalty
+                logger.info(
+                    "freshness_penalty_applied",
+                    doc_id=task["doc_id"],
+                    title=self._doc_titles.get(task["doc_id"], ""),
+                    penalty=penalty,
+                    discussion_count=count,
+                )
+
+        all_task_ids = {t["doc_id"] for t in tasks}
+        undiscussed = all_task_ids - discussed_doc_ids
+
         if most_recent_consecutive >= 3:
-            all_task_ids = {t["doc_id"] for t in tasks}
-            undiscussed = all_task_ids - discussed_doc_ids
             if undiscussed:
                 for task in tasks:
                     if task["doc_id"] in undiscussed:
                         task["title_score"] = task.get("title_score", 0) + 1.0
         elif most_recent:
+            if not (dominant and dominant != most_recent and dominant_ratio >= 0.5):
+                for task in tasks:
+                    if task["doc_id"] == most_recent:
+                        task["title_score"] = task.get("title_score", 0) + 2.0
+                        logger.info(
+                            "continuity_boost_in_freshness",
+                            doc_id=most_recent,
+                            title=self._doc_titles.get(most_recent, ""),
+                            boost=2.0,
+                            consecutive=most_recent_consecutive,
+                        )
+                        break
+
+        if len(undiscussed) > 1:
+            max_undiscussed = max(
+                (t.get("title_score", 0) for t in tasks
+                 if t["doc_id"] in undiscussed),
+                default=0,
+            )
             for task in tasks:
-                if task["doc_id"] == most_recent:
-                    task["title_score"] = task.get("title_score", 0) + 2.0
+                if (
+                    task["doc_id"] in undiscussed
+                    and task.get("title_score", 0) < max_undiscussed
+                ):
+                    task["title_score"] = max_undiscussed
                     logger.info(
-                        "continuity_boost_in_freshness",
-                        doc_id=most_recent,
-                        title=self._doc_titles.get(most_recent, ""),
-                        boost=2.0,
-                        consecutive=most_recent_consecutive,
+                        "undiscussed_score_equalized",
+                        doc_id=task["doc_id"],
+                        title=self._doc_titles.get(task["doc_id"], ""),
+                        new_score=max_undiscussed,
                     )
+
+        if len(undiscussed) == 1 and most_recent_consecutive >= 2:
+            top_score = max(
+                (t.get("title_score", 0) for t in tasks), default=0,
+            )
+            for task in tasks:
+                if task["doc_id"] in undiscussed:
+                    if task.get("title_score", 0) < top_score:
+                        task["title_score"] = top_score
+                        logger.info(
+                            "single_undiscussed_transition_boost",
+                            doc_id=task["doc_id"],
+                            title=self._doc_titles.get(task["doc_id"], ""),
+                            new_score=top_score,
+                        )
                     break
 
     @staticmethod
@@ -758,7 +843,8 @@ class CrossDocNavigator:
         r'|\bwhat\s+is\s+the\s+(?:title|date|heading)\b'
         r'|\bhow\s+many\s+pages\b'
         r'|\b(?:the|this)\s+\S+\s+section\b'
-        r'|\bunder\s+(?:the|which)\b',
+        r'|\bunder\s+(?:the|which)\b'
+        r"|\b(?:the|this)\s+(?:recipient|sender|addressee|signatory|author)(?:['\u2019]s)?\s",
         re.IGNORECASE,
     )
 
@@ -1035,23 +1121,25 @@ Answer:"""
         lower = answer.lower()
         return any(pat in lower for pat in cls._NEGATIVE_ANSWER_PATTERNS)
 
-    @staticmethod
     def _format_results_with_priority(
+        self,
         results: list[DocumentResult],
         title_scores: dict[str, float] | None = None,
         question: str = "",
     ) -> str:
         """Format per-document results with relevance labels and confidence.
 
-        When title scores are tied, a lightweight answer-relevance heuristic
-        (keyword overlap between the question and each answer) is used to
-        break the tie so the synthesis LLM sees the most relevant answer
-        first and clearly labelled.
+        When title scores are tied (or nearly tied for generic-reference
+        questions), a lightweight answer-relevance heuristic (keyword
+        overlap between the question and each answer) is used to break
+        the tie so the synthesis LLM sees the most relevant answer first
+        and clearly labelled.
 
-        If multiple substantive results share the same title score (tie),
-        they are labelled "TIED CANDIDATE" so the synthesis LLM must decide
-        which answer best addresses the question on semantic merit rather
-        than being biased by a misleading "PRIMARY SOURCE" label.
+        If multiple substantive results share the same (or near) title
+        score, they are labelled "TIED CANDIDATE" so the synthesis LLM
+        must decide which answer best addresses the question on semantic
+        merit rather than being biased by a misleading "PRIMARY SOURCE"
+        label.
         """
         if not results:
             return ""
@@ -1077,17 +1165,23 @@ Answer:"""
         scored = sorted(results, key=_sort_key, reverse=True)
 
         top_ts = title_scores.get(scored[0].doc_id, 0) if title_scores and scored else 0
+
+        tie_threshold = 1.0 if self._GENERIC_REF_RE.search(question) else 0.0
+
         tied_at_top = sum(
             1 for r in scored
-            if title_scores and title_scores.get(r.doc_id, 0) == top_ts and top_ts > 0
+            if title_scores
+            and abs(title_scores.get(r.doc_id, 0) - top_ts) <= tie_threshold
+            and title_scores.get(r.doc_id, 0) > 0
         ) if title_scores else 0
 
         parts: list[str] = []
         for r in scored:
             ts = title_scores.get(r.doc_id, 0) if title_scores else 0
-            if tied_at_top > 1 and ts == top_ts and top_ts > 0:
+            near_top = abs(ts - top_ts) <= tie_threshold
+            if tied_at_top > 1 and near_top and ts > 0:
                 label = "TIED CANDIDATE — evaluate answer quality"
-            elif ts == top_ts and top_ts > 0 and tied_at_top <= 1:
+            elif near_top and top_ts > 0 and tied_at_top <= 1:
                 label = "PRIMARY SOURCE (highest relevance)"
             elif title_scores and ts > 0:
                 label = "SUPPORTING SOURCE"

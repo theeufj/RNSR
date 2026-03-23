@@ -46,3 +46,13 @@ $$\text{Total} = \underbrace{O(n)}_{\text{ingestion}} + \underbrace{O(q \times s
 - Ingestion dominates for small `q`.
 - Querying dominates as `q` grows.
 - The practical bottleneck is LLM API latency (60–100s per question), not the O(s) tree search which completes near-instantly.
+
+## Optimisations (v0.2)
+
+The following optimisations reduce per-query complexity and LLM call count:
+
+- **Embedding-based section retrieval (FAISS ANN)**: Section headers/summaries are embedded at ingestion time using `all-MiniLM-L6-v2` and stored in a FAISS flat inner-product index. At query time, the tree search first retrieves top-k candidates via ANN in O(log s), then runs regex only on that candidate set — reducing full-content scans from O(s) to O(k) where k ≈ 25.
+- **Search result caching**: `_search_tree` results are cached per `(pattern, from_node, max_depth)` for the duration of a navigation session. Sub-questions sharing keywords get O(1) cache hits instead of repeated O(s) BFS scans.
+- **Adaptive retry depth**: Instead of a fixed 6 attempts, the retry loop adapts based on first-attempt confidence. High-confidence answers (≥ 0.7) cap remaining retries at 1, saving 2–4 unnecessary LLM rounds.
+- **High-confidence critic bypass**: When standard verification confidence is ≥ 0.95 and the answer is substantive, the expensive strict critic LLM call is skipped entirely — saving 1 LLM call per confident answer.
+- **Lazy KG extraction**: `build_workspace_kg` accepts a `max_level` parameter to only extract entities from top-level sections upfront. Deep sections can be extracted on-demand, reducing ingestion LLM calls by ~70% for deep document trees.

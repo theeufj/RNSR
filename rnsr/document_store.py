@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
 import shutil
 import threading
@@ -135,18 +136,57 @@ def _extract_document_metadata(
 def _get_source_page_count(source_path: Path) -> int | None:
     """Return the true page count from the source file.
 
-    Only reliable for PDF files (via PyMuPDF). DOCX ``docProps/app.xml``
-    is not used because Word only updates it on save, making it
-    frequently stale for programmatically generated documents.
+    PDF files are counted directly via PyMuPDF.  DOCX files are
+    converted to PDF via LibreOffice (``soffice``) in a temp directory
+    so the rendered page count is accurate.
     """
-    if source_path.suffix.lower() != ".pdf":
+    suffix = source_path.suffix.lower()
+    if suffix == ".pdf":
+        try:
+            import fitz
+            doc = fitz.open(source_path)
+            count = len(doc)
+            doc.close()
+            return count
+        except Exception:
+            return None
+    if suffix in (".docx", ".doc"):
+        return _docx_page_count_via_libreoffice(source_path)
+    return None
+
+
+def _docx_page_count_via_libreoffice(source_path: Path) -> int | None:
+    """Convert a DOCX to PDF with LibreOffice and count pages."""
+    import shutil
+    import subprocess
+    import tempfile
+
+    soffice = shutil.which("soffice") or shutil.which("libreoffice")
+    if not soffice:
         return None
     try:
-        import fitz
-        doc = fitz.open(source_path)
-        count = len(doc)
-        doc.close()
-        return count
+        with tempfile.TemporaryDirectory() as tmpdir:
+            subprocess.run(
+                [
+                    soffice,
+                    "--headless",
+                    "--convert-to", "pdf",
+                    "--outdir", tmpdir,
+                    str(source_path),
+                ],
+                capture_output=True,
+                timeout=60,
+                check=True,
+            )
+            pdf_name = source_path.stem + ".pdf"
+            pdf_path = Path(tmpdir) / pdf_name
+            if not pdf_path.exists():
+                return None
+            import fitz
+            doc = fitz.open(str(pdf_path))
+            count = len(doc)
+            doc.close()
+            return count
     except Exception:
         return None
 
@@ -207,10 +247,18 @@ class DocumentStore:
         answer = store.query("contract", "What are the terms?")
     """
     
-    def __init__(self, store_path: str | Path, root_path: str | Path | None = None):
+    def __init__(
+        self,
+        store_path: str | Path,
+        root_path: str | Path | None = None,
+        *,
+        llm_provider: str | None = None,
+        llm_model: str | None = None,
+        api_key: str | None = None,
+    ):
         """
         Initialize or open a document store.
-        
+
         Args:
             store_path: Directory for storing document indexes.
             root_path: Original root directory of the document collection.
@@ -218,11 +266,23 @@ class DocumentStore:
                 used to build a collection skeleton for hierarchical
                 navigation.  When ``None``, documents are placed flat
                 under the root (scoped / matter mode).
+            llm_provider: LLM provider for cross-document queries
+                (``"openai"``, ``"anthropic"``, or ``"gemini"``).
+            llm_model: LLM model name override.
+            api_key: API key for the LLM provider.  When supplied, the
+                appropriate environment variable is set so downstream
+                LLM calls can pick it up.
         """
         self.store_path = Path(store_path).resolve()
         self.store_path.mkdir(parents=True, exist_ok=True)
         self.root_path = Path(root_path).resolve() if root_path else None
-        
+
+        self._llm_provider = llm_provider
+        self._llm_model = llm_model
+
+        if api_key:
+            self._inject_api_key(api_key, llm_provider)
+
         # Unified SQLite store (WAL mode, single file)
         self._db = StoreDB(self.store_path)
 
@@ -230,19 +290,23 @@ class DocumentStore:
         self._db.migrate_from_legacy()
 
         self._catalog: dict[str, DocumentInfo] = {}
-        
+
         # Lock for thread-safe catalog and skeleton mutations
         self._lock = threading.Lock()
-        
+
         # Collection skeleton (lazy loaded)
         self._collection_skeleton: dict[str, SkeletonNode] | None = None
 
         # Cache loaded document indexes to avoid re-opening SQLite per query
         self._doc_cache: dict[str, tuple] = {}
-        
+
+        # Instance-level LLM cache
+        self._llm: Any | None = None
+        self._llm_fn: Callable[[str], str] | None = None
+
         # Load catalog from unified DB
         self._load_catalog()
-        
+
         logger.info(
             "document_store_initialized",
             path=str(self.store_path),
@@ -259,6 +323,45 @@ class DocumentStore:
 
     def _save_catalog(self) -> None:
         """No-op: catalog is persisted by StoreDB.save_document / remove_document."""
+
+    # ------------------------------------------------------------------
+    # LLM helpers
+    # ------------------------------------------------------------------
+
+    _PROVIDER_ENV_VARS = {
+        "gemini": "GOOGLE_API_KEY",
+        "openai": "OPENAI_API_KEY",
+        "anthropic": "ANTHROPIC_API_KEY",
+    }
+
+    @staticmethod
+    def _inject_api_key(api_key: str, provider: str | None) -> None:
+        if provider:
+            env_var = DocumentStore._PROVIDER_ENV_VARS.get(provider.lower())
+            if env_var:
+                os.environ[env_var] = api_key
+            else:
+                raise ValueError(
+                    f"Unknown provider '{provider}'. "
+                    f"Must be one of: {', '.join(DocumentStore._PROVIDER_ENV_VARS)}"
+                )
+        else:
+            for env_var in DocumentStore._PROVIDER_ENV_VARS.values():
+                os.environ.setdefault(env_var, api_key)
+
+    def _get_llm(self) -> Any:
+        if self._llm is None:
+            from rnsr.llm import get_llm, LLMProvider
+
+            provider = LLMProvider(self._llm_provider) if self._llm_provider else LLMProvider.AUTO
+            self._llm = get_llm(provider=provider, model=self._llm_model)
+        return self._llm
+
+    def _get_llm_fn(self) -> Callable[[str], str]:
+        if self._llm_fn is None:
+            llm = self._get_llm()
+            self._llm_fn = lambda p: str(llm.complete(p))
+        return self._llm_fn
 
     # ------------------------------------------------------------------
     # Collection skeleton helpers
@@ -435,6 +538,14 @@ class DocumentStore:
             self._catalog[doc_id] = info
             self._update_collection_skeleton_add(doc_id, info)
         
+        # Build section embedding index for O(log s) retrieval
+        try:
+            from rnsr.indexing.section_embeddings import SectionEmbeddingIndex
+            emb_idx = SectionEmbeddingIndex(self.store_path)
+            emb_idx.build(skeleton, kv_store, doc_id, replace=True)
+        except Exception as e:
+            logger.warning("section_embeddings_build_failed", error=str(e))
+
         logger.info(
             "document_added",
             doc_id=doc_id,
@@ -935,6 +1046,7 @@ class DocumentStore:
         doc_ids: list[str] | None = None,
         max_workers: int = 4,
         batch_size: int = 8,
+        max_level: int | None = None,
     ) -> "KnowledgeGraph":
         """
         Build (or extend) the workspace KG from indexed documents.
@@ -950,6 +1062,9 @@ class DocumentStore:
             doc_ids: Specific document IDs to process (default: all).
             max_workers: Number of parallel document extraction threads.
             batch_size: Number of small sections to combine into one LLM call.
+            max_level: If set, only extract KG from sections at tree depth
+                <= max_level (0 = root only, 1 = root + first children).
+                Deeper sections can be extracted on-demand later.
 
         Returns:
             The populated workspace ``KnowledgeGraph``.
@@ -978,6 +1093,10 @@ class DocumentStore:
             entity_count = 0
 
             for node_id, node in skeleton.items():
+                # Lazy KG: skip deep sections when max_level is set
+                if max_level is not None and node.level > max_level:
+                    continue
+
                 content = kv_store.get(node_id) or ""
                 if len(content.strip()) < 50:
                     continue
@@ -1147,7 +1266,9 @@ class DocumentStore:
         for doc_id, info in self._catalog.items():
             profile = info.metadata.get("profile")
             if profile:
-                profiles[doc_id] = profile
+                profile_with_title = dict(profile)
+                profile_with_title["title"] = info.title
+                profiles[doc_id] = profile_with_title
         return profiles
 
     def link_entities_across_documents(
@@ -1208,6 +1329,7 @@ class DocumentStore:
         question: str,
         doc_ids: list[str] | None = None,
         use_short_answer: bool = False,
+        conversation_context: list[dict[str, str]] | None = None,
     ) -> dict[str, Any]:
         """
         Ask a question that spans multiple documents.
@@ -1226,6 +1348,8 @@ class DocumentStore:
             doc_ids: Limit to specific documents (default: all).
             use_short_answer: When True, instruct navigators to produce
                 minimal answers (key phrases only).
+            conversation_context: Previous Q&A pairs for resolving
+                ambiguous references across sequential questions.
 
         Returns:
             Result dictionary with ``answer``, ``documents_used``, etc.
@@ -1241,7 +1365,11 @@ class DocumentStore:
 
         if use_hierarchical:
             return self._query_hierarchical(question, use_short_answer=use_short_answer)
-        return self._query_cross_doc_eager(question, target_ids, use_short_answer=use_short_answer)
+        return self._query_cross_doc_eager(
+            question, target_ids,
+            use_short_answer=use_short_answer,
+            conversation_context=conversation_context,
+        )
 
     def _has_collection_skeleton(self) -> bool:
         """Check whether a collection skeleton exists (in memory or on disk)."""
@@ -1255,7 +1383,6 @@ class DocumentStore:
     ) -> dict[str, Any]:
         """Navigate the collection skeleton with a single RLMNavigator."""
         from rnsr.agent.rlm_navigator import RLMNavigator, RLMConfig
-        from rnsr.client import _get_cached_llm_fn
 
         if self._collection_skeleton is None:
             self._load_collection_skeleton()
@@ -1289,7 +1416,7 @@ class DocumentStore:
             config=config,
             knowledge_graph=kg,
         )
-        navigator.set_llm_function(_get_cached_llm_fn())
+        navigator.set_llm_function(self._get_llm_fn())
 
         nav_metadata = {"use_short_answer": True} if use_short_answer else None
         nav_result = navigator.navigate(question, metadata=nav_metadata)
@@ -1311,6 +1438,7 @@ class DocumentStore:
         target_ids: list[str],
         *,
         use_short_answer: bool = False,
+        conversation_context: list[dict[str, str]] | None = None,
     ) -> dict[str, Any]:
         """Original eager-loading cross-document query (for small collections)."""
         from rnsr.agent.cross_doc_navigator import (
@@ -1318,7 +1446,6 @@ class DocumentStore:
         )
         from rnsr.agent.rlm_navigator import RLMNavigator, RLMConfig
         from rnsr.agent.kg_resolver import KGResolver
-        from rnsr.client import _get_cached_llm_fn
 
         kg = self.get_workspace_kg()
 
@@ -1362,6 +1489,16 @@ class DocumentStore:
             # Attach document profile for identity anchoring
             doc_profile = profiles.get(doc_id) if profiles else None
 
+            # Load embedding index for O(log s) section retrieval
+            emb_index = None
+            try:
+                from rnsr.indexing.section_embeddings import SectionEmbeddingIndex
+                emb_index = SectionEmbeddingIndex(self.store_path)
+                if not emb_index.is_ready:
+                    emb_index = None
+            except Exception:
+                pass
+
             navigator = RLMNavigator(
                 skeleton=skeleton,
                 kv_store=kv_store,
@@ -1370,8 +1507,9 @@ class DocumentStore:
                 tables=tables,
                 doc_profile=doc_profile,
                 doc_title=doc_title,
+                embedding_index=emb_index,
             )
-            navigator.set_llm_function(_get_cached_llm_fn())
+            navigator.set_llm_function(self._get_llm_fn())
 
             cross_nav.register_document(
                 doc_id, skeleton, kv_store,
@@ -1389,12 +1527,22 @@ class DocumentStore:
                 "confidence": 0.0,
             }
 
-        result = cross_nav.query(question)
+        result = cross_nav.query(question, conversation_context=conversation_context)
+        doc_results = result.document_results if hasattr(result, "document_results") else []
+        docs_used_titles = []
+        primary_doc = ""
+        best_conf = -1.0
+        for r in doc_results:
+            title = r.doc_title if hasattr(r, "doc_title") and r.doc_title else r.doc_id
+            docs_used_titles.append(title)
+            conf = r.confidence if hasattr(r, "confidence") else 0.0
+            if conf > best_conf and r.answer and not cross_nav._is_negative_answer(r.answer):
+                best_conf = conf
+                primary_doc = title
         return {
             "answer": result.answer if hasattr(result, "answer") else str(result),
-            "documents_used": [
-                r.doc_id for r in (result.document_results if hasattr(result, "document_results") else [])
-            ],
+            "documents_used": docs_used_titles,
+            "primary_document": primary_doc,
             "entities_involved": [
                 e.canonical_name for e in (result.entities_involved if hasattr(result, "entities_involved") else [])
             ],

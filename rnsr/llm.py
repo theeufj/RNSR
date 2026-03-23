@@ -44,14 +44,15 @@ from tenacity import (
 
 T = TypeVar("T")
 
-# Load .env file if it exists
+# Load .env file if it exists — check CWD first (PyPI installs), then
+# the project root relative to the package (dev checkouts).
 try:
     from dotenv import load_dotenv
-    
-    # Look for .env in the project root (parent of rnsr package)
-    env_path = Path(__file__).parent.parent / ".env"
-    if env_path.exists():
-        load_dotenv(env_path)
+
+    for _env_candidate in [Path.cwd() / ".env", Path(__file__).parent.parent / ".env"]:
+        if _env_candidate.exists():
+            load_dotenv(_env_candidate)
+            break
 except ImportError:
     pass  # dotenv not installed, rely on system environment
 

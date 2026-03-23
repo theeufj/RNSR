@@ -32,6 +32,10 @@ llama-index-embeddings-gemini>=0.1.0
 # UI
 gradio>=6.0.0              # Interactive demo interface (Gradio 6.x required)
 
+# Document Formats
+python-docx>=1.1.0       # DOCX file parsing
+openpyxl>=3.1.0          # XLSX file parsing
+
 # Utilities
 python-dotenv>=1.0.0
 pydantic>=2.0.0

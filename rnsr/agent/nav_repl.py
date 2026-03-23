@@ -408,6 +408,12 @@ class NavigationREPL:
     # Allowed nodes constraint (set by ToT pre-filtering)
     # If set, navigation and search are restricted to these nodes only
     _allowed_nodes: set[str] | None = None
+
+    # Embedding index for O(log s) ANN search (set via set_embedding_index)
+    _embedding_index: Any = None
+
+    # Session-scoped search cache: (pattern, from_node) -> results
+    _search_cache: dict = field(default_factory=dict)
     
     def __post_init__(self):
         """Initialize the execution namespace."""
@@ -455,6 +461,39 @@ class NavigationREPL:
             return True  # No constraint
         return node_id in self._allowed_nodes
     
+    def set_embedding_index(self, index) -> None:
+        """Attach an embedding index for fast ANN search."""
+        self._embedding_index = index
+
+    def _embedding_search(self, query: str, top_k: int = 15, doc_id: str | None = None) -> list[dict[str, Any]]:
+        """O(log s) embedding-based section search via FAISS ANN.
+
+        Returns results in the same format as _search_tree so callers
+        can use either interchangeably.
+        """
+        if self._embedding_index is None or not self._embedding_index.is_ready:
+            return []
+
+        raw = self._embedding_index.search(query, top_k=top_k, doc_id=doc_id)
+        results = []
+        for r in raw:
+            node_id = r["node_id"]
+            if not self._is_node_allowed(node_id):
+                continue
+            node = self.skeleton.get(node_id)
+            if node is None:
+                continue
+            results.append({
+                "node_id": node_id,
+                "header": node.header,
+                "level": node.level,
+                "depth_from_current": node.level,
+                "matches": 1,
+                "score": round(r["score"] * 50, 2),
+                "path": self._get_path_to_node(node_id),
+            })
+        return results
+
     def _build_namespace(self) -> dict[str, Any]:
         """Build Python namespace with navigation functions."""
         return {
@@ -719,16 +758,28 @@ class NavigationREPL:
         
         return results
     
+    def clear_search_cache(self) -> None:
+        """Clear the session-scoped search cache (call between queries)."""
+        self._search_cache.clear()
+
     def _search_tree(self, pattern: str, max_depth: int = 99, **kwargs: Any) -> list[dict[str, Any]]:
         """
         Search the entire subtree from current position.
 
-        Breadth-first search that exhausts the full tree.
-        Returns all matching nodes sorted by relevance.
+        Uses a two-stage strategy:
+        1. Fast O(log s) embedding ANN search (if index available)
+        2. O(k) regex refinement over ANN candidates + BFS fallback
+
+        Results are cached per (pattern, from_node) for the session so
+        repeated searches with the same pattern are O(1).
         max_depth limits how deep the BFS descends from the current node.
         """
+        cache_key = (pattern, self.current_node_id, max_depth)
+        if cache_key in self._search_cache:
+            return self._search_cache[cache_key]
+
         import time as _time
-        _deadline = _time.monotonic() + 60  # 60s safety limit
+        _deadline = _time.monotonic() + 60
 
         logger.info(
             "search_tree_start",
@@ -741,11 +792,24 @@ class NavigationREPL:
         except re.error as e:
             return [{"error": f"Invalid regex: {e}"}]
 
-        results = []
-        visited = set()
+        # ------------------------------------------------------------------
+        # Stage 1: Try embedding ANN search for candidate retrieval
+        # ------------------------------------------------------------------
+        emb_candidates: set[str] = set()
+        if self._embedding_index is not None and self._embedding_index.is_ready:
+            plain_query = re.sub(r"\(\?i\)", "", pattern)
+            plain_query = re.sub(r"[|()\\]", " ", plain_query).strip()
+            if plain_query:
+                emb_results = self._embedding_search(plain_query, top_k=25)
+                emb_candidates = {r["node_id"] for r in emb_results}
 
-        # BFS queue: (node_id, depth)
+        # ------------------------------------------------------------------
+        # Stage 2: BFS with optional candidate-set pruning
+        # ------------------------------------------------------------------
+        results = []
+        visited: set[str] = set()
         queue = [(self.current_node_id, 0)]
+        use_pruning = len(emb_candidates) >= 5
 
         while queue:
             if _time.monotonic() > _deadline:
@@ -770,15 +834,22 @@ class NavigationREPL:
             if not node:
                 continue
 
-            # Skip nodes not in allowed set (ToT constraint)
-            # But still traverse children in case they are allowed
             if not self._is_node_allowed(node_id):
                 for child_id in node.child_ids:
                     if child_id not in visited:
                         queue.append((child_id, depth + 1))
                 continue
 
-            # Search this node
+            # When we have embedding candidates, skip full-content regex
+            # on nodes NOT in the candidate set (O(k) instead of O(s)).
+            if use_pruning and node_id not in emb_candidates:
+                header_matches = len(regex.findall(node.header))
+                if header_matches == 0:
+                    for child_id in node.child_ids:
+                        if child_id not in visited:
+                            queue.append((child_id, depth + 1))
+                    continue
+
             content = self.kv_store.get(node_id) or ""
             header_matches = len(regex.findall(node.header))
             content_matches = len(regex.findall(content))
@@ -803,22 +874,21 @@ class NavigationREPL:
                     "path": self._get_path_to_node(node_id),
                 })
 
-            # Add children to queue
             for child_id in node.child_ids:
                 if child_id not in visited:
                     queue.append((child_id, depth + 1))
-        
-        # Sort by specificity score (most specific first)
+
         results.sort(key=lambda x: x["score"], reverse=True)
-        
-        # Log search results
+
         logger.info(
             "search_tree_complete",
             pattern=pattern,
             total_matches=len(results),
+            emb_pruning=use_pruning,
             top_results=[(r["header"][:40], r["score"], r["node_id"]) for r in results[:5]],
         )
-        
+
+        self._search_cache[cache_key] = results
         return results
     
     def _get_path_to_node(self, target_id: str) -> str:

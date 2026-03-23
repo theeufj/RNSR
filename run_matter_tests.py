@@ -172,7 +172,7 @@ def ingest_case(
     result = store.batch_ingest(
         sources=files,
         build_kg=False,
-        skip_existing=True,
+        skip_existing=not force,
     )
     for err in result.errors:
         errors.append(f"{err['file']}: {err['error']}")
@@ -256,12 +256,16 @@ def evaluate_questions(
 ) -> list[QuestionResult]:
     """Run each question against the store and judge the answer."""
     results: list[QuestionResult] = []
+    conversation_context: list[dict[str, str]] = []
 
     for i, (question, expected) in enumerate(qa_pairs):
         print(f"    Q{i + 1}/{len(qa_pairs)}: {question[:80]}...")
         t0 = time.monotonic()
         try:
-            resp = store.query_cross_document(question)
+            resp = store.query_cross_document(
+                question,
+                conversation_context=conversation_context if conversation_context else None,
+            )
             answer = resp.get("answer", "") if isinstance(resp, dict) else str(resp)
             nodes_visited = resp.get("total_nodes_visited", 0) if isinstance(resp, dict) else 0
             iterations = resp.get("total_iterations", 0) if isinstance(resp, dict) else 0
@@ -297,6 +301,17 @@ def evaluate_questions(
 
         verdict = "CORRECT" if correct else ("ERROR" if correct is None else "WRONG")
         print(f"      {verdict} ({elapsed:.1f}s, {nodes_visited} nodes, {iterations} iters, conf={confidence:.2f}) — {reasoning[:60]}")
+
+        source_doc = ""
+        if isinstance(resp, dict):
+            docs_used = resp.get("documents_used", [])
+            primary_doc = resp.get("primary_document", "")
+            source_doc = primary_doc or (docs_used[0] if docs_used else "")
+        conversation_context.append({
+            "question": question,
+            "answer": answer[:300],
+            "source_document": source_doc,
+        })
 
     return results
 
@@ -434,6 +449,11 @@ def main() -> None:
         default=None,
         help="Path for aggregate JSON (default: <test-dir>/matter_test_results.json)",
     )
+    parser.add_argument(
+        "--resume",
+        action="store_true",
+        help="Resume from existing results file, skipping already-evaluated cases",
+    )
     args = parser.parse_args()
 
     if not args.test_dir.is_dir():
@@ -459,17 +479,37 @@ def main() -> None:
         else:
             case_dirs = case_dirs[: args.limit]
 
+    case_results: list[CaseResult] = []
+    completed_dirs: set[str] = set()
+
+    if args.resume and output_path.exists():
+        with open(output_path) as f:
+            prev = json.load(f)
+        for prev_case in prev.get("cases", []):
+            completed_dirs.add(prev_case["directory"])
+            case_results.append(CaseResult(**{
+                k: v for k, v in prev_case.items()
+                if k != "question_results" and k != "ingestion_errors"
+            },
+                question_results=[QuestionResult(**qr) for qr in prev_case.get("question_results", [])],
+                ingestion_errors=prev_case.get("ingestion_errors", []),
+            ))
+        print(f"  Resuming — {len(completed_dirs)} cases already evaluated")
+
     print(f"\n{'=' * 100}")
     print(f"  Matter AI Tests — {len(case_dirs)} case directories")
     print(f"{'=' * 100}\n")
 
-    case_results: list[CaseResult] = []
     wall_start = time.monotonic()
 
     for idx, case_dir in enumerate(case_dirs):
         rel = case_dir.relative_to(args.test_dir)
         print(f"\n[{idx + 1}/{len(case_dirs)}] {rel}")
         print(f"  {'-' * 60}")
+
+        if str(rel) in completed_dirs:
+            print("  SKIP — already evaluated (--resume)")
+            continue
 
         # 1. Find questions.csv
         qcsv = _find_questions_csv(case_dir)

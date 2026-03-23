@@ -842,9 +842,36 @@ def _try_tier_3(
 ) -> IngestionResult:
     """
     TIER 3: Try OCR ingestion (last resort).
+
+    When the PDF already has extractable text (PyMuPDF can read it), we
+    use that text directly rather than relying on VLM OCR which may
+    produce incomplete results.  VLM OCR is reserved for truly
+    scanned/image-only pages.
     """
     logger.debug("trying_tier_3", path=str(pdf_path))
-    
+
+    if has_extractable_text(pdf_path):
+        try:
+            from rnsr.ingestion.ocr_fallback import hybrid_extract_pages
+
+            page_texts = hybrid_extract_pages(pdf_path)
+            full_text = "\n\n".join(page_texts)
+            if full_text.strip():
+                logger.info(
+                    "tier_3_pymupdf_text_fallback",
+                    path=str(pdf_path),
+                    chars=len(full_text),
+                )
+                return _text_to_ingestion_result(
+                    full_text, pdf_path, stats, warnings,
+                )
+        except Exception as e:
+            logger.warning(
+                "tier_3_pymupdf_fallback_failed",
+                path=str(pdf_path),
+                error=str(e),
+            )
+
     try:
         tree = try_ocr_ingestion(pdf_path)
         

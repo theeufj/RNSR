@@ -56,6 +56,7 @@ Usage:
 from __future__ import annotations
 
 import hashlib
+import os
 import re
 from pathlib import Path
 from typing import Any, Callable
@@ -72,53 +73,35 @@ from rnsr.models import SkeletonNode
 
 logger = structlog.get_logger(__name__)
 
-# Cached LLM instance for better performance across queries
-_cached_llm = None
-_cached_llm_fn: Callable[[str], str] | None = None
-
-
-def _get_cached_llm():
-    """Get a cached LLM instance to avoid re-initialization overhead."""
-    global _cached_llm
-    if _cached_llm is None:
-        from rnsr.llm import get_llm
-        _cached_llm = get_llm()
-    return _cached_llm
-
-
-def _get_cached_llm_fn() -> Callable[[str], str]:
-    """Get a cached LLM function for navigator use."""
-    global _cached_llm_fn
-    if _cached_llm_fn is None:
-        llm = _get_cached_llm()
-        _cached_llm_fn = lambda p: str(llm.complete(p))
-    return _cached_llm_fn
+_PROVIDER_ENV_VARS = {
+    "gemini": "GOOGLE_API_KEY",
+    "openai": "OPENAI_API_KEY",
+    "anthropic": "ANTHROPIC_API_KEY",
+}
 
 
 class RNSRClient:
     """
     High-level client for RNSR document Q&A.
-    
+
     This is the simplest way to use RNSR. It handles:
     - Document ingestion
     - Skeleton index building
     - Optional caching/persistence
     - Navigation and answer generation
-    
-    Example:
-        # Basic usage (no caching)
+
+    Example::
+
+        # Auto-detect provider from environment variables or .env file
         client = RNSRClient()
-        answer = client.ask("document.pdf", "What is the main topic?")
-        
+
+        # Explicit provider + programmatic API key (recommended for PyPI installs)
+        client = RNSRClient(api_key="your-key", llm_provider="gemini")
+
         # With caching (recommended for production)
         client = RNSRClient(cache_dir="./rnsr_cache")
+
         answer = client.ask("document.pdf", "What is the main topic?")
-        
-        # From raw text
-        answer = client.ask_text(
-            "This is my document content...",
-            "What is this about?"
-        )
     """
     
     def __init__(
@@ -126,39 +109,93 @@ class RNSRClient:
         cache_dir: str | Path | None = None,
         llm_provider: str | None = None,
         llm_model: str | None = None,
+        api_key: str | None = None,
     ):
         """
         Initialize the RNSR client.
-        
+
         Args:
             cache_dir: Optional directory for caching indexes.
                        If provided, indexes are persisted and reused.
-            llm_provider: LLM provider ("openai", "anthropic", "gemini")
-            llm_model: LLM model name
+            llm_provider: LLM provider ("openai", "anthropic", or "gemini").
+                          Auto-detected from available API keys when omitted.
+            llm_model: LLM model name override.  Uses the provider's default
+                       when omitted.
+            api_key: API key for the chosen LLM provider.  When provided
+                     the key is injected into the process environment so
+                     all downstream calls (ingestion, cross-doc queries,
+                     etc.) can pick it up automatically.  If *llm_provider*
+                     is also supplied the key is set only for that provider;
+                     otherwise it is set for all three providers.
         """
         self.cache_dir = Path(cache_dir) if cache_dir else None
         self.llm_provider = llm_provider
         self.llm_model = llm_model
-        
+
+        if api_key:
+            self._inject_api_key(api_key, llm_provider)
+
         # In-memory cache for session
         self._session_cache: dict[str, tuple[dict[str, SkeletonNode], KVStore]] = {}
-        
+
         # Knowledge graph cache (keyed by document cache_key)
         self._kg_cache: dict[str, KnowledgeGraph] = {}
-        
+
         # Cached navigator instances for reuse across queries
         self._navigator_cache: dict[str, Any] = {}
-        
+
         # Tables cache (keyed by document cache_key)
         self._tables_cache: dict[str, list] = {}
-        
+
+        # Instance-level LLM cache (lazily initialised)
+        self._llm: Any = None
+        self._llm_fn: Callable[[str], str] | None = None
+
         if self.cache_dir:
             self.cache_dir.mkdir(parents=True, exist_ok=True)
-        
+
         logger.info(
             "rnsr_client_initialized",
             cache_dir=str(self.cache_dir) if self.cache_dir else None,
+            llm_provider=llm_provider,
+            llm_model=llm_model,
         )
+
+    # ------------------------------------------------------------------
+    # Internal helpers
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _inject_api_key(api_key: str, provider: str | None) -> None:
+        """Set the API key in the process environment."""
+        if provider:
+            env_var = _PROVIDER_ENV_VARS.get(provider.lower())
+            if env_var:
+                os.environ[env_var] = api_key
+            else:
+                raise ValueError(
+                    f"Unknown provider '{provider}'. "
+                    f"Must be one of: {', '.join(_PROVIDER_ENV_VARS)}"
+                )
+        else:
+            for env_var in _PROVIDER_ENV_VARS.values():
+                os.environ.setdefault(env_var, api_key)
+
+    def _get_llm(self):
+        """Return a cached LLM instance, initialised with client settings."""
+        if self._llm is None:
+            from rnsr.llm import get_llm, LLMProvider
+
+            provider = LLMProvider(self.llm_provider) if self.llm_provider else LLMProvider.AUTO
+            self._llm = get_llm(provider=provider, model=self.llm_model)
+        return self._llm
+
+    def _get_llm_fn(self) -> Callable[[str], str]:
+        """Return a cached LLM callable for navigator use."""
+        if self._llm_fn is None:
+            llm = self._get_llm()
+            self._llm_fn = lambda p: str(llm.complete(p))
+        return self._llm_fn
     
     # =========================================================================
     # BYOD (Bring Your Own Data) API
@@ -297,7 +334,7 @@ class RNSRClient:
             config=config,
             tables=tables or [],
         )
-        navigator.set_llm_function(_get_cached_llm_fn())
+        navigator.set_llm_function(self._get_llm_fn())
 
         logger.info(
             "byod_query",
@@ -1234,8 +1271,7 @@ class RNSRClient:
                     tables=_tables,
                 )
                 
-                # Use cached LLM function for performance and consistency
-                navigator.set_llm_function(_get_cached_llm_fn())
+                navigator.set_llm_function(self._get_llm_fn())
                 
                 if nav_key:
                     self._navigator_cache[nav_key] = navigator
@@ -1299,7 +1335,11 @@ class RNSRClient:
         else:
             _store_path = Path(tempfile.mkdtemp(prefix="rnsr_xdoc_"))
 
-        store = DocumentStore(_store_path)
+        store = DocumentStore(
+            _store_path,
+            llm_provider=self.llm_provider,
+            llm_model=self.llm_model,
+        )
 
         # Add documents
         doc_ids: list[str] = []

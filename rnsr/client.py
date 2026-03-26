@@ -73,11 +73,37 @@ from rnsr.models import SkeletonNode
 
 logger = structlog.get_logger(__name__)
 
-_PROVIDER_ENV_VARS = {
-    "gemini": "GOOGLE_API_KEY",
-    "openai": "OPENAI_API_KEY",
-    "anthropic": "ANTHROPIC_API_KEY",
-}
+# Module-level LLM cache for backward compatibility (used by code that
+# imports _get_cached_llm / _get_cached_llm_fn directly, e.g.
+# document_store.py).  These use default provider/model from env vars.
+_cached_llm = None
+_cached_llm_fn: Callable[[str], str] | None = None
+
+
+def _get_cached_llm():
+    """Get a cached LLM instance to avoid re-initialization overhead.
+    
+    Uses default provider/model from environment variables.
+    For explicit provider/model/api_key control, use RNSRClient instead.
+    """
+    global _cached_llm
+    if _cached_llm is None:
+        from rnsr.llm import get_llm
+        _cached_llm = get_llm()
+    return _cached_llm
+
+
+def _get_cached_llm_fn() -> Callable[[str], str]:
+    """Get a cached LLM function for navigator use.
+    
+    Uses default provider/model from environment variables.
+    For explicit provider/model/api_key control, use RNSRClient instead.
+    """
+    global _cached_llm_fn
+    if _cached_llm_fn is None:
+        llm = _get_cached_llm()
+        _cached_llm_fn = lambda p: str(llm.complete(p))
+    return _cached_llm_fn
 
 
 class RNSRClient:
@@ -117,24 +143,20 @@ class RNSRClient:
         Args:
             cache_dir: Optional directory for caching indexes.
                        If provided, indexes are persisted and reused.
-            llm_provider: LLM provider ("openai", "anthropic", or "gemini").
-                          Auto-detected from available API keys when omitted.
-            llm_model: LLM model name override.  Uses the provider's default
-                       when omitted.
-            api_key: API key for the chosen LLM provider.  When provided
-                     the key is injected into the process environment so
-                     all downstream calls (ingestion, cross-doc queries,
-                     etc.) can pick it up automatically.  If *llm_provider*
-                     is also supplied the key is set only for that provider;
-                     otherwise it is set for all three providers.
+            llm_provider: LLM provider ("openai", "anthropic", "gemini").
+                          Auto-detected from environment if not specified.
+            llm_model: LLM model name (e.g. "gpt-5-mini", "claude-sonnet-4-5",
+                       "gemini-2.5-flash"). Uses provider default if not
+                       specified.
+            api_key: API key for the chosen provider. If not specified,
+                     falls back to the corresponding environment variable
+                     (OPENAI_API_KEY, ANTHROPIC_API_KEY, or GOOGLE_API_KEY).
         """
         self.cache_dir = Path(cache_dir) if cache_dir else None
         self.llm_provider = llm_provider
         self.llm_model = llm_model
-
-        if api_key:
-            self._inject_api_key(api_key, llm_provider)
-
+        self.api_key = api_key
+        
         # In-memory cache for session
         self._session_cache: dict[str, tuple[dict[str, SkeletonNode], KVStore]] = {}
 
@@ -143,13 +165,13 @@ class RNSRClient:
 
         # Cached navigator instances for reuse across queries
         self._navigator_cache: dict[str, Any] = {}
-
+        
+        # Instance-level LLM cache (respects provider/model/api_key settings)
+        self._llm_instance: Any = None
+        self._llm_fn: Callable[[str], str] | None = None
+        
         # Tables cache (keyed by document cache_key)
         self._tables_cache: dict[str, list] = {}
-
-        # Instance-level LLM cache (lazily initialised)
-        self._llm: Any = None
-        self._llm_fn: Callable[[str], str] | None = None
 
         if self.cache_dir:
             self.cache_dir.mkdir(parents=True, exist_ok=True)
@@ -157,41 +179,33 @@ class RNSRClient:
         logger.info(
             "rnsr_client_initialized",
             cache_dir=str(self.cache_dir) if self.cache_dir else None,
-            llm_provider=llm_provider,
-            llm_model=llm_model,
+            llm_provider=self.llm_provider,
+            llm_model=self.llm_model,
         )
 
-    # ------------------------------------------------------------------
-    # Internal helpers
-    # ------------------------------------------------------------------
-
-    @staticmethod
-    def _inject_api_key(api_key: str, provider: str | None) -> None:
-        """Set the API key in the process environment."""
-        if provider:
-            env_var = _PROVIDER_ENV_VARS.get(provider.lower())
-            if env_var:
-                os.environ[env_var] = api_key
-            else:
-                raise ValueError(
-                    f"Unknown provider '{provider}'. "
-                    f"Must be one of: {', '.join(_PROVIDER_ENV_VARS)}"
-                )
-        else:
-            for env_var in _PROVIDER_ENV_VARS.values():
-                os.environ.setdefault(env_var, api_key)
-
-    def _get_llm(self):
-        """Return a cached LLM instance, initialised with client settings."""
-        if self._llm is None:
+    def _get_llm(self) -> Any:
+        """Get a cached LLM instance respecting this client's provider/model/api_key."""
+        if self._llm_instance is None:
             from rnsr.llm import get_llm, LLMProvider
-
-            provider = LLMProvider(self.llm_provider) if self.llm_provider else LLMProvider.AUTO
-            self._llm = get_llm(provider=provider, model=self.llm_model)
-        return self._llm
+            
+            provider = LLMProvider.AUTO
+            if self.llm_provider:
+                mapping = {
+                    "openai": LLMProvider.OPENAI,
+                    "anthropic": LLMProvider.ANTHROPIC,
+                    "gemini": LLMProvider.GEMINI,
+                }
+                provider = mapping.get(self.llm_provider.lower(), LLMProvider.AUTO)
+            
+            self._llm_instance = get_llm(
+                provider=provider,
+                model=self.llm_model,
+                api_key=self.api_key,
+            )
+        return self._llm_instance
 
     def _get_llm_fn(self) -> Callable[[str], str]:
-        """Return a cached LLM callable for navigator use."""
+        """Get a cached LLM callable respecting this client's provider/model/api_key."""
         if self._llm_fn is None:
             llm = self._get_llm()
             self._llm_fn = lambda p: str(llm.complete(p))
@@ -1271,6 +1285,7 @@ class RNSRClient:
                     tables=_tables,
                 )
                 
+                # Use instance LLM function for performance and consistency
                 navigator.set_llm_function(self._get_llm_fn())
                 
                 if nav_key:

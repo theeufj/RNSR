@@ -323,6 +323,7 @@ def get_llm(
     provider: LLMProvider = LLMProvider.AUTO,
     model: str | None = None,
     enable_fallback: bool = True,
+    api_key: str | None = None,
     **kwargs: Any,
 ) -> Any:
     """
@@ -332,6 +333,9 @@ def get_llm(
         provider: LLM provider (openai, anthropic, gemini, or auto).
         model: Model name override. Uses default if not specified.
         enable_fallback: If True, enables cross-provider fallback on rate limits.
+        api_key: API key for the provider. If not specified, falls back to
+                 the corresponding environment variable (OPENAI_API_KEY,
+                 ANTHROPIC_API_KEY, or GOOGLE_API_KEY).
         **kwargs: Additional arguments passed to the LLM constructor.
         
     Returns:
@@ -340,6 +344,9 @@ def get_llm(
     Example:
         llm = get_llm(provider=LLMProvider.GEMINI)
         response = await llm.acomplete("Hello!")
+        
+        # With explicit API key
+        llm = get_llm(provider=LLMProvider.OPENAI, api_key="sk-...")
     """
     if provider == LLMProvider.AUTO:
         provider = detect_provider()
@@ -347,7 +354,7 @@ def get_llm(
     model = model or DEFAULT_MODELS[provider]["llm"]
     
     # Get primary LLM
-    primary_llm = _get_raw_llm(provider, model, **kwargs)
+    primary_llm = _get_raw_llm(provider, model, api_key=api_key, **kwargs)
     
     if not enable_fallback:
         return _maybe_wrap_cache(primary_llm, model_tag=model or "")
@@ -373,14 +380,14 @@ def get_llm(
     return _maybe_wrap_cache(llm, model_tag=model or "")
 
 
-def _get_raw_llm(provider: LLMProvider, model: str, **kwargs: Any) -> Any:
+def _get_raw_llm(provider: LLMProvider, model: str, api_key: str | None = None, **kwargs: Any) -> Any:
     """Get a raw LLM instance without fallback wrapper."""
     if provider == LLMProvider.OPENAI:
-        return _get_openai_llm(model, **kwargs)
+        return _get_openai_llm(model, api_key=api_key, **kwargs)
     elif provider == LLMProvider.ANTHROPIC:
-        return _get_anthropic_llm(model, **kwargs)
+        return _get_anthropic_llm(model, api_key=api_key, **kwargs)
     elif provider == LLMProvider.GEMINI:
-        return _get_gemini_llm(model, **kwargs)
+        return _get_gemini_llm(model, api_key=api_key, **kwargs)
     else:
         raise ValueError(f"Unknown provider: {provider}")
 
@@ -388,6 +395,7 @@ def _get_raw_llm(provider: LLMProvider, model: str, **kwargs: Any) -> Any:
 def get_embed_model(
     provider: LLMProvider = LLMProvider.AUTO,
     model: str | None = None,
+    api_key: str | None = None,
     **kwargs: Any,
 ) -> Any:
     """
@@ -396,6 +404,8 @@ def get_embed_model(
     Args:
         provider: LLM provider (openai, gemini, or auto).
         model: Model name override. Uses default if not specified.
+        api_key: API key for the provider. If not specified, falls back to
+                 the corresponding environment variable.
         **kwargs: Additional arguments passed to the embedding constructor.
         
     Returns:
@@ -426,6 +436,9 @@ def get_embed_model(
             )
     
     model = model or DEFAULT_MODELS[provider]["embed"]
+    
+    if api_key:
+        kwargs["api_key"] = api_key
     
     if provider == LLMProvider.OPENAI:
         return _get_openai_embed(model, **kwargs)
@@ -663,7 +676,7 @@ class ResilientLLMWrapper:
 # =============================================================================
 
 
-def _get_openai_llm(model: str, **kwargs: Any) -> Any:
+def _get_openai_llm(model: str, api_key: str | None = None, **kwargs: Any) -> Any:
     """Get OpenAI LLM instance with ``complete_json`` support and HTTP timeout."""
     try:
         from llama_index.llms.openai import OpenAI as _OpenAI
@@ -672,6 +685,10 @@ def _get_openai_llm(model: str, **kwargs: Any) -> Any:
             "OpenAI LLM not installed. "
             "Install with: pip install llama-index-llms-openai"
         )
+    
+    # Use explicit API key if provided, otherwise rely on env var
+    if api_key:
+        kwargs["api_key"] = api_key
     
     # Set temperature=0 for deterministic outputs unless overridden
     if "temperature" not in kwargs:
@@ -714,7 +731,7 @@ def _get_openai_llm(model: str, **kwargs: Any) -> Any:
     return _OpenAIWithJson(model=model, **kwargs)
 
 
-def _get_anthropic_llm(model: str, **kwargs: Any) -> Any:
+def _get_anthropic_llm(model: str, api_key: str | None = None, **kwargs: Any) -> Any:
     """Get Anthropic LLM instance with HTTP timeout."""
     try:
         from llama_index.llms.anthropic import Anthropic
@@ -723,6 +740,10 @@ def _get_anthropic_llm(model: str, **kwargs: Any) -> Any:
             "Anthropic LLM not installed. "
             "Install with: pip install llama-index-llms-anthropic"
         )
+    
+    # Use explicit API key if provided, otherwise rely on env var
+    if api_key:
+        kwargs["api_key"] = api_key
     
     # Set temperature=0 for deterministic outputs unless overridden
     if "temperature" not in kwargs:
@@ -751,7 +772,7 @@ def _get_anthropic_llm(model: str, **kwargs: Any) -> Any:
     return _AnthropicWithJson(model=model, **kwargs)
 
 
-def _get_gemini_llm(model: str, **kwargs: Any) -> Any:
+def _get_gemini_llm(model: str, api_key: str | None = None, **kwargs: Any) -> Any:
     """Get Google Gemini LLM instance using the new google-genai SDK."""
     logger.debug("initializing_llm", provider="gemini", model=model)
     
@@ -792,7 +813,7 @@ def _get_gemini_llm(model: str, **kwargs: Any) -> Any:
             OSError,
         )
 
-        api_key = os.getenv("GOOGLE_API_KEY")
+        api_key = api_key or os.getenv("GOOGLE_API_KEY")
         if not api_key:
             raise ValueError("GOOGLE_API_KEY environment variable not set")
         
@@ -1133,16 +1154,20 @@ def get_provider_info() -> dict[str, Any]:
     return info
 
 
-def validate_provider(provider: LLMProvider) -> bool:
+def validate_provider(provider: LLMProvider, api_key: str | None = None) -> bool:
     """
-    Check if a provider is available (has API key set).
+    Check if a provider is available (has API key set or provided).
     
     Args:
         provider: Provider to check.
+        api_key: Optional explicit API key. If provided, the provider
+                 is considered available regardless of environment variables.
         
     Returns:
         True if provider is available.
     """
+    if api_key:
+        return True
     if provider == LLMProvider.OPENAI:
         return bool(os.getenv("OPENAI_API_KEY"))
     elif provider == LLMProvider.ANTHROPIC:

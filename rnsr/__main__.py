@@ -85,38 +85,42 @@ def cmd_index(args):
 
 def cmd_query(args):
     """Query a document."""
-    from rnsr.agent import run_navigator
-    from rnsr.indexing import SQLiteKVStore, build_skeleton_index
-    from rnsr.ingestion import ingest_document
+    from rnsr import RNSRClient
     
     pdf_path = Path(args.file)
     if not pdf_path.exists():
         print(f"Error: File not found: {pdf_path}")
         sys.exit(1)
     
-    # Ingest
+    # Use RNSRClient to respect provider/model/api_key settings
+    client = RNSRClient(
+        llm_provider=args.provider,
+        llm_model=args.model,
+        api_key=args.api_key,
+    )
+    
     print(f"Ingesting: {pdf_path}")
-    result = ingest_document(pdf_path)
     
-    # Build index
-    skeleton, kv_store = build_skeleton_index(result.tree)
-    
-    # Run query
+    # Run query via the client (handles ingestion + indexing internally)
     print(f"\nQuery: {args.query}")
     print("-" * 40)
     
-    answer = run_navigator(
+    result = client.ask_advanced(
+        document=pdf_path,
         question=args.query,
-        skeleton=skeleton,
-        kv_store=kv_store,
-        max_iterations=args.max_iter,
+        use_knowledge_graph=False,  # Fast mode for CLI
     )
     
+    answer = result.get("answer", "No answer found.")
+    confidence = result.get("confidence", 0.0)
+    nodes_visited = result.get("nodes_visited", [])
+    variables_used = result.get("variables_used", [])
+    
     print(f"\nAnswer:")
-    print(answer["answer"])
-    print(f"\nConfidence: {answer['confidence']:.2f}")
-    print(f"Nodes visited: {len(answer['nodes_visited'])}")
-    print(f"Variables used: {len(answer['variables_used'])}")
+    print(answer)
+    print(f"\nConfidence: {confidence:.2f}")
+    print(f"Nodes visited: {len(nodes_visited)}")
+    print(f"Variables used: {len(variables_used)}")
     
     if args.trace:
         print(f"\nTrace:")
@@ -241,6 +245,22 @@ def main():
     query_parser.add_argument("query", help="Question to ask")
     query_parser.add_argument("--max-iter", type=int, default=20, help="Max iterations")
     query_parser.add_argument("--trace", action="store_true", help="Show trace")
+    query_parser.add_argument(
+        "--provider",
+        choices=["openai", "anthropic", "gemini"],
+        default=None,
+        help="LLM provider (default: auto-detect from API key)",
+    )
+    query_parser.add_argument(
+        "--model",
+        default=None,
+        help="LLM model name (e.g. gpt-5-mini, claude-sonnet-4-5, gemini-2.5-flash)",
+    )
+    query_parser.add_argument(
+        "--api-key",
+        default=None,
+        help="API key for the LLM provider (default: from environment variable)",
+    )
     
     # Batch-ingest command
     batch_parser = subparsers.add_parser(

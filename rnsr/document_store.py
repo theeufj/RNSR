@@ -540,8 +540,8 @@ class DocumentStore:
         
         # Build section embedding index for O(log s) retrieval
         try:
-            from rnsr.indexing.section_embeddings import get_embedding_index
-            emb_idx = get_embedding_index(self.store_path)
+            from rnsr.indexing.section_embeddings import SectionEmbeddingIndex
+            emb_idx = SectionEmbeddingIndex(self.store_path)
             emb_idx.build(skeleton, kv_store, doc_id, replace=True)
         except Exception as e:
             logger.warning("section_embeddings_build_failed", error=str(e))
@@ -1492,8 +1492,8 @@ class DocumentStore:
             # Load embedding index for O(log s) section retrieval
             emb_index = None
             try:
-                from rnsr.indexing.section_embeddings import get_embedding_index
-                emb_index = get_embedding_index(self.store_path)
+                from rnsr.indexing.section_embeddings import SectionEmbeddingIndex
+                emb_index = SectionEmbeddingIndex(self.store_path)
                 if not emb_index.is_ready:
                     emb_index = None
             except Exception:

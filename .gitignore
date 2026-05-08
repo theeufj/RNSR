@@ -77,6 +77,7 @@ rnsr/benchmarks/data/financebench/
 # RNSR cache directories
 .rnsr_cache/
 .rnsr_demo_cache/
+.rnsr_finbench_storage/
 .rnsr_multi_doc_store/
 .rnsr_test_store/
 

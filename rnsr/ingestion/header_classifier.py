@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from datetime import datetime
 from pathlib import Path
 from threading import Lock
@@ -486,6 +487,40 @@ class HeaderClassifier:
         
         return False
     
+    # Header candidates that are pure numbers, currency, or table column
+    # fragments (e.g. "2,018", "$1,234.5", "($ million)", "currency ∆%")
+    # are common false positives in financial filings, where bold table
+    # cells trip the font-size threshold. Detected here so they're
+    # rejected up-front rather than ending up as section nodes that the
+    # downstream navigator can never match against query keywords.
+    _NUMERIC_HEADER_RE = re.compile(
+        r"""
+        ^                       # full-string match
+        \(?                     # optional opening paren (negative numbers)
+        [\$€£¥]?\s*             # optional currency symbol
+        -?                      # optional sign
+        \d{1,3}(?:[,\s]\d{3})*  # integer part with optional thousands sep
+        (?:\.\d+)?              # optional fractional part
+        \s*\)?                  # optional closing paren
+        \s*[%]?                 # optional trailing percent
+        \s*$
+        """,
+        re.VERBOSE,
+    )
+    _COLUMN_LABEL_HINTS = (
+        "$ million",
+        "$ millions",
+        "in millions",
+        "in thousands",
+        "constant currency",
+        "currency ∆",
+        "currency change",
+        "% growth",
+        "% change",
+        "year ended",
+        "twelve months",
+    )
+
     def _is_caption_text(self, text_lower: str) -> bool:
         """
         Check if text looks like a caption/label rather than a section header.
@@ -506,7 +541,15 @@ class HeaderClassifier:
         # Check for patterns like "1." or "A)" which are list items, not headers
         if len(clean_text) < 5 and any(c in clean_text for c in ".):"):
             return True
-        
+
+        # Reject pure numeric / currency / percent strings (table cells)
+        if self._NUMERIC_HEADER_RE.match(clean_text):
+            return True
+
+        # Reject column-label fragments common in financial tables
+        if any(hint in clean_text for hint in self._COLUMN_LABEL_HINTS):
+            return True
+
         return False
 
     def _classify_single_span(

@@ -16,6 +16,7 @@ to find textual markers like "1. HEADING", "ARTICLE I:", "Section 1:", etc.
 
 from __future__ import annotations
 
+import os
 import re
 from pathlib import Path
 
@@ -644,47 +645,35 @@ def _build_tree_from_semantic_nodes(nodes: list, title: str) -> DocumentTree:
     )
     
     logger.info("generating_synthetic_headers", count=len(nodes))
-    
-    # Helper to generate header (wrapped for potential parallelization later)
-    # For now, we add logging so the user knows it's not frozen
-    def get_header(text: str, index: int) -> str:
-        h = _generate_synthetic_header(text, index)
-        if h: 
-            return h
-        return f"Section {index}"
 
-    # For plain text, create a two-level hierarchy.
     group_size = 5  # Segments per group
-    if len(nodes) < group_size * 1.5:  # Don't group if it results in tiny groups
-        # Create a flat tree if not enough segments for meaningful grouping
-        for i, node in enumerate(nodes, 1):
-            if i % 5 == 0:
-                logger.info("processing_node", current=i, total=len(nodes))
-                
-            text = node.text.strip()
-            synthetic_header = get_header(text, i)
+    if len(nodes) < group_size * 1.5:
+        flat_items = [(node.text.strip(), i + 1) for i, node in enumerate(nodes)]
+        flat_headers = generate_synthetic_headers_batch(flat_items)
+        for i, (node, header) in enumerate(zip(nodes, flat_headers), start=1):
             section = DocumentNode(
                 id=f"sec_{i:03d}",
                 level=1,
-                header=synthetic_header,
-                content=text,
+                header=header or f"Section {i}",
+                content=node.text.strip(),
             )
             root.children.append(section)
     else:
-        # Create parent nodes to add hierarchy
         num_groups = (len(nodes) + group_size - 1) // group_size
         logger.info("processing_groups", total_groups=num_groups)
-        
+
+        group_items: list[tuple[str, int]] = []
         for i in range(num_groups):
-            logger.info("processing_group", current=i+1, total=num_groups)
-            
+            start_index = i * group_size
+            group_nodes = nodes[start_index:start_index + group_size]
+            group_items.append((group_nodes[0].text.strip(), i + 1))
+
+        group_headers = generate_synthetic_headers_batch(group_items)
+
+        for i, parent_header in enumerate(group_headers):
             start_index = i * group_size
             end_index = start_index + group_size
             group_nodes = nodes[start_index:end_index]
-
-            # Use the header of the first node in the group for the parent
-            parent_header_text = group_nodes[0].text.strip()
-            parent_header = get_header(parent_header_text, i + 1)
 
             parent_node = DocumentNode(
                 id=f"group_{i}",
@@ -693,17 +682,14 @@ def _build_tree_from_semantic_nodes(nodes: list, title: str) -> DocumentTree:
             )
 
             for j, node in enumerate(group_nodes):
-                text = node.text.strip()
-                child_header = f"Paragraph {j + 1}"
-                
                 child_node = DocumentNode(
                     id=f"sec_{(start_index + j):03d}",
                     level=2,
-                    header=child_header,
-                    content=text,
+                    header=f"Paragraph {j + 1}",
+                    content=node.text.strip(),
                 )
                 parent_node.children.append(child_node)
-            
+
             root.children.append(parent_node)
 
     return DocumentTree(
@@ -729,50 +715,38 @@ def _simple_chunk_fallback(text: str, title: str, chunk_size: int = 1000) -> Doc
         header=title,
     )
     
-    # Split into paragraphs first
+    # First pass: split paragraphs into size-bounded chunks (no LLM calls).
     paragraphs = text.split("\n\n")
-    
-    # Group paragraphs into chunks
+    chunks: list[str] = []
     current_chunk = ""
-    chunk_num = 0
 
-    # Helper to generate header safely
-    def get_header(text: str, index: int) -> str:
-        h = _generate_synthetic_header(text, index)
-        if h: 
-            return h
-        return f"Section {index}"
-    
-    for i, para in enumerate(paragraphs):
+    for para in paragraphs:
         para = para.strip()
         if not para:
             continue
-        
+
         if len(current_chunk) + len(para) > chunk_size:
             if current_chunk:
-                chunk_num += 1
-                if chunk_num % 5 == 0:
-                    logger.info("processing_chunk", current=chunk_num)
-                    
-                section = DocumentNode(
-                    id=f"sec_{chunk_num:03d}",
-                    level=1,
-                    header=get_header(current_chunk, chunk_num),
-                    content=current_chunk,
-                )
-                root.children.append(section)
+                chunks.append(current_chunk)
             current_chunk = para
         else:
             current_chunk += "\n\n" + para if current_chunk else para
-    
-    # Add final chunk
+
     if current_chunk:
+        chunks.append(current_chunk)
+
+    # Second pass: batch-generate headers in parallel.
+    header_items = [(c, i + 1) for i, c in enumerate(chunks)]
+    headers = generate_synthetic_headers_batch(header_items)
+
+    chunk_num = 0
+    for chunk_text, header in zip(chunks, headers):
         chunk_num += 1
         section = DocumentNode(
             id=f"sec_{chunk_num:03d}",
             level=1,
-            header=get_header(current_chunk, chunk_num),
-            content=current_chunk,
+            header=header or f"Section {chunk_num}",
+            content=chunk_text,
         )
         root.children.append(section)
     
@@ -805,6 +779,53 @@ def _generate_synthetic_header(text: str, section_num: int) -> str:
     
     # Fallback: heuristic extraction
     return _generate_header_heuristic(text, section_num)
+
+
+def generate_synthetic_headers_batch(
+    items: list[tuple[str, int]],
+    *,
+    max_workers: int | None = None,
+) -> list[str]:
+    """Generate synthetic headers for many sections in parallel.
+
+    The single-section LLM call dominates ingestion runtime for large
+    PDFs (e.g. a Pfizer 10-K's 350 sections × ~5s/call = ~30 min). The
+    LLM call is I/O-bound, so a small thread pool collapses that to
+    roughly 30min / max_workers. Each item is `(text, section_num)`;
+    results are returned in input order. ``max_workers`` defaults to
+    ``RNSR_HEADER_GEN_PARALLELISM`` (env), else 8.
+    """
+    if not items:
+        return []
+
+    if max_workers is None:
+        try:
+            max_workers = int(os.getenv("RNSR_HEADER_GEN_PARALLELISM", "8"))
+        except ValueError:
+            max_workers = 8
+    max_workers = max(1, max_workers)
+
+    if max_workers == 1 or len(items) == 1:
+        return [_generate_synthetic_header(text, idx) for text, idx in items]
+
+    from concurrent.futures import ThreadPoolExecutor
+
+    results: list[str | None] = [None] * len(items)
+
+    def _worker(i: int) -> None:
+        text, idx = items[i]
+        results[i] = _generate_synthetic_header(text, idx)
+
+    with ThreadPoolExecutor(max_workers=max_workers) as pool:
+        list(pool.map(_worker, range(len(items))))
+
+    out: list[str] = []
+    for i, r in enumerate(results):
+        if r is None:
+            out.append(_generate_header_heuristic(items[i][0], items[i][1]))
+        else:
+            out.append(r)
+    return out
 
 
 def _generate_header_via_llm(text: str, section_num: int) -> str | None:

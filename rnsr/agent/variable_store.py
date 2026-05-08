@@ -146,11 +146,50 @@ class VariableStore:
                 original=original,
                 sanitized=pointer,
             )
-        
-        # Generate content hash
+
+        # Avoid silent overwrite on collision. Multiple sections can share a
+        # header (e.g. four "Broker Non-Votes" subsections under one Foot Locker
+        # 8-K), and previously they all collapsed onto the same pointer with
+        # last-write-wins, hiding earlier content from synthesis. We instead
+        # disambiguate with a numeric suffix so every section stays addressable.
+        # Re-assigning the *same* (source_node_id, content) is a no-op so callers
+        # that re-run navigation don't accumulate duplicate copies.
         content_hash = hashlib.sha256(content.encode()).hexdigest()[:16]
-        
-        # Create metadata
+        existing = self._metadata.get(pointer)
+        if existing is not None:
+            if existing.source_node_id == source_node_id and existing.content_hash == content_hash:
+                logger.debug(
+                    "variable_assign_idempotent",
+                    pointer=pointer,
+                    source=source_node_id,
+                )
+                return existing
+
+            base = pointer
+            n = 2
+            candidate = f"{base}_{n}"
+            while candidate in self._content:
+                if (
+                    self._metadata[candidate].source_node_id == source_node_id
+                    and self._metadata[candidate].content_hash == content_hash
+                ):
+                    logger.debug(
+                        "variable_assign_idempotent",
+                        pointer=candidate,
+                        source=source_node_id,
+                    )
+                    return self._metadata[candidate]
+                n += 1
+                candidate = f"{base}_{n}"
+            logger.info(
+                "pointer_collision_disambiguated",
+                requested=base,
+                assigned=candidate,
+                existing_source=existing.source_node_id,
+                new_source=source_node_id,
+            )
+            pointer = candidate
+
         meta = StoredVariable(
             pointer=pointer,
             source_node_id=source_node_id,
@@ -158,18 +197,17 @@ class VariableStore:
             char_count=len(content),
             created_at=datetime.now(timezone.utc).isoformat(),
         )
-        
-        # Store content and metadata
+
         self._content[pointer] = content
         self._metadata[pointer] = meta
-        
+
         logger.info(
             "variable_assigned",
             pointer=pointer,
             source=source_node_id,
             chars=len(content),
         )
-        
+
         return meta
     
     def resolve(self, pointer: str) -> str | None:

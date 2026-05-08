@@ -28,6 +28,7 @@ from __future__ import annotations
 import hashlib
 import json as _json
 import os
+import threading
 import time
 from enum import Enum
 from pathlib import Path
@@ -319,6 +320,40 @@ def _maybe_wrap_cache(llm: Any, model_tag: str = "") -> Any:
     return llm
 
 
+# Process-wide cache of fully-built LLM instances, keyed by all the inputs
+# that affect the resulting object. Without this, ingestion of a 200-section
+# 10-Q would rebuild the Gemini+OpenAI+Anthropic stack 200+ times (one per
+# header-generation call), which dominated total runtime in the FinanceBench
+# baseline. Cleared with ``clear_llm_cache()``.
+_LLM_INSTANCE_CACHE: dict[tuple, Any] = {}
+_LLM_CACHE_LOCK = threading.Lock()
+
+
+def clear_llm_cache() -> int:
+    """Drop all cached LLM instances. Returns the number of entries cleared."""
+    with _LLM_CACHE_LOCK:
+        n = len(_LLM_INSTANCE_CACHE)
+        _LLM_INSTANCE_CACHE.clear()
+    logger.info("llm_instance_cache_cleared", entries_cleared=n)
+    return n
+
+
+def _llm_cache_key(
+    provider: LLMProvider,
+    model: str | None,
+    enable_fallback: bool,
+    api_key: str | None,
+    kwargs: dict,
+) -> tuple | None:
+    """Build a hashable cache key, or ``None`` if the inputs aren't hashable."""
+    try:
+        kwargs_key = tuple(sorted(kwargs.items()))
+    except TypeError:
+        # Non-hashable kwarg value (e.g. a list); skip caching for safety.
+        return None
+    return (provider, model, enable_fallback, api_key, kwargs_key)
+
+
 def get_llm(
     provider: LLMProvider = LLMProvider.AUTO,
     model: str | None = None,
@@ -337,47 +372,60 @@ def get_llm(
                  the corresponding environment variable (OPENAI_API_KEY,
                  ANTHROPIC_API_KEY, or GOOGLE_API_KEY).
         **kwargs: Additional arguments passed to the LLM constructor.
-        
+
     Returns:
-        LlamaIndex-compatible LLM instance with fallback support.
-        
+        LlamaIndex-compatible LLM instance with fallback support. Subsequent
+        calls with the same arguments return the cached instance.
+
     Example:
         llm = get_llm(provider=LLMProvider.GEMINI)
         response = await llm.acomplete("Hello!")
-        
+
         # With explicit API key
         llm = get_llm(provider=LLMProvider.OPENAI, api_key="sk-...")
     """
-    if provider == LLMProvider.AUTO:
-        provider = detect_provider()
-    
-    model = model or DEFAULT_MODELS[provider]["llm"]
-    
-    # Get primary LLM
-    primary_llm = _get_raw_llm(provider, model, api_key=api_key, **kwargs)
-    
+    cache_key = _llm_cache_key(provider, model, enable_fallback, api_key, kwargs)
+    if cache_key is not None:
+        cached = _LLM_INSTANCE_CACHE.get(cache_key)
+        if cached is not None:
+            return cached
+
+    resolved_provider = (
+        detect_provider() if provider == LLMProvider.AUTO else provider
+    )
+    resolved_model = model or DEFAULT_MODELS[resolved_provider]["llm"]
+
+    primary_llm = _get_raw_llm(
+        resolved_provider, resolved_model, api_key=api_key, **kwargs
+    )
+
     if not enable_fallback:
-        return _maybe_wrap_cache(primary_llm, model_tag=model or "")
-    
-    # Build fallback chain
-    fallback_providers = get_available_fallback_providers(provider)
-    if not fallback_providers:
-        logger.debug("no_fallback_providers_available", primary=provider.value)
-        return _maybe_wrap_cache(primary_llm, model_tag=model or "")
-    
-    logger.debug(
-        "llm_with_fallback_configured",
-        primary=provider.value,
-        fallbacks=[p.value for p in fallback_providers],
-    )
-    
-    llm = ResilientLLMWrapper(
-        primary_llm=primary_llm,
-        primary_provider=provider,
-        fallback_providers=fallback_providers,
-        **kwargs,
-    )
-    return _maybe_wrap_cache(llm, model_tag=model or "")
+        result = _maybe_wrap_cache(primary_llm, model_tag=resolved_model or "")
+    else:
+        fallback_providers = get_available_fallback_providers(resolved_provider)
+        if not fallback_providers:
+            logger.debug("no_fallback_providers_available", primary=resolved_provider.value)
+            result = _maybe_wrap_cache(primary_llm, model_tag=resolved_model or "")
+        else:
+            logger.debug(
+                "llm_with_fallback_configured",
+                primary=resolved_provider.value,
+                fallbacks=[p.value for p in fallback_providers],
+            )
+            llm = ResilientLLMWrapper(
+                primary_llm=primary_llm,
+                primary_provider=resolved_provider,
+                fallback_providers=fallback_providers,
+                **kwargs,
+            )
+            result = _maybe_wrap_cache(llm, model_tag=resolved_model or "")
+
+    if cache_key is not None:
+        with _LLM_CACHE_LOCK:
+            _LLM_INSTANCE_CACHE.setdefault(cache_key, result)
+            result = _LLM_INSTANCE_CACHE[cache_key]
+
+    return result
 
 
 def _get_raw_llm(provider: LLMProvider, model: str, api_key: str | None = None, **kwargs: Any) -> Any:

@@ -29,6 +29,7 @@ ALWAYS call `ingest_document()` - never call individual tiers directly.
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 import structlog
 
@@ -1051,22 +1052,27 @@ def _try_xy_cut_ingestion_legacy(
             header=pdf_path.stem,
         )
         
-        section_num = 0
+        leaves: list[Any] = []
         for page_tree in page_trees:
             for leaf in _get_xy_cut_leaves(page_tree):
                 if leaf.text.strip():
-                    section_num += 1
-                    # Generate synthetic header
-                    from rnsr.ingestion.semantic_fallback import _generate_synthetic_header
-                    
-                    section = DocumentNode(
-                        id=f"xycut_{section_num:03d}",
-                        level=1,
-                        header=_generate_synthetic_header(leaf.text, section_num),
-                        content=leaf.text,
-                    )
-                    root.children.append(section)
-        
+                    leaves.append(leaf)
+
+        if leaves:
+            from rnsr.ingestion.semantic_fallback import generate_synthetic_headers_batch
+
+            header_items = [(leaf.text, i + 1) for i, leaf in enumerate(leaves)]
+            headers = generate_synthetic_headers_batch(header_items)
+            for i, (leaf, header) in enumerate(zip(leaves, headers), start=1):
+                section = DocumentNode(
+                    id=f"xycut_{i:03d}",
+                    level=1,
+                    header=header or f"Section {i}",
+                    content=leaf.text,
+                )
+                root.children.append(section)
+        section_num = len(leaves)
+
         if section_num == 0:
             warnings.append("XY-Cut found no text regions")
             return None

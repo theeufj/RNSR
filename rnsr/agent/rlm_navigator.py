@@ -461,6 +461,430 @@ You MUST select at least {min_selections} sections, even if you are unsure."""
     return pointers_stored
 
 
+# Keywords that aren't useful for content matching (mostly query stop
+# words and the literal verbs that appear in nearly every question).
+_CONTENT_SEARCH_STOP = frozenset(
+    {
+        "the", "and", "for", "from", "with", "what", "was", "were", "did",
+        "does", "any", "are", "this", "that", "have", "has", "had", "been",
+        "much", "many", "into", "over", "than", "who", "how", "why", "when",
+        "which", "their", "there", "between", "among", "across", "during",
+        "respect", "based", "explain", "describe", "give", "list", "tell",
+        "provide", "company", "companies",
+    }
+)
+
+
+# Common financial / accounting acronyms in 10-K, 10-Q, and earnings
+# release questions. Each query token (case-insensitive, lowercased) maps
+# to additional surface forms to also search for. This was added after
+# the Pfizer 10-K "PPNE" question failed because the document writes
+# "PP&E" / "Property, Plant and Equipment" and never uses the literal
+# string "PPNE" the question used.
+_FINANCIAL_ACRONYM_EXPANSIONS: dict[str, tuple[str, ...]] = {
+    "ppne": ("pp&e", "property, plant and equipment", "property, plant", "property and equipment", "fixed assets"),
+    "ppe": ("pp&e", "property, plant and equipment", "property, plant", "property and equipment"),
+    "pp&e": ("ppne", "property, plant and equipment", "property, plant"),
+    "capex": ("capital expenditure", "capital expenditures"),
+    "opex": ("operating expense", "operating expenses"),
+    "cogs": ("cost of goods sold", "cost of sales", "cost of revenue"),
+    "sga": ("selling, general and administrative", "selling general and administrative"),
+    "sg&a": ("selling, general and administrative", "selling general and administrative"),
+    "ebitda": ("earnings before interest", "ebit", "operating income"),
+    "ebit": ("operating income", "earnings before interest"),
+    "eps": ("earnings per share", "diluted eps", "basic eps"),
+    "fcf": ("free cash flow", "free cash"),
+    "ar": ("accounts receivable", "trade receivables"),
+    "ap": ("accounts payable", "trade payables"),
+    "roa": ("return on assets",),
+    "roe": ("return on equity",),
+    "roic": ("return on invested capital",),
+    "wc": ("working capital",),
+    "dso": ("days sales outstanding", "days outstanding"),
+    "dpo": ("days payable outstanding",),
+    "agm": ("annual general meeting", "annual meeting of shareholders"),
+    "10-k": ("10-k", "annual report", "form 10-k"),
+    "10-q": ("10-q", "quarterly report", "form 10-q"),
+    "8-k": ("8-k", "current report", "form 8-k"),
+    "8k": ("8-k", "current report", "form 8-k"),
+    "fy": ("fiscal year", "year ended"),
+}
+
+
+def _expand_financial_acronyms(keywords: list[str]) -> list[str]:
+    """Expand common financial acronyms into the surface forms used in filings.
+
+    Returns a new list with the originals followed by their expansions,
+    de-duplicated (case-insensitive). Order is preserved: each original
+    keyword is followed by its expansions before the next original.
+    """
+    expanded: list[str] = []
+    seen: set[str] = set()
+    for kw in keywords:
+        kwl = kw.lower()
+        if kwl not in seen:
+            seen.add(kwl)
+            expanded.append(kw)
+        for extra in _FINANCIAL_ACRONYM_EXPANSIONS.get(kwl, ()):
+            extra_l = extra.lower()
+            if extra_l not in seen:
+                seen.add(extra_l)
+                expanded.append(extra)
+    return expanded
+
+
+def _extract_content_keywords(question: str) -> list[str]:
+    """Tokenize the question into content-search keywords.
+
+    Includes alphabetic words >= 3 chars (minus stop words), quoted
+    phrases, capitalized proper nouns, currency/percent fragments, and
+    numeric tokens (e.g. "2023", "10-Q") so we can match table cells
+    that the navigator overlooked. Common financial acronyms (PPNE,
+    EBITDA, CapEx, etc.) are expanded into the surface forms commonly
+    used in filings.
+    """
+    keywords: list[str] = []
+
+    for word in re.findall(r"\b[a-zA-Z]{3,}\b", question.lower()):
+        if word not in _CONTENT_SEARCH_STOP:
+            keywords.append(word)
+
+    # Acronyms that include & or - are missed by the alphabetic regex
+    # above (e.g. "PP&E", "10-Q", "SG&A"). Capture them explicitly so
+    # both they and their expansions land in the keyword list.
+    for symbolic in re.findall(r"\b[A-Za-z]+[&\-][A-Za-z0-9]+\b", question):
+        keywords.append(symbolic)
+
+    keywords.extend(re.findall(r'"([^"]+)"', question))
+
+    for proper in re.findall(r"\b[A-Z][a-zA-Z]+\b", question):
+        keywords.append(proper.lower())
+
+    for num in re.findall(r"\b\d{2,4}(?:Q[1-4])?\b", question):
+        keywords.append(num.lower())
+
+    seen: set[str] = set()
+    deduped: list[str] = []
+    for kw in keywords:
+        kwl = kw.lower()
+        if kwl not in seen:
+            seen.add(kwl)
+            deduped.append(kw)
+
+    return _expand_financial_acronyms(deduped)
+
+
+# Question patterns that ask the reader to enumerate items across a
+# domain and pick a superlative ("which of X had the most/lowest/etc.").
+# When the navigator answers one of these, we want to ensure the cited
+# evidence covers the *full* domain — not just one branch of a
+# hierarchy. The JPM 10-Q "lowest segment" miss happened because the
+# navigator landed on a CCB sub-segment table and never visited the
+# top-level "BUSINESS SEGMENT RESULTS" parent that includes Corporate.
+_ENUMERATION_SUPERLATIVES = (
+    "lowest", "highest", "most", "least", "largest", "smallest",
+    "biggest", "greatest", "top", "bottom", "max", "maximum",
+    "min", "minimum", "best", "worst", "first", "last",
+    "rank", "ranking",
+)
+_ENUMERATION_PROMPT_RE = re.compile(
+    r"^\s*(?:which|what)\b", re.IGNORECASE
+)
+
+
+def _is_enumeration_question(question: str) -> bool:
+    """Return True if the question asks for a superlative across a domain.
+
+    Examples that match: "Which of JPM's business segments had the lowest
+    net revenue?", "What region posted the highest growth?". These need
+    retrieval to cover the *whole* domain so the comparison is sound.
+    """
+    if not _ENUMERATION_PROMPT_RE.match(question):
+        return False
+    q_lower = question.lower()
+    return any(re.search(rf"\b{re.escape(t)}\b", q_lower) for t in _ENUMERATION_SUPERLATIVES)
+
+
+# Words that frequently introduce a hierarchical "scope" in financial
+# filings. When a question mentions any of these, retrieval should
+# prefer parent-level sections whose headers match.
+_ENUMERATION_DOMAIN_HINTS = (
+    "segment", "subsidiary", "subsidiaries", "region", "geography",
+    "geographies", "country", "countries", "product", "products",
+    "service", "services", "division", "divisions", "business unit",
+    "business units", "line of business", "lines of business",
+    "operating segment", "reportable segment", "category", "categories",
+    "brand", "brands", "channel", "channels", "market", "markets",
+)
+
+
+# Tokens that show up in enumeration questions but aren't useful for
+# matching against section headers. They'd otherwise inflate scores on
+# unrelated nodes (e.g. "2021" matching every page that says "March 31,
+# 2021"; "net" matching every "net" line item).
+_ENUMERATION_GENERIC_NOISE = frozenset(
+    {
+        # Superlatives — these are the *trigger*, not the *domain*
+        "lowest", "highest", "most", "least", "largest", "smallest",
+        "biggest", "greatest", "top", "bottom", "rank", "ranking",
+        # Question words and verbs
+        "which", "what", "had", "has", "have", "was", "were", "is", "are",
+        # Generic measure tokens that match too broadly
+        "net", "total", "amount", "value", "size",
+    }
+)
+
+
+def _enumeration_domain_terms(question: str) -> tuple[list[str], list[str]]:
+    """Split an enumeration question into (strong scope terms, weak terms).
+
+    Strong terms are explicit domain hints from ``_ENUMERATION_DOMAIN_HINTS``
+    (segment, subsidiary, region, etc.) — header hits on these are the
+    most reliable signal that a node is a parent-level overview table.
+
+    Weak terms are the rest of the question's content keywords minus
+    superlatives, question words, and generic measure tokens. Header
+    hits on weak terms are useful but get a much smaller score weight.
+
+    Returns ``(strong_terms, weak_terms)``.
+    """
+    q_lower = question.lower()
+    strong: list[str] = []
+    for hint in _ENUMERATION_DOMAIN_HINTS:
+        if hint in q_lower:
+            strong.append(hint)
+
+    weak: list[str] = []
+    for kw in _extract_content_keywords(question):
+        kwl = kw.lower()
+        if kwl in _ENUMERATION_GENERIC_NOISE:
+            continue
+        if len(kwl) < 3:
+            continue
+        # Skip plain year tokens (4 digits, no Q-suffix) — they match
+        # every page footer in a 10-K/Q.
+        if re.fullmatch(r"\d{4}", kwl):
+            continue
+        if kwl in strong:
+            continue
+        weak.append(kwl)
+
+    seen_s: set[str] = set()
+    strong_dedup = [t for t in strong if not (t in seen_s or seen_s.add(t))]
+    seen_w: set[str] = set()
+    weak_dedup = [t for t in weak if not (t in seen_w or seen_w.add(t))]
+    return strong_dedup, weak_dedup
+
+
+# Patterns used to score data-density of a section's content. Sections
+# containing many of these (currency amounts, dollar figures, numbers
+# with thousands separators, parenthesised negatives) are likely to be
+# the actual data tables an enumeration question needs, vs methodology
+# or descriptive prose.
+_DATA_DENSITY_RE = re.compile(
+    r"\$\s*\d|\d{1,3}(?:,\d{3})+|\(\d{1,3}(?:,\d{3})*\)|\d+\.\d+\s*(?:%|million|billion|thousand)",
+    re.IGNORECASE,
+)
+
+
+def _enumeration_scope_fallback(
+    question: str,
+    skeleton: dict[str, SkeletonNode],
+    kv_store: KVStore,
+    variable_store: VariableStore,
+    visited_node_ids: set[str] | None = None,
+    max_selections: int = 6,
+) -> list[str]:
+    """Pull parent-level sections that look like comprehensive overview tables.
+
+    For enumeration questions ("which of X had the most Y"), the right
+    answer often lives in a top-level summary section ("BUSINESS SEGMENT
+    RESULTS", "Lines of Business Information", "Segment Results –
+    managed basis"), not in the deep sub-segment leaves the ToT
+    navigator tends to drill into.
+
+    Score components per candidate node:
+      * ``strong_header_hits * 4.0`` — explicit domain hint (segment,
+        subsidiary, region…) in the header. Strongest signal.
+      * ``weak_header_hits * 0.6`` — other question keywords in the
+        header. Useful but noisy on their own.
+      * ``strong_summary_hits * 0.5`` — domain hint in summary.
+      * Level bonus ``max(0, 4 - level)`` — prefer shallower parents.
+      * Data-density bonus (capped at +3) — sections with lots of currency
+        / numeric patterns are likely real tables, not methodology prose.
+        This is what stops us from picking "Description of business
+        segment reporting methodology" over the actual results table.
+      * ``-1.0`` if the content is < 300 chars (header-only nodes).
+      * ``-1.5`` if the navigator already visited this node (so the
+        fallback adds *new* context, not a repeat).
+    """
+    strong_terms, weak_terms = _enumeration_domain_terms(question)
+    if not strong_terms and not weak_terms:
+        return []
+
+    visited = visited_node_ids or set()
+    candidates: list[tuple[float, str, SkeletonNode]] = []
+
+    for node_id, node in skeleton.items():
+        if node.parent_id is None:
+            continue
+        header_lower = (node.header or "").lower()
+        summary_lower = (node.summary or "").lower()
+        if not header_lower:
+            continue
+
+        strong_header_hits = sum(1 for term in strong_terms if term in header_lower)
+        weak_header_hits = sum(1 for term in weak_terms if term in header_lower)
+        strong_summary_hits = sum(1 for term in strong_terms if term in summary_lower)
+        if strong_header_hits == 0 and weak_header_hits < 2 and strong_summary_hits < 2:
+            continue
+
+        try:
+            level = int(node.level)
+        except (TypeError, ValueError):
+            level = 3
+        level_bonus = max(0, 4 - level)
+        visited_penalty = 1.5 if node_id in visited else 0.0
+
+        content = kv_store.get(node_id) or ""
+        size_penalty = 1.0 if len(content) < 300 else 0.0
+        data_matches = len(_DATA_DENSITY_RE.findall(content))
+        data_bonus = min(3.0, data_matches / 5.0)
+
+        score = (
+            strong_header_hits * 4.0
+            + weak_header_hits * 0.6
+            + strong_summary_hits * 0.5
+            + level_bonus
+            + data_bonus
+            - visited_penalty
+            - size_penalty
+        )
+        if score <= 0:
+            continue
+        candidates.append((score, node_id, node))
+
+    if not candidates:
+        return []
+
+    candidates.sort(key=lambda c: c[0], reverse=True)
+
+    pointers_stored: list[str] = []
+    for score, node_id, node in candidates[:max_selections]:
+        content = kv_store.get(node_id)
+        if not content or len(content.strip()) < 20:
+            continue
+        pointer = generate_pointer_name(node.header)
+        base_pointer = pointer
+        counter = 2
+        skip_assign = False
+        while variable_store.exists(pointer):
+            existing_meta = variable_store._metadata.get(pointer)
+            if existing_meta and existing_meta.source_node_id == node_id:
+                # Same source already stored — surface the existing pointer
+                # so synthesis sees this section, but skip the redundant
+                # assign() call.
+                skip_assign = True
+                break
+            pointer = f"{base_pointer}_{counter}"
+            counter += 1
+        if not skip_assign:
+            variable_store.assign(pointer, content, source_node_id=node_id)
+        pointers_stored.append(pointer)
+        logger.info(
+            "enumeration_scope_match",
+            node_id=node_id,
+            header=(node.header or "")[:60],
+            level=node.level,
+            score=round(score, 2),
+            content_chars=len(content),
+            reused=skip_assign,
+        )
+
+    return pointers_stored
+
+
+def _content_search_fallback(
+    question: str,
+    skeleton: dict[str, SkeletonNode],
+    kv_store: KVStore,
+    variable_store: VariableStore,
+    visited_node_ids: set[str] | None = None,
+    max_selections: int = 4,
+    min_distinct_matches: int = 2,
+) -> list[str]:
+    """Last-resort fallback that ranks raw KV-store content by keyword density.
+
+    The header-matching fallback fails when ingestion produced poor
+    headers (e.g. table cells like "2,018" or column labels like
+    "currency ∆%"). Here we ignore headers entirely and score every
+    leaf node by how many distinct query keywords appear in its KV
+    content, breaking ties by total occurrences. Nodes already visited
+    by the navigator are deprioritised so we add genuinely new context.
+    """
+    keywords = _extract_content_keywords(question)
+    if not keywords:
+        return []
+
+    visited = visited_node_ids or set()
+    candidates: list[tuple[int, int, bool, str]] = []
+
+    for node_id, node in skeleton.items():
+        if node.parent_id is None:
+            continue
+        content = kv_store.get(node_id)
+        if not content or len(content.strip()) < 20:
+            continue
+        lower = content.lower()
+        distinct = sum(1 for kw in keywords if kw.lower() in lower)
+        if distinct < min_distinct_matches:
+            continue
+        total = sum(lower.count(kw.lower()) for kw in keywords)
+        candidates.append((distinct, total, node_id in visited, node_id))
+
+    if not candidates:
+        return []
+
+    candidates.sort(key=lambda c: (c[0], c[1], not c[2]), reverse=True)
+
+    pointers_stored: list[str] = []
+    for distinct, total, was_visited, node_id in candidates[:max_selections]:
+        node = skeleton.get(node_id)
+        if not node:
+            continue
+        content = kv_store.get(node_id)
+        if not content:
+            continue
+        pointer = generate_pointer_name(node.header)
+        base_pointer = pointer
+        counter = 2
+        skip_assign = False
+        while variable_store.exists(pointer):
+            existing_meta = variable_store._metadata.get(pointer)
+            if existing_meta and existing_meta.source_node_id == node_id:
+                # Same source already stored — surface the existing pointer
+                # so synthesis sees this section, but skip the redundant
+                # assign() call.
+                skip_assign = True
+                break
+            pointer = f"{base_pointer}_{counter}"
+            counter += 1
+        if not skip_assign:
+            variable_store.assign(pointer, content, source_node_id=node_id)
+        pointers_stored.append(pointer)
+        logger.info(
+            "content_search_fallback_match",
+            node_id=node_id,
+            header=node.header[:60],
+            distinct_keywords=distinct,
+            total_occurrences=total,
+            was_visited=was_visited,
+            reused=skip_assign,
+        )
+
+    return pointers_stored
+
+
 # =============================================================================
 # Learned Stop Words Registry
 # =============================================================================
@@ -1967,7 +2391,15 @@ class RLMNavigator:
             config=self.config,
             metadata=effective_metadata,
         )
-        
+
+        # The navigator instance may be cached and reused across multiple
+        # queries on the same document (see ``_navigator_cache`` in
+        # ``RNSRClient``). The ``VariableStore`` is per-query context, so
+        # reset it here to prevent variables from prior questions
+        # leaking into this navigation (e.g. blocking fallback fixtures
+        # because an earlier query already assigned the same pointer).
+        self.variable_store = VariableStore()
+
         # Ensure LLM is configured
         if self._llm_fn is None:
             self._configure_default_llm()
@@ -2082,6 +2514,65 @@ class RLMNavigator:
                         f"Header-match fallback stored {len(fallback_pointers)} sections",
                     )
                     state = self._phase_synthesize(state)
+
+            # Content-search fallback: when header-based fallbacks still
+            # leave the answer inconclusive (e.g. ingestion produced
+            # numeric/column-label headers in tables), score raw KV
+            # content by query-keyword density and inject the best
+            # matches before the final synthesis.
+            still_needs_fallback = (
+                not state.variables
+                or self._answer_is_inconclusive(state.answer)
+            )
+            if still_needs_fallback:
+                logger.info("content_search_fallback_triggered")
+                content_pointers = _content_search_fallback(
+                    question=state.question,
+                    skeleton=self.skeleton,
+                    kv_store=self.kv_store,
+                    variable_store=self.variable_store,
+                    visited_node_ids=set(state.visited_nodes),
+                )
+                if content_pointers:
+                    state.variables.extend(content_pointers)
+                    state.add_trace(
+                        "navigation",
+                        f"Content-search fallback stored {len(content_pointers)} sections",
+                        {"new_pointers": content_pointers[:8]},
+                    )
+                    state = self._phase_synthesize(state)
+
+            # Enumeration-scope fallback: questions of the form "which of
+            # X had the most/least/lowest/highest Y" need retrieval to
+            # cover the *full* domain. Even a confident-sounding answer
+            # can be wrong if the navigator drilled into one branch of a
+            # hierarchy and never visited the parent overview table
+            # (this is exactly the JPM 10-Q "Home Lending vs Corporate"
+            # miss). We always run this for enumeration questions; the
+            # re-synthesis is cheap relative to the cost of a wrong
+            # answer.
+            if _is_enumeration_question(state.question):
+                logger.info(
+                    "enumeration_scope_fallback_triggered",
+                    answer_preview=(state.answer or "")[:120],
+                )
+                scope_pointers = _enumeration_scope_fallback(
+                    question=state.question,
+                    skeleton=self.skeleton,
+                    kv_store=self.kv_store,
+                    variable_store=self.variable_store,
+                    visited_node_ids=set(state.visited_nodes),
+                )
+                if scope_pointers:
+                    new_pointers = [p for p in scope_pointers if p not in state.variables]
+                    if new_pointers:
+                        state.variables.extend(new_pointers)
+                        state.add_trace(
+                            "navigation",
+                            f"Enumeration-scope fallback stored {len(new_pointers)} parent-level sections",
+                            {"new_pointers": new_pointers[:8]},
+                        )
+                        state = self._phase_synthesize(state)
             
             # Phase 5: Verification (if enabled)
             if self.config.enable_verification:
@@ -3686,27 +4177,75 @@ Answer:"""
         
         return answer
     
+    # Phrases that always mean "I tried to answer but the relevant data
+    # was missing from what I was given." These should trigger a fallback
+    # retrieval pass even when the answer is otherwise long and confident
+    # (e.g. the LLM admits the gap and then volunteers adjacent context).
+    _INCONCLUSIVE_PHRASES_STRONG: tuple[str, ...] = (
+        "provided sections do not contain",
+        "sections do not contain this information",
+        "do not contain this information",
+        "do not explicitly state",
+        "does not explicitly state",
+        "is not explicitly stated",
+        "is not provided in",
+        "is not available in the provided",
+        "cannot be determined from the provided",
+        "cannot be determined from the document",
+        "no relevant content found",
+        "error during",
+        "i cannot answer",
+        "i don't have enough information",
+        "the document does not provide",
+        # Phrases observed in Pfizer 10-K PP&E miss (May 2026 large-doc run)
+        # and other "I can see the section but the numbers aren't here" cases.
+        "is not possible to determine",
+        "it is not possible to determine",
+        "not possible to answer",
+        "only contains introductory text",
+        "does not provide the actual",
+        "does not contain the actual",
+        "does not contain numerical",
+        "does not contain the numerical",
+        "no specific data",
+        "no specific numbers",
+        "no specific figure",
+        "the relevant section was not found",
+        "the relevant data is not present",
+        "insufficient information",
+        "insufficient context",
+        # Phrases observed in Pfizer 10-K PP&E miss after header-match
+        # fallback (May 2026): the synthesis acknowledges retrieving the
+        # *header* but admits the *numbers* aren't in the chunks.
+        "it cannot be determined",
+        "it could not be determined",
+        "cannot be determined if",
+        "actual numerical values",
+        "actual numerical value",
+        "actual numbers are not",
+        "are not included in the provided",
+        "is not included in the provided",
+        "not included in the provided text",
+        "are not in the provided",
+        "is not in the provided",
+        "financial balances for",
+        "the actual values",
+    )
+
     def _answer_is_inconclusive(self, answer: str) -> bool:
         """Check if the synthesis answer indicates failure to find information.
 
-        An answer that contains substantive content (>300 chars) is NOT
-        inconclusive even if it notes that some requested information is
-        missing.  Only flag truly empty or purely-negative responses.
+        Long answers that *also* contain a strong "data not present"
+        phrase still count as inconclusive, because the LLM is signalling
+        that retrieval missed the relevant section even if it then
+        volunteers tangential content.
         """
         if not answer:
             return True
-        if len(answer) > 300:
-            return False
         lower = answer.lower()
-        inconclusive_phrases = [
-            "provided sections do not contain",
-            "sections do not contain this information",
-            "do not contain this information",
-            "no relevant content found",
-            "error during",
-            "i cannot answer",
-        ]
-        return any(phrase in lower for phrase in inconclusive_phrases)
+        if any(phrase in lower for phrase in self._INCONCLUSIVE_PHRASES_STRONG):
+            return True
+        return False
     
     def _refine_search_strategy(self, state: RLMAgentState) -> RLMAgentState:
         """Generate refined search patterns after an inconclusive answer.

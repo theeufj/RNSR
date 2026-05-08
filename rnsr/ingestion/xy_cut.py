@@ -508,41 +508,51 @@ def analyze_document_with_xycut(
     
     doc.close()
     
-    # Convert to DocumentTree
     root = DocumentNode(id="root", level=0, header=pdf_path.stem)
-    
-    section_num = 0
+
+    all_leaves = []
     for page_tree in page_trees:
         for leaf in get_leaves(page_tree):
-            if not leaf.text.strip():
-                continue
-            
-            section_num += 1
-            
-            # Determine if it's a header based on LayoutLM classification
-            is_header = leaf.node_type in ("header", "title")
-            
-            if is_header:
-                # Create header node
-                section = DocumentNode(
-                    id=f"sec_{section_num:03d}",
-                    level=1,
-                    header=leaf.text.strip(),
-                    page_num=leaf.region.page_num,
-                )
-            else:
-                # Create body node with synthetic header
-                from rnsr.ingestion.semantic_fallback import _generate_synthetic_header
-                
-                section = DocumentNode(
-                    id=f"sec_{section_num:03d}",
-                    level=1,
-                    header=_generate_synthetic_header(leaf.text, section_num),
-                    content=leaf.text,
-                    page_num=leaf.region.page_num,
-                )
-            
-            root.children.append(section)
+            if leaf.text.strip():
+                all_leaves.append(leaf)
+
+    body_leaves = [
+        (i, leaf) for i, leaf in enumerate(all_leaves)
+        if leaf.node_type not in ("header", "title")
+    ]
+
+    body_headers: list[str] = []
+    if body_leaves:
+        from rnsr.ingestion.semantic_fallback import generate_synthetic_headers_batch
+
+        items = [(leaf.text, idx + 1) for idx, (_orig_idx, leaf) in enumerate(body_leaves)]
+        body_headers = generate_synthetic_headers_batch(items)
+
+    body_header_by_orig_idx = {
+        orig_idx: body_headers[batch_idx]
+        for batch_idx, (orig_idx, _leaf) in enumerate(body_leaves)
+    }
+
+    for section_num, leaf in enumerate(all_leaves, start=1):
+        is_header = leaf.node_type in ("header", "title")
+        if is_header:
+            section = DocumentNode(
+                id=f"sec_{section_num:03d}",
+                level=1,
+                header=leaf.text.strip(),
+                page_num=leaf.region.page_num,
+            )
+        else:
+            section = DocumentNode(
+                id=f"sec_{section_num:03d}",
+                level=1,
+                header=body_header_by_orig_idx[section_num - 1] or f"Section {section_num}",
+                content=leaf.text,
+                page_num=leaf.region.page_num,
+            )
+        root.children.append(section)
+
+    section_num = len(all_leaves)
     
     return DocumentTree(
         title=pdf_path.stem,

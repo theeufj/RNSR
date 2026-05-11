@@ -61,7 +61,7 @@ LLM Provider Configuration:
        - ANTHROPIC_API_KEY (Anthropic)
 """
 
-__version__ = "0.3.1"
+__version__ = "0.5.0"
 
 # Re-export main entry points
 from rnsr.ingestion import ingest_document, IngestionResult

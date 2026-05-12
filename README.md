@@ -177,6 +177,7 @@ RNSR combines neural and symbolic approaches to achieve accurate document unders
 | **LLM Response Cache** | Semantic-aware caching for 10x cost/speed improvement |
 | **Self-Reflection** | Iterative self-correction improves answer quality |
 | **Multi-Document Detection** | Automatically splits bundled PDFs |
+| **HTTP API** | Optional FastAPI wrapper (`api/`) exposing the full `RNSRClient` over REST — upload, ask, browse, table queries, cross-doc Q&A. See [api/README.md](api/README.md) |
 
 ## Installation
 
@@ -266,6 +267,28 @@ make demo
 ```
 
 The demo includes tabs for **Chat**, **Document Structure**, **Tables**, **Knowledge Graph**, **Timeline**, **Contradictions**, and **Multi-Document** workspace.
+
+### 4. Run as a REST API (FastAPI)
+
+The repo ships a FastAPI wrapper (`api/`) that exposes the full
+`RNSRClient` over HTTP — upload PDFs, ask questions, browse outlines,
+query tables, and run cross-document Q&A from any HTTP client.
+
+```bash
+pip install -r api/requirements.txt
+export RNSR_API_KEY=...your-llm-provider-key...
+export RNSR_LLM_PROVIDER=gemini   # or openai / anthropic
+uvicorn api.main:app --reload --port 8000
+# Swagger UI: http://localhost:8000/docs
+```
+
+See [`api/README.md`](api/README.md) for the full endpoint reference,
+deployment recipes (Docker, systemd), background-job semantics, and
+authentication patterns.
+
+> The FastAPI wrapper is not part of the PyPI distribution — it's a
+> deployment artifact in the repo. Library users get just the `rnsr`
+> package; the server lives alongside it for self-hosting.
 
 ## Production Setup: Achieving Benchmark-Level Performance
 
@@ -1036,6 +1059,12 @@ rnsr/
 ├── llm.py                   # Multi-provider LLM abstraction
 ├── client.py                # High-level API (incl. BYOD + cross-doc)
 └── models.py                # Data structures
+
+api/                         # Optional FastAPI HTTP wrapper (not in PyPI)
+├── main.py                  # App + lifespan + CORS
+├── routers/                 # health, documents, indexing, jobs, qa, ...
+├── schemas.py               # Pydantic request/response models
+└── README.md                # Full server reference
 ```
 
 </details>

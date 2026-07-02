@@ -99,3 +99,6 @@ test-documents/
 *.png
 
 matterAiTests/
+# rnsr run artifacts
+runs/
+*.db

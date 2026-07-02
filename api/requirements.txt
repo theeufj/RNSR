@@ -1,5 +1,0 @@
-# FastAPI wrapper for RNSR
-# Install on top of the RNSR library and one of its LLM providers.
-fastapi>=0.110.0
-uvicorn[standard]>=0.29.0
-python-multipart>=0.0.9

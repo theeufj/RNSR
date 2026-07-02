@@ -71,8 +71,16 @@ def _make_runner(settings):
 
     router = Router(settings)
     root, sub = router.resolve("root"), router.resolve("sub")
+    embed_client, embed_model = None, ""
+    try:
+        embed = router.resolve("embed")
+        embed_client, embed_model = embed.client, embed.model
+    except RuntimeError:
+        pass  # rung 4 stays dormant without an embedding provider
     return RootRunner(root_client=root.client, root_model=root.model,
-                      sub_client=sub.client, sub_model=sub.model, settings=settings)
+                      sub_client=sub.client, sub_model=sub.model,
+                      embed_client=embed_client, embed_model=embed_model,
+                      settings=settings)
 
 
 @app.command()
@@ -180,9 +188,40 @@ def eval_cmd(
 
 
 @app.command()
-def ablate() -> None:
-    """Run the rung-4 quantization ablation (Phase D)."""
-    raise typer.Exit("not implemented yet: lands with Phase D")
+def ablate(
+    corpus: Path = typer.Argument(..., exists=True, help="corpus.db artifact"),
+    n_queries: int = typer.Option(20, "--queries", "-q"),
+    rescore_pool: int = typer.Option(4000, "--pool"),
+    report_path: Path | None = typer.Option(None, "--report"),
+) -> None:
+    """Rung-4 quantization ablation: int8 recall@10/50 vs exact fp32 (§8)."""
+    import asyncio
+    import json
+    import sqlite3
+
+    from rnsr.config import Settings
+    from rnsr.eval.ablation import run_ablation
+    from rnsr.llm.router import Router
+
+    settings = Settings.from_env()
+    embed = Router(settings).resolve("embed")
+
+    def embed_fn(texts):
+        return asyncio.run(embed.client.embed(texts, model=embed.model))
+
+    conn = sqlite3.connect(corpus)
+    queries = [r[0] for r in conn.execute(
+        "SELECT substr(text, 1, 200) FROM chunks ORDER BY random() LIMIT ?",
+        (n_queries,))]
+    conn.close()
+
+    report = run_ablation(corpus, embed_fn, queries, rescore_pool=rescore_pool)
+    console.print_json(json.dumps(report))
+    if report_path:
+        report_path.write_text(json.dumps(report, indent=2))
+    console.print("[green]int8 ACCEPTS — polar path stays dormant[/green]"
+                  if report["accepts"] else
+                  "[red]int8 below bar — evaluate the polar quantizer[/red]")
 
 
 if __name__ == "__main__":

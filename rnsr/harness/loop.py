@@ -56,6 +56,8 @@ class RootRunner:
     sub_client: LLMClient
     sub_model: str
     settings: Settings = field(default_factory=Settings)
+    embed_client: LLMClient | None = None   # enables search ladder rung 4
+    embed_model: str = ""
 
     def _extract_code(self, text: str) -> str | None:
         blocks = _CODE_BLOCK.findall(text)
@@ -90,7 +92,15 @@ class RootRunner:
             trajectory.event(request.get("event", "env_log"), **data)
             return {}
 
-        return {"llm_batch": llm_batch, "log": log}
+        async def embed(request: dict) -> dict:
+            if self.embed_client is None:
+                raise RuntimeError("no embed client configured (rung 4 dormant)")
+            vectors = await self.embed_client.embed(request["texts"],
+                                                    model=self.embed_model)
+            trajectory.event("embed_batch", n=len(request["texts"]))
+            return {"vectors": vectors}
+
+        return {"llm_batch": llm_batch, "log": log, "embed": embed}
 
     async def run(self, question: str, env: EnvSpec, *,
                   run_dir: str | Path | None = None,

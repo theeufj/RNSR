@@ -25,12 +25,28 @@ def ingest(
                                          help="PDF files to ingest"),
     out: Path = typer.Option(Path("corpus.db"), "--out", "-o", help="Output artifact path"),
     report_path: Path | None = typer.Option(None, "--report", help="Write JSON report here"),
+    llm: bool = typer.Option(False, "--llm/--no-llm",
+                             help="Enable the sub-LM prose cross-check and vision "
+                                  "re-extraction rung (§3.3); default is fully LLM-free"),
 ) -> None:
     """Ingest documents into a corpus.db artifact (Phase A)."""
     from rnsr.config import Settings
     from rnsr.ingest.pipeline import ingest as run_ingest
 
-    report = run_ingest(sources, out, config=Settings.from_env())
+    settings = Settings.from_env()
+    prose_checker = vision = None
+    if llm:
+        from rnsr.ingest.llm_hooks import make_prose_checker, make_vision_extractor
+        from rnsr.llm.router import Router
+
+        router = Router(settings)
+        sub, vis = router.resolve("sub"), router.resolve("vision")
+        prose_checker = make_prose_checker(sub.client, sub.model,
+                                           concurrency=settings.sub_concurrency)
+        vision = make_vision_extractor(vis.client, vis.model)
+
+    report = run_ingest(sources, out, config=settings,
+                        prose_checker=prose_checker, vision=vision)
 
     t = Table(title=f"Ingested -> {out}")
     for col in ("table", "status", "confidence", "extractor", "rows"):

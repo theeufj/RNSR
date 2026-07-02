@@ -65,10 +65,70 @@ def ingest(
         console.print(f"report written to {report_path}")
 
 
+def _make_runner(settings):
+    from rnsr.harness.loop import RootRunner
+    from rnsr.llm.router import Router
+
+    router = Router(settings)
+    root, sub = router.resolve("root"), router.resolve("sub")
+    return RootRunner(root_client=root.client, root_model=root.model,
+                      sub_client=sub.client, sub_model=sub.model, settings=settings)
+
+
 @app.command()
-def query() -> None:
+def query(
+    corpus: Path = typer.Argument(..., exists=True, help="corpus.db artifact"),
+    question: str = typer.Argument(...),
+    run_dir: Path = typer.Option(Path("runs/query"), "--run-dir"),
+) -> None:
     """Answer a question against a corpus.db via the RLM loop (Phase B/C)."""
-    raise typer.Exit("not implemented yet: lands with Phase B (harness/loop.py)")
+    import asyncio
+
+    from rnsr.config import Settings
+    from rnsr.db.artifact import CorpusDB
+    from rnsr.harness.loop import EnvSpec
+
+    settings = Settings.from_env()
+    with CorpusDB(corpus) as c:
+        manifest = c.manifest_dict()
+    env = EnvSpec(mode="docdb", corpus_db=str(corpus), manifest=manifest)
+    result = asyncio.run(_make_runner(settings).run(question, env, run_dir=run_dir))
+    console.print(f"[bold]{result.answer}[/bold]")
+    console.print(f"status={result.status} iterations={result.iterations} "
+                  f"cost=${result.ledger['spend_usd']:.4f} "
+                  f"sub_calls={result.ledger['sub_calls']}")
+    console.print(f"trajectory: {result.trajectory_path}")
+
+
+@app.command()
+def gate(
+    run_dir: Path = typer.Option(Path("runs/gate"), "--run-dir"),
+    limit: int | None = typer.Option(None, "--limit", "-n"),
+    needle_docs: int = typer.Option(3, "--needle-docs"),
+) -> None:
+    """§8 go/no-go: docdb vs rlm-classic on the numeric-needle set."""
+    import asyncio
+    import json
+
+    from rnsr.config import Settings
+    from rnsr.eval.datasets.needle_gen import generate_needle_set
+    from rnsr.eval.harness import run_eval
+    from rnsr.eval.metrics import gate_report
+
+    settings = Settings.from_env()
+    items = generate_needle_set(run_dir / "needle_pdfs", n_docs=needle_docs)
+    summaries = {}
+    for system in ("docdb", "rlm-classic"):
+        runner = _make_runner(settings)
+        _, summaries[system] = asyncio.run(
+            run_eval(items, system, runner, run_dir=run_dir / system, limit=limit)
+        )
+    report = gate_report(summaries["docdb"], summaries["rlm-classic"])
+    (run_dir / "gate_report.json").write_text(json.dumps(report, indent=2))
+    console.print_json(json.dumps(report["checks"]))
+    console.print("[green]GATE PASS[/green]" if report["pass"]
+                  else "[red]GATE FAIL[/red]")
+    raise typer.Exit(0 if report["pass"] else 1)
 
 
 @app.command("eval")

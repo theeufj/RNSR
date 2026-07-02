@@ -7,3 +7,15 @@ Public API (filled in as phases land):
 """
 
 __version__ = "1.0.0a0"
+
+
+def ingest(*args, **kwargs):
+    from rnsr.ingest.pipeline import ingest as _ingest
+
+    return _ingest(*args, **kwargs)
+
+
+def open_corpus(path, mode: str = "ro"):
+    from rnsr.db.artifact import CorpusDB
+
+    return CorpusDB(path, mode=mode)

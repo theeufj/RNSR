@@ -65,13 +65,22 @@ def reextract(
 ) -> RawTable | None:
     """Produce the next-rung extraction of `raw`, or None if the chain is done.
 
-    The vision rung is skipped (returns None at that rung) when no vision
-    extractor is injected — Phase A stays LLM-free (§10) and the table is
-    flagged untrusted instead of silently failing (§3.3).
+    The vision rung is skipped when no vision extractor is injected —
+    Phase A stays LLM-free (§10) and the table is flagged untrusted instead
+    of silently failing (§3.3). A rung that errors (corrupt page, missing
+    file) yields nothing and the chain advances to the next rung.
     """
     rung = next_rung(raw.extractor)
-    if rung == "pdfplumber":
-        return reextract_pdfplumber(pdf_path, raw.page)
-    if rung == "vision" and vision is not None:
-        return vision(Path(pdf_path), raw.page)
+    while rung is not None:
+        out: RawTable | None = None
+        try:
+            if rung == "pdfplumber":
+                out = reextract_pdfplumber(pdf_path, raw.page)
+            elif rung == "vision" and vision is not None:
+                out = vision(Path(pdf_path), raw.page)
+        except Exception:
+            out = None
+        if out is not None:
+            return out
+        rung = next_rung(rung)
     return None

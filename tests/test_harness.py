@@ -125,3 +125,33 @@ class TestRecoveryRanking:
             "b_result": {"type": "int", "repr": "2"},
         }
         assert rank_candidates(vars_)[0] == "b_result"
+
+
+class TestRootResilience:
+    async def test_hung_root_call_does_not_eat_wall_budget(self, tmp_path):
+        # root client hangs longer than the per-call timeout; with a tiny
+        # wall budget both attempts time out and the loop ends gracefully
+        # instead of stalling for the provider SDK's 10-minute default.
+        root = MockLLM(delay_s=3.0, default="```python\nFINAL('late')\n```")
+        result = await make_runner(root, max_wall_s=0.5).run(
+            "q", CLASSIC, run_dir=tmp_path)
+        assert result.status == "budget_exhausted"
+        assert result.breached_cap == "root_timeout"
+
+    async def test_recovery_parses_name_inside_reasoning(self, tmp_path):
+        root = MockLLM(default="```python\nanswer = 3234\nprint('done')\n```")
+        root.rule(r"ended without FINAL",
+                  "Looking at the task, the variable `answer` contains the "
+                  "computed total, so that is the one.")
+        result = await make_runner(root, max_root_iters=1).run("q", CLASSIC,
+                                                               run_dir=tmp_path)
+        assert result.status == "recovered"
+        assert result.answer == 3234
+
+    async def test_recovery_none_in_reasoning_still_none(self, tmp_path):
+        root = MockLLM(default="```python\nx = 1\n```")
+        root.rule(r"ended without FINAL",
+                  "NONE of these variables answers the task.")
+        result = await make_runner(root, max_root_iters=1).run("q", CLASSIC,
+                                                               run_dir=tmp_path)
+        assert result.status == "budget_exhausted"

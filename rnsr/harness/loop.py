@@ -8,6 +8,7 @@ of what the model does.
 
 from __future__ import annotations
 
+import asyncio
 import re
 import uuid
 from dataclasses import dataclass, field
@@ -135,10 +136,17 @@ class RootRunner:
                                         ledger, trajectory, turns, breached=cap)
 
                 prompt = render_transcript(question, turns)
-                resp = await self.root_client.complete(
-                    prompt, model=self.root_model, system=system,
-                    max_tokens=8192, seed=s.llm_seed,
-                )
+                resp = await self._root_complete(prompt, system, ledger, trajectory)
+                if resp is None:   # provider unreachable — salvage what exists
+                    trajectory.event("budget_breached", cap="root_timeout",
+                                     **ledger.snapshot())
+                    result = await recover_variable(
+                        sandbox, self, question, turns, trajectory
+                    )
+                    return self._finish(result,
+                                        "recovered" if result else "budget_exhausted",
+                                        ledger, trajectory, turns,
+                                        breached="root_timeout")
                 ledger.add_usage(resp.usage)
                 ledger.root_iters += 1
                 code = self._extract_code(resp.text)
@@ -184,6 +192,28 @@ class RootRunner:
         finally:
             await sandbox.close()
             trajectory.close()
+
+    async def _root_complete(self, prompt: str, system: str,
+                             ledger: BudgetLedger, trajectory) -> object | None:
+        """Root call with a harness-side timeout tied to the wall budget.
+
+        Provider SDK defaults allow requests to hang for up to 10 minutes —
+        long enough for one stuck call to eat the entire §7 wall cap (seen
+        live on FinanceBench). Two attempts, each capped, then give up so
+        recovery still has budget to run.
+        """
+        for attempt in (1, 2):
+            timeout = min(120.0, ledger.remaining_wall_s())
+            try:
+                async with asyncio.timeout(timeout):
+                    return await self.root_client.complete(
+                        prompt, model=self.root_model, system=system,
+                        max_tokens=8192, seed=self.settings.llm_seed,
+                    )
+            except Exception as e:  # timeout or any provider error
+                trajectory.event("root_call_failed", attempt=attempt,
+                                 timeout_s=timeout, error=f"{type(e).__name__}: {e}"[:200])
+        return None
 
     def _observe(self, cell) -> str:
         text = cell.stdout if cell.ok else (cell.stdout + (cell.error or ""))

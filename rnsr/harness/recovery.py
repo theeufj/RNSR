@@ -50,9 +50,20 @@ async def recover_variable(sandbox, runner, question: str, turns: list,
                "Reply with a single variable name or NONE.",
         max_tokens=64,
     )
-    choice = resp.text.strip().strip("`'\"")
-    trajectory.event("recovery", candidates=candidates, choice=choice)
-    if choice == "NONE" or choice not in vars_:
+    choice: str | None = resp.text.strip().strip("`'\"")
+    if choice not in vars_:
+        # Models often reply with reasoning despite the instruction (seen
+        # live: the right candidate named inside a paragraph). Parse
+        # leniently: any candidate mentioned in the reply, best-ranked first.
+        mentioned = [n for n in candidates
+                     if re.search(rf"(?<![\w.]){re.escape(n)}(?![\w.])", resp.text)]
+        if re.search(r"\bNONE\b", resp.text) and not mentioned:
+            choice = None
+        else:
+            choice = mentioned[0] if mentioned else None
+    trajectory.event("recovery", candidates=candidates, reply=resp.text[:300],
+                     choice=choice)
+    if choice is None:
         return None
 
     cell = await sandbox.exec_cell(f"FINAL_VAR({choice})", timeout=30.0)

@@ -51,8 +51,10 @@ sub-LM pass over rows; writes results back as a real column you can then \
 use in SQL. The cheapest way to turn a semantic property into something \
 exactly queryable.
 - search(query, rung=None, k=10): tiered search — SQL-aware routing, \
-regex, BM25 full-text, sub-LM term expansion. Escalates automatically; \
-returns hits with page/offset provenance.
+regex, BM25 full-text, sub-LM term expansion. Escalates automatically. \
+Every hit has keys: rung, kind ('sql'|'chunk'|'estimate'), text, page, \
+provenance. SQL hits additionally carry table and rows (the full row \
+dict); chunk hits carry score. Check hit['kind'] before assuming shape.
 - verify(answer, quotes): exact string-match of supporting quotes against \
 source text. Your FINAL answer should be backed by quotes that pass.
 

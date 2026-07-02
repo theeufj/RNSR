@@ -85,7 +85,12 @@ class RootRunner:
                              failed=sum(r is None for r in responses))
             return {"results": [r.text if r else "" for r in responses]}
 
-        return {"llm_batch": llm_batch}
+        async def log(request: dict) -> dict:
+            data = {k: v for k, v in request.items() if k not in ("kind", "op", "event")}
+            trajectory.event(request.get("event", "env_log"), **data)
+            return {}
+
+        return {"llm_batch": llm_batch, "log": log}
 
     async def run(self, question: str, env: EnvSpec, *,
                   run_dir: str | Path | None = None,

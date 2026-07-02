@@ -22,6 +22,7 @@ class EvalResult:
     sub_calls: int
     iterations: int
     trajectory_path: str | None = None
+    scored_by: str = "string"   # 'string' | 'judge'
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -65,6 +66,38 @@ def score_answer(predicted: object, gold: str, *, numeric_rel_tol: float = 0.01)
     return (g in p or p in g) and len(p) < 4 * len(g)
 
 
+_JUDGE_PROMPT = """\
+Question: {question}
+
+Reference answer: {gold}
+
+Candidate answer: {predicted}
+
+Does the candidate answer agree with the reference answer on the substance
+of the question? Treat numeric values as agreeing when they match after
+unit conversion and reasonable rounding. Ignore extra explanation, hedging,
+or detail beyond the reference. Reply with exactly YES or NO."""
+
+
+async def judge_answer(client, model: str, question: str,
+                       predicted: str, gold: str) -> bool | None:
+    """One sub-LM YES/NO equivalence call. None when the judge is unusable
+    (call failed or reply unparseable) — callers keep the string verdict."""
+    try:
+        resp = await client.complete(
+            _JUDGE_PROMPT.format(question=question, gold=gold, predicted=predicted),
+            model=model, max_tokens=8,
+        )
+    except Exception:
+        return None
+    text = resp.text.strip().upper()
+    if text.startswith("YES"):
+        return True
+    if text.startswith("NO"):
+        return False
+    return None
+
+
 def percentile(values: list[float], q: float) -> float:
     if not values:
         return math.nan
@@ -92,6 +125,10 @@ def summarize(results: list[EvalResult]) -> dict:
         "status_counts": {
             s: sum(r.status == s for r in results)
             for s in sorted({r.status for r in results})
+        },
+        "scored_by_counts": {
+            s: sum(r.scored_by == s for r in results)
+            for s in sorted({r.scored_by for r in results})
         },
     }
 

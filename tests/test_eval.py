@@ -95,3 +95,59 @@ class TestRunEval:
         assert (tmp_path / "results.jsonl").exists()
         assert (tmp_path / "summary.json").exists()
         assert (tmp_path / "trajectories" / f"{items[0].qid}.jsonl").exists()
+
+
+class TestJudge:
+    async def test_judge_yes_no_unparseable(self):
+        from rnsr.eval.metrics import judge_answer
+
+        yes = MockLLM(default="YES")
+        no = MockLLM(default="NO — the numbers differ")
+        weird = MockLLM(default="It depends on interpretation")
+        dead = MockLLM(fail_times=99)
+        assert await judge_answer(yes, "m", "q", "p", "g") is True
+        assert await judge_answer(no, "m", "q", "p", "g") is False
+        assert await judge_answer(weird, "m", "q", "p", "g") is None
+        assert await judge_answer(dead, "m", "q", "p", "g") is None
+
+    async def test_run_eval_judge_rescues_semantic_match(self, tmp_path):
+        items = synthetic_oolong(n_lines=20, n_items=1)
+        items[0].gold = "No, the company is managing its CAPEX well."
+        root = MockLLM(default="```python\nFINAL('No, it is not capital-intensive.')\n```")
+        sub = MockLLM().rule(r"agree with the reference", "YES")
+        runner = RootRunner(root_client=root, root_model="m", sub_client=sub,
+                            sub_model="m", settings=Settings(max_root_iters=2))
+        results, summary = await run_eval(items[:1], "rlm-classic", runner,
+                                          run_dir=tmp_path)
+        assert results[0].correct and results[0].scored_by == "judge"
+        assert summary["scored_by_counts"] == {"judge": 1}
+
+    async def test_string_match_skips_judge(self, tmp_path):
+        items = synthetic_oolong(n_lines=20, n_items=1)
+        root = MockLLM()
+        root.rule(r"How many lines", f"```python\nFINAL({items[0].gold})\n```")
+        sub = MockLLM(default="NO")   # would say NO if consulted
+        runner = RootRunner(root_client=root, root_model="m", sub_client=sub,
+                            sub_model="m", settings=Settings(max_root_iters=2))
+        results, _ = await run_eval(items[:1], "rlm-classic", runner,
+                                    run_dir=tmp_path)
+        assert results[0].correct and results[0].scored_by == "string"
+        assert not any(c["kind"] == "complete" and "agree with" in c["prompt"]
+                       for c in sub.calls)
+
+
+class TestNumericGoldClassifier:
+    def test_value_golds_numeric(self):
+        from rnsr.eval.datasets.financebench import _is_numeric_gold
+
+        for g in ("$1577.00", "8.70", "~1.5x", "25%", "3,234 million",
+                  "approximately $ 8.9 billion", "(1,234)"):
+            assert _is_numeric_gold(g), g
+
+    def test_sentence_golds_textual(self):
+        from rnsr.eval.datasets.financebench import _is_numeric_gold
+
+        for g in ("No, the quick ratio was 0.96 by Jun'23.",
+                  "Operating margin decreased by 1.7% in FY2022.",
+                  "Yes, they distribute dividends every quarter."):
+            assert not _is_numeric_gold(g), g

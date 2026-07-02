@@ -16,7 +16,7 @@ from pathlib import Path
 from rnsr.config import Settings
 from rnsr.db.artifact import CorpusDB
 from rnsr.eval.datasets.base import EvalItem
-from rnsr.eval.metrics import EvalResult, score_answer, summarize
+from rnsr.eval.metrics import EvalResult, judge_answer, score_answer, summarize
 from rnsr.harness.loop import EnvSpec, RootRunner
 
 SYSTEMS = ("docdb", "rlm-classic")   # vector-rag / base-lc land in Phase D
@@ -66,8 +66,15 @@ async def run_eval(
     *,
     run_dir: str | Path,
     limit: int | None = None,
+    judge: bool = True,
 ) -> tuple[list[EvalResult], dict]:
-    """Run a benchmark; writes results.jsonl + summary.json under run_dir."""
+    """Run a benchmark; writes results.jsonl + summary.json under run_dir.
+
+    Scoring: exact/numeric string match first (free); when that fails and
+    an answer exists, one sub-LM YES/NO equivalence call decides (string
+    matching undercounts essay-style golds — seen live on FinanceBench).
+    Judge cost is scoring overhead, not query cost, so it is not added to
+    per-query cost_usd."""
     run_dir = Path(run_dir)
     run_dir.mkdir(parents=True, exist_ok=True)
     cache_dir = run_dir / "corpora"
@@ -80,12 +87,20 @@ async def run_eval(
             t0 = time.monotonic()
             qr = await runner.run(item.question, env, run_dir=run_dir / "trajectories",
                                   query_id=item.qid)
+            predicted = None if qr.answer is None else str(qr.answer)
+            correct, scored_by = score_answer(qr.answer, item.gold), "string"
+            if judge and not correct and predicted is not None:
+                verdict = await judge_answer(runner.sub_client, runner.sub_model,
+                                             item.question, predicted, item.gold)
+                if verdict is not None:
+                    correct, scored_by = verdict, "judge"
             result = EvalResult(
                 qid=item.qid,
                 task_class=item.task_class,
-                predicted=None if qr.answer is None else str(qr.answer),
+                predicted=predicted,
                 gold=item.gold,
-                correct=score_answer(qr.answer, item.gold),
+                correct=correct,
+                scored_by=scored_by,
                 status=qr.status,
                 latency_s=round(time.monotonic() - t0, 3),
                 cost_usd=qr.ledger["spend_usd"],

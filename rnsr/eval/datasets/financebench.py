@@ -13,7 +13,19 @@ from rnsr.eval.datasets.base import EvalItem
 DATASET_ID = "PatronusAI/financebench"
 DEFAULT_CACHE = Path.home() / ".cache" / "rnsr" / "financebench"
 
-_NUMERIC = re.compile(r"\d")
+# A gold is "numeric" when its core IS a value (possibly with units/currency),
+# not merely a sentence containing digits — essay golds almost always cite
+# figures, which made a contains-a-digit test label everything numeric.
+_NUMERIC_GOLD = re.compile(
+    r"^\s*(?:~|≈|approximately|about|around|roughly)?\s*[$€£]?\s*"
+    r"-?\(?[\d,]+(?:\.\d+)?\)?\s*"
+    r"(?:%|x|bps|million|billion|thousand|mn|bn|m|b|usd|dollars)?\s*\.?\s*$",
+    re.IGNORECASE,
+)
+
+
+def _is_numeric_gold(gold: str) -> bool:
+    return bool(_NUMERIC_GOLD.match(gold.strip()))
 
 
 def _download(url: str, cache: Path) -> Path | None:
@@ -50,7 +62,7 @@ def load_financebench(limit: int | None = None,
             qid=row["financebench_id"],
             question=row["question"],
             gold=gold,
-            task_class="numeric" if _NUMERIC.search(gold) else "textual",
+            task_class="numeric" if _is_numeric_gold(gold) else "textual",
             sources=[pdf],
             meta={"doc_name": row["doc_name"], "evidence": row.get("evidence")},
         ))

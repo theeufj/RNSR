@@ -56,9 +56,51 @@ def query() -> None:
 
 
 @app.command("eval")
-def eval_cmd() -> None:
+def eval_cmd(
+    benchmark: str = typer.Option(..., "--benchmark", "-b",
+                                  help="synthetic-oolong | oolong | financebench"),
+    system: str = typer.Option("docdb", "--system", "-s",
+                               help="docdb | rlm-classic"),
+    limit: int | None = typer.Option(None, "--limit", "-n"),
+    run_dir: Path = typer.Option(Path("runs/eval"), "--run-dir"),
+    dataset_id: str | None = typer.Option(None, "--dataset-id",
+                                          help="HF dataset id override"),
+) -> None:
     """Run the evaluation harness (§8)."""
-    raise typer.Exit("not implemented yet: lands with the eval harness")
+    import asyncio
+    import json
+
+    from rnsr.config import Settings
+    from rnsr.eval.harness import run_eval
+    from rnsr.harness.loop import RootRunner
+    from rnsr.llm.router import Router
+
+    if benchmark == "synthetic-oolong":
+        from rnsr.eval.datasets.oolong import synthetic_oolong
+
+        items = synthetic_oolong()
+    elif benchmark == "oolong":
+        from rnsr.eval.datasets.oolong import DEFAULT_DATASET_ID, load_oolong
+
+        items = load_oolong(dataset_id or DEFAULT_DATASET_ID, limit=limit)
+    elif benchmark == "financebench":
+        from rnsr.eval.datasets.financebench import load_financebench
+
+        items = load_financebench(limit=limit)
+    else:
+        raise typer.BadParameter(f"unknown benchmark: {benchmark}")
+
+    settings = Settings.from_env()
+    router = Router(settings)
+    root, sub = router.resolve("root"), router.resolve("sub")
+    runner = RootRunner(root_client=root.client, root_model=root.model,
+                        sub_client=sub.client, sub_model=sub.model, settings=settings)
+    out_dir = run_dir / f"{benchmark}-{system}"
+    _, summary = asyncio.run(
+        run_eval(items, system, runner, run_dir=out_dir, limit=limit)
+    )
+    console.print_json(json.dumps(summary))
+    console.print(f"results in {out_dir}")
 
 
 @app.command()

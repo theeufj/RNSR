@@ -32,8 +32,9 @@ def generate_needle_set(
     out_dir: str | Path,
     *,
     n_docs: int = 3,
-    tables_per_doc: int = 4,
+    tables_per_doc: int = 6,
     questions_per_doc: int = 3,
+    prose_blocks: int = 25,   # bulk per table section; the gate regime is LARGE documents
     seed: int = 11,
 ) -> list[EvalItem]:
     """Write PDFs to out_dir and return needle questions with exact golds."""
@@ -60,9 +61,14 @@ def generate_needle_set(
         story = [Paragraph(f"{company} Corp — Annual Report", styles["Title"])]
         needles: list[tuple[str, str, int, int, str]] = []  # metric, seg, year, value, caption
 
+        # unique (metric, year) per table so every question has exactly one answer
+        combos = [(m, lo, hi, y) for (m, lo, hi) in _METRICS for y in _YEARS]
+        rng.shuffle(combos)
+        if tables_per_doc > len(combos):
+            raise ValueError(f"tables_per_doc must be <= {len(combos)}")
+
         for t in range(tables_per_doc):
-            metric, lo, hi = _METRICS[t % len(_METRICS)]
-            year = rng.choice(_YEARS)
+            metric, lo, hi, year = combos[t]
             caption = f"{metric} by segment, fiscal {year}"
             segments = rng.sample(_SEGMENTS, 4)
             values = [rng.randint(lo, hi) for _ in segments]
@@ -73,7 +79,7 @@ def generate_needle_set(
             story += [
                 Spacer(1, 10),
                 Paragraph(caption, styles["Heading2"]),
-                Paragraph(_PROSE, styles["BodyText"]),
+                *[Paragraph(_PROSE, styles["BodyText"]) for _ in range(prose_blocks)],
                 Table(grid, style=TableStyle([
                     ("GRID", (0, 0), (-1, -1), 0.5, "black"),
                     ("BACKGROUND", (0, 0), (-1, 0), "#dddddd"),

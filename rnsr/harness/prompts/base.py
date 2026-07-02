@@ -61,6 +61,31 @@ MANIFEST:
 """
 
 
+def compact_manifest(manifest: dict) -> dict:
+    """Prompt-sized view: schemas, confidence, status — not check details.
+
+    The full manifest (incl. per-check evidence) stays queryable in the REPL
+    via the `manifest` variable; this trims what is re-sent on every root
+    turn, which dominates docdb's per-query input cost.
+    """
+    out = {k: v for k, v in manifest.items() if k not in ("tables",)}
+    out["tables"] = [
+        {
+            "table_name": t.get("table_name"),
+            "doc_id": t.get("doc_id"),
+            "title": t.get("title"),
+            "pages": [t.get("page_start"), t.get("page_end")],
+            "n_rows": t.get("n_rows"),
+            "columns": [f'{c["name"]}:{c["type"]}' for c in t.get("schema", [])
+                        if not str(c.get("name", "")).endswith("__raw")],
+            "confidence": t.get("confidence"),
+            "status": t.get("status"),
+        }
+        for t in manifest.get("tables", [])
+    ]
+    return out
+
+
 def render_system(mode: str, *, manifest: dict | None = None,
                   batch_chars: int = 200_000, provider: str = "") -> str:
     from rnsr.harness.prompts.variants import guardrail_for
@@ -73,7 +98,8 @@ def render_system(mode: str, *, manifest: dict | None = None,
         parts.append(_CLASSIC)
     elif mode == "docdb":
         parts.append(_DOCDB.format(
-            manifest=json.dumps(manifest or {}, indent=1, default=str)[:20_000]
+            manifest=json.dumps(compact_manifest(manifest or {}), indent=1,
+                                default=str)[:20_000]
         ))
     else:
         raise ValueError(f"unknown mode: {mode}")

@@ -113,7 +113,8 @@ class RootRunner:
                          root_model=self.root_model, sub_model=self.sub_model)
 
         system = render_system(env.mode, manifest=env.manifest,
-                               batch_chars=s.sub_call_char_budget)
+                               batch_chars=s.sub_call_char_budget,
+                               provider=getattr(self.root_client, "provider", ""))
         sandbox = SandboxedRepl(rpc_handlers=self._rpc_handlers(ledger, trajectory))
         turns: list[tuple[str, str]] = []
         final: dict | None = None

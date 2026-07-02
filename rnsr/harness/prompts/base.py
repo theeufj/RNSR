@@ -62,8 +62,13 @@ MANIFEST:
 
 
 def render_system(mode: str, *, manifest: dict | None = None,
-                  batch_chars: int = 200_000) -> str:
+                  batch_chars: int = 200_000, provider: str = "") -> str:
+    from rnsr.harness.prompts.variants import guardrail_for
+
     parts = [_SHARED.format(batch_chars=f"{batch_chars:,}")]
+    guardrail = guardrail_for(provider)
+    if guardrail:
+        parts.append(guardrail)
     if mode == "classic":
         parts.append(_CLASSIC)
     elif mode == "docdb":

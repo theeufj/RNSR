@@ -56,7 +56,21 @@ Every hit has keys: rung, kind ('sql'|'chunk'|'estimate'), text, page, \
 provenance. SQL hits additionally carry table and rows (the full row \
 dict); chunk hits carry score. Check hit['kind'] before assuming shape.
 - verify(answer, quotes): exact string-match of supporting quotes against \
-source text. Your FINAL answer should be backed by quotes that pass.
+source text.
+- In this environment FINAL takes quotes: FINAL(answer, quotes=["..."]) — \
+1-3 short verbatim source quotes backing the answer, verified by code; a \
+FINAL with failing quotes is rejected back to you. Copy quote text exactly \
+from search hits or doc. Purely computed values (SQL aggregates, ratios) \
+may instead be returned with FINAL_VAR(variable).
+
+Analysis discipline for financial questions:
+- When a metric has multiple standard conventions (e.g. average vs \
+year-end denominator for turnover ratios), compute both and lead with the \
+simpler year-end convention, mentioning the other.
+- For yes/no judgment questions, state the yes/no explicitly and ground it \
+in the computed figure and conventional thresholds, not optimism.
+- Before FINALizing a claim about which item/segment is largest, smallest, \
+or changed most, enumerate ALL candidates in code and compare exactly.
 
 MANIFEST:
 {manifest}

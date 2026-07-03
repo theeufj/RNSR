@@ -39,7 +39,8 @@ class TestExec:
 class TestFinal:
     async def test_final_short_circuits(self, repl):
         res = await repl.exec_cell("FINAL('the answer')\nprint('unreachable')")
-        assert res.final == {"value": "the answer", "encoding": "json", "is_var": False}
+        assert res.final == {"value": "the answer", "encoding": "json",
+                             "is_var": False, "verification": None}
         assert "unreachable" not in res.stdout
 
     async def test_final_var_json_value(self, repl):

@@ -257,3 +257,49 @@ class TestDocdbPreloadInSandbox:
             assert lines[3] == "True"      # verify against retained text
         finally:
             await repl.close()
+
+
+class TestVerifiedFinal:
+    async def test_final_without_quotes_rejected(self, corpus):
+        from rnsr.env.sandbox import SandboxedRepl
+
+        repl = SandboxedRepl()
+        await repl.start(mode="docdb", corpus_db=str(corpus))
+        try:
+            res = await repl.exec_cell("FINAL('3234')")
+            assert not res.ok
+            assert "requires 1-3 short verbatim quotes" in res.error
+        finally:
+            await repl.close()
+
+    async def test_final_with_fabricated_quote_rejected(self, corpus):
+        from rnsr.env.sandbox import SandboxedRepl
+
+        repl = SandboxedRepl()
+        await repl.start(mode="docdb", corpus_db=str(corpus))
+        try:
+            res = await repl.exec_cell(
+                "FINAL('3234', quotes=['Net revenue was $9,999 million'])")
+            assert not res.ok
+            assert "FINAL rejected" in res.error
+            # loop survives; a corrected FINAL passes
+            res = await repl.exec_cell(
+                "FINAL('3234', quotes=['Net revenue was $3,234 million'])")
+            assert res.final is not None
+            assert res.final["verification"]["passed"] is True
+        finally:
+            await repl.close()
+
+    async def test_final_var_still_unverified(self, corpus):
+        from rnsr.env.sandbox import SandboxedRepl
+
+        repl = SandboxedRepl()
+        await repl.start(mode="docdb", corpus_db=str(corpus))
+        try:
+            res = await repl.exec_cell(
+                "total = db.execute('SELECT sum(revenue_m) FROM t_acme_001 "
+                "WHERE segment != \\'Total\\'').fetchone()[0]\nFINAL_VAR(total)")
+            assert res.final["value"] == 3234
+            assert res.final["verification"] is None
+        finally:
+            await repl.close()

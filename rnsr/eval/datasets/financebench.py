@@ -33,12 +33,17 @@ def _download(url: str, cache: Path) -> Path | None:
 
     out = cache / (hashlib.md5(url.encode()).hexdigest()[:8] + "_" + url.split("/")[-1])
     if out.exists():
-        return out
+        # a previous run may have cached a non-PDF (HTML error page); purge it
+        if out.read_bytes()[:5] == b"%PDF-":
+            return out
+        out.unlink()
     cache.mkdir(parents=True, exist_ok=True)
     try:
         resp = httpx.get(url, follow_redirects=True, timeout=60,
                          headers={"User-Agent": "rnsr-eval/1.0"})
         resp.raise_for_status()
+        if resp.content[:5] != b"%PDF-":   # host served HTML/login page
+            return None
         out.write_bytes(resp.content)
         return out
     except Exception:

@@ -74,21 +74,45 @@ async def run_eval(
     an answer exists, one sub-LM YES/NO equivalence call decides (string
     matching undercounts essay-style golds — seen live on FinanceBench).
     Judge cost is scoring overhead, not query cost, so it is not added to
-    per-query cost_usd."""
+    per-query cost_usd.
+
+    Resumable: existing results.jsonl rows are kept and their qids skipped.
+    A per-item failure (unparseable filing, ingest crash) records an
+    'error' result instead of killing the run."""
     run_dir = Path(run_dir)
     run_dir.mkdir(parents=True, exist_ok=True)
     cache_dir = run_dir / "corpora"
     settings = runner.settings
 
     results: list[EvalResult] = []
-    with open(run_dir / "results.jsonl", "w") as out:
+    results_path = run_dir / "results.jsonl"
+    if results_path.exists():
+        for line in results_path.read_text().splitlines():
+            results.append(EvalResult(**json.loads(line)))
+    done = {r.qid for r in results}
+
+    with open(results_path, "a") as out:
         for item in items[: limit or len(items)]:
-            env = _env_for(item, system, cache_dir, settings)
+            if item.qid in done:
+                continue
             t0 = time.monotonic()
-            qr = await runner.run(item.question, env, run_dir=run_dir / "trajectories",
-                                  query_id=item.qid)
-            predicted = None if qr.answer is None else str(qr.answer)
-            correct, scored_by = score_answer(qr.answer, item.gold), "string"
+            try:
+                env = _env_for(item, system, cache_dir, settings)
+                qr = await runner.run(item.question, env,
+                                      run_dir=run_dir / "trajectories",
+                                      query_id=item.qid)
+                predicted = None if qr.answer is None else str(qr.answer)
+                status = qr.status
+                ledger = qr.ledger
+                iterations = qr.iterations
+                trajectory_path = qr.trajectory_path
+            except Exception as e:   # e.g. Docling ConversionError on one filing
+                predicted, status = None, "error"
+                ledger = {"spend_usd": 0.0, "sub_calls": 0}
+                iterations, trajectory_path = 0, None
+                (run_dir / "errors.log").open("a").write(
+                    f"{item.qid}: {type(e).__name__}: {e}\n")
+            correct, scored_by = score_answer(predicted, item.gold), "string"
             if judge and not correct and predicted is not None:
                 verdict = await judge_answer(runner.sub_client, runner.sub_model,
                                              item.question, predicted, item.gold)
@@ -101,12 +125,12 @@ async def run_eval(
                 gold=item.gold,
                 correct=correct,
                 scored_by=scored_by,
-                status=qr.status,
+                status=status,
                 latency_s=round(time.monotonic() - t0, 3),
-                cost_usd=qr.ledger["spend_usd"],
-                sub_calls=qr.ledger["sub_calls"],
-                iterations=qr.iterations,
-                trajectory_path=qr.trajectory_path,
+                cost_usd=ledger["spend_usd"],
+                sub_calls=ledger["sub_calls"],
+                iterations=iterations,
+                trajectory_path=trajectory_path,
             )
             results.append(result)
             out.write(json.dumps(result.to_dict()) + "\n")

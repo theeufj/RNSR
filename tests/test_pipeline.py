@@ -133,3 +133,22 @@ class TestIngestDocling:
                 f'SELECT MAX(revenue_m) FROM "{table}"'
             ).fetchone()[0]
             assert total == 3234  # numeric needle: exact SQL, no LLM
+
+
+class TestAtomicity:
+    def test_interrupted_ingest_leaves_no_artifact(self, tmp_path):
+        def exploding_parse(path):
+            raise RuntimeError("parser died mid-run")
+
+        out = tmp_path / "corpus.db"
+        with pytest.raises(RuntimeError):
+            ingest([tmp_path / "x.pdf"], out, parse=exploding_parse)
+        assert not out.exists()
+        assert not out.with_suffix(".db.ingesting").exists()
+
+    def test_successful_ingest_renames_into_place(self, tmp_path):
+        out = tmp_path / "corpus.db"
+        report = ingest([tmp_path / "acme.pdf"], out, parse=_fake_parse)
+        assert out.exists()
+        assert report.out_db == str(out)
+        assert not out.with_suffix(".db.ingesting").exists()

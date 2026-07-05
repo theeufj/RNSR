@@ -22,14 +22,35 @@ from rnsr.harness.loop import EnvSpec, RootRunner
 SYSTEMS = ("docdb", "rlm-classic")   # vector-rag / base-lc land in Phase D
 
 
+def _corpus_valid(path: Path, n_sources: int) -> bool:
+    """A cached corpus must hold every source document and some text."""
+    import sqlite3
+
+    try:
+        conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+        try:
+            n_docs = conn.execute("SELECT count(*) FROM documents").fetchone()[0]
+            n_pages = conn.execute("SELECT count(*) FROM doc_text").fetchone()[0]
+        finally:
+            conn.close()
+        return n_docs >= n_sources and n_pages > 0
+    except sqlite3.Error:
+        return False
+
+
 def _corpus_for(sources: list[Path], cache_dir: Path, settings: Settings) -> Path:
-    """Ingest sources into a cached corpus.db (keyed by file content)."""
+    """Ingest sources into a cached corpus.db (keyed by file content).
+
+    Cached artifacts are validated before reuse — an interrupted ingest must
+    trigger a rebuild, never an empty environment (seen live)."""
     from rnsr.ingest.pipeline import ingest
 
     h = sha256()
     for s in sorted(sources):
         h.update(Path(s).read_bytes())
     out = cache_dir / f"corpus_{h.hexdigest()[:16]}.db"
+    if out.exists() and not _corpus_valid(out, len(sources)):
+        out.unlink()
     if not out.exists():
         cache_dir.mkdir(parents=True, exist_ok=True)
         ingest(sources, out, config=settings)

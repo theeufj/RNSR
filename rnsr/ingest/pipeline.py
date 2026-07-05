@@ -142,7 +142,12 @@ def ingest(
     if vision is None:
         report.skipped_stages.append("vision_reextraction (no LLM client)")
 
-    corpus = CorpusDB.create(out_db)
+    # Atomic artifact creation: build under a temp name, rename on success.
+    # An interruption mid-ingest must never leave a partial corpus.db that a
+    # cache later mistakes for a complete one (seen live: empty JPM corpus).
+    tmp_db = out_db.with_suffix(out_db.suffix + ".ingesting")
+    tmp_db.unlink(missing_ok=True)
+    corpus = CorpusDB.create(tmp_db)
     conn = corpus.conn
     try:
         seen_ids: set[str] = set()
@@ -200,6 +205,11 @@ def ingest(
         write_corpus_manifest(corpus, PARSER_NAME)
         schema.finalize_corpus(conn)
         conn.commit()
-    finally:
         corpus.close()
+        tmp_db.rename(out_db)
+        report.out_db = str(out_db)
+    except BaseException:
+        corpus.close()
+        tmp_db.unlink(missing_ok=True)
+        raise
     return report

@@ -151,3 +151,24 @@ class TestNumericGoldClassifier:
                   "Operating margin decreased by 1.7% in FY2022.",
                   "Yes, they distribute dividends every quarter."):
             assert not _is_numeric_gold(g), g
+
+
+class TestCorpusCacheValidation:
+    def test_empty_cached_corpus_rebuilt(self, tmp_path):
+        import sqlite3
+
+        from rnsr.db import schema as dbschema
+        from rnsr.eval.harness import _corpus_valid
+
+        empty = tmp_path / "empty.db"
+        conn = sqlite3.connect(empty)
+        dbschema.create_corpus_db(conn)
+        conn.close()
+        assert not _corpus_valid(empty, n_sources=1)
+
+    def test_garbage_file_invalid(self, tmp_path):
+        from rnsr.eval.harness import _corpus_valid
+
+        junk = tmp_path / "junk.db"
+        junk.write_bytes(b"<!DOCTYPE html>not a database")
+        assert not _corpus_valid(junk, n_sources=1)

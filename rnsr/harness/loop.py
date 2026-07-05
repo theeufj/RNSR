@@ -16,6 +16,7 @@ from pathlib import Path
 
 from rnsr.config import Settings
 from rnsr.env.sandbox import SandboxedRepl
+from rnsr.errors import SandboxError
 from rnsr.harness.budget import BudgetLedger
 from rnsr.harness.prompts.base import render_system, render_transcript
 from rnsr.harness.recovery import recover_variable
@@ -156,9 +157,26 @@ class RootRunner:
                     trajectory.event("no_code", reply=resp.text[:500])
                     continue
 
-                cell = await sandbox.exec_cell(
-                    code, timeout=min(120.0, ledger.remaining_wall_s())
-                )
+                try:
+                    cell = await sandbox.exec_cell(
+                        code, timeout=min(s.cell_timeout_s, ledger.remaining_wall_s())
+                    )
+                except SandboxError as e:
+                    # A runaway cell killed the sandbox (seen live: 120s
+                    # cell → whole query lost). Restart it — preloads are
+                    # reconstructable; only user variables are lost — and
+                    # let the loop continue.
+                    trajectory.event("sandbox_restarted", error=str(e)[:200])
+                    await sandbox.start(mode=env.mode, context=env.context,
+                                        corpus_db=env.corpus_db)
+                    turns.append((code, (
+                        f"[harness] {e} The sandbox was restarted: db/doc/"
+                        "manifest and tools are reloaded, but YOUR VARIABLES "
+                        "ARE GONE. Recompute what you need with cheaper "
+                        "operations (avoid full-text scans in pure Python; "
+                        "use search()/SQL/regex instead)."
+                    )))
+                    continue
                 observation = self._observe(cell)
                 trajectory.event("cell", code=code, ok=cell.ok,
                                  stdout=cell.stdout[:2000], error=cell.error,

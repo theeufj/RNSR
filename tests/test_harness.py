@@ -168,3 +168,17 @@ class TestRecoveryExcludesToolOutput:
     def test_all_junk_yields_empty(self):
         vars_ = {"cur": {"type": "Cursor", "repr": "<sqlite3.Cursor object at 0x10>"}}
         assert rank_candidates(vars_) == []
+
+
+class TestSandboxRestart:
+    async def test_runaway_cell_restarts_sandbox_and_continues(self, tmp_path):
+        root = MockLLM().script(
+            "```python\nwhile True: pass\n```",
+            "```python\nFINAL('recovered after restart')\n```",
+        )
+        result = await make_runner(root, max_wall_s=15.0, cell_timeout_s=1.5).run(
+            "q", CLASSIC, run_dir=tmp_path)
+        assert result.status == "final"
+        assert result.answer == "recovered after restart"
+        # second prompt carries the restart notice
+        assert "sandbox was restarted" in root.calls[1]["prompt"].lower()

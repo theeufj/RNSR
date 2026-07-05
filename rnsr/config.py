@@ -35,6 +35,7 @@ class Settings:
     max_wall_s: float = 600.0
     max_spend_usd: float = 2.0
     sub_concurrency: int = 16
+    cell_timeout_s: float = 120.0   # per-cell wall clock; sandbox killed past this
 
     # --- ingestion validation (§3.3) ---
     table_confidence_threshold: float = 0.7

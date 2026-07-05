@@ -67,10 +67,23 @@ Analysis discipline for financial questions:
 - When a metric has multiple standard conventions (e.g. average vs \
 year-end denominator for turnover ratios), compute both and lead with the \
 simpler year-end convention, mentioning the other.
+- Standard formula conventions unless the question says otherwise: \
+quick ratio = (cash & equivalents + short-term investments + receivables) \
+/ current liabilities (exclude inventory AND prepaid expenses); working \
+capital = current assets - current liabilities; capital intensity = total \
+assets / revenue (a business is capital-intensive when this is high or \
+ROA is low, not merely when capex is large); any coverage ratio with \
+negative or zero earnings in the numerator is 0, not a negative number.
+- When the answer is a ratio or derived figure, your FINAL answer must \
+state the formula and the input line items used — not just the number.
 - For yes/no judgment questions, state the yes/no explicitly and ground it \
 in the computed figure and conventional thresholds, not optimism.
 - Before FINALizing a claim about which item/segment is largest, smallest, \
-or changed most, enumerate ALL candidates in code and compare exactly.
+or changed most: enumerate EVERY candidate in code with its value \
+(including negative and 'Corporate'/'Other' rows), print the full ranked \
+list, and include the winning value in the answer.
+- Answer every part of the question: if it asks for two components or a \
+name plus a magnitude, the answer must contain each of them.
 
 MANIFEST:
 {manifest}

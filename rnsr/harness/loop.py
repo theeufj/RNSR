@@ -122,6 +122,7 @@ class RootRunner:
         final: dict | None = None
         seen_candidates: dict[str, int] = {}
         damped = False
+        completeness_checked = False
 
         try:
             await sandbox.start(mode=env.mode, context=env.context,
@@ -183,6 +184,19 @@ class RootRunner:
                                  final=cell.final, rpc_count=cell.rpc_count)
 
                 if cell.final is not None:
+                    if not completeness_checked:
+                        completeness_checked = True
+                        gap = await self._completeness_gap(
+                            question, cell.final, ledger)
+                        if gap:
+                            trajectory.event("completeness_pushback", gap=gap)
+                            turns.append((code, (
+                                "[harness] FINAL not accepted yet — the answer "
+                                f"seems incomplete: {gap} Address this and "
+                                "call FINAL again (or resubmit unchanged if "
+                                "you believe it is complete)."
+                            )))
+                            continue
                     final = cell.final
                     break
 
@@ -235,6 +249,31 @@ class RootRunner:
                 backoff = min(5.0 * attempt, ledger.remaining_wall_s() / 4)
                 if backoff > 0.1:
                     await asyncio.sleep(backoff)
+        return None
+
+    async def _completeness_gap(self, question: str, final: dict,
+                                ledger: BudgetLedger) -> str | None:
+        """One cheap sub-LM check: does the draft answer address every part
+        of the question? Returns the gap description, or None to accept.
+        Anything but an explicit MISSING verdict accepts — this is a nudge
+        against dropped question parts (seen live), not a second judge."""
+        prompt = (
+            f"Question: {question}\n\n"
+            f"Draft answer: {str(final.get('value'))[:1500]}\n\n"
+            "Does the draft answer address EVERY quantity and part the "
+            "question asks for (names, magnitudes, all requested "
+            "components)? Judge coverage only, not correctness. Reply with "
+            "exactly COMPLETE, or 'MISSING: <what is missing>' in one line."
+        )
+        try:
+            resp = await self.sub_client.complete(prompt, model=self.sub_model,
+                                                  max_tokens=100)
+            ledger.add_usage(resp.usage, sub_call=True)
+        except Exception:
+            return None
+        text = resp.text.strip()
+        if text.upper().startswith("MISSING"):
+            return text[len("MISSING"):].lstrip(": ").strip() or "unspecified gap"
         return None
 
     def _observe(self, cell) -> str:

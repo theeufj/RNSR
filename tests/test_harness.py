@@ -55,7 +55,8 @@ class TestFinalPath:
         sub = MockLLM(default="LabelX")
         result = await make_runner(root, sub).run("q", CLASSIC, run_dir=tmp_path)
         assert result.answer == "LabelX"
-        assert result.ledger["sub_calls"] == 2
+        # 2 llm_map calls + 1 completeness check
+        assert result.ledger["sub_calls"] == 3
 
     async def test_no_code_reply_prompts_again(self, tmp_path):
         root = MockLLM().script(
@@ -94,7 +95,7 @@ class TestBudgets:
         )
         result = await make_runner(root).run("q", CLASSIC, run_dir=tmp_path)
         assert result.status == "final"  # loop survives; cell saw the error
-        assert result.ledger["sub_calls"] == 0
+        assert result.ledger["sub_calls"] == 1  # only the completeness check
 
 
 class TestDamping:
@@ -182,3 +183,40 @@ class TestSandboxRestart:
         assert result.answer == "recovered after restart"
         # second prompt carries the restart notice
         assert "sandbox was restarted" in root.calls[1]["prompt"].lower()
+
+
+class TestCompletenessGate:
+    async def test_incomplete_final_pushed_back_once(self, tmp_path):
+        root = MockLLM().script(
+            "```python\nFINAL('the Consumer segment')\n```",
+            "```python\nFINAL('the Consumer segment, which shrank 0.9%')\n```",
+        )
+        sub = MockLLM().script("MISSING: the magnitude of the change", "COMPLETE")
+        result = await make_runner(root, sub).run(
+            "Which segment shrank, and by how much?", CLASSIC, run_dir=tmp_path)
+        assert result.status == "final"
+        assert "0.9%" in result.answer
+        # pushback text reached the model
+        assert "seems incomplete" in root.calls[1]["prompt"]
+        # only the first FINAL is checked
+        assert sum("Draft answer" in c["prompt"] for c in sub.calls) == 1
+
+    async def test_complete_final_accepted_without_pushback(self, tmp_path):
+        root = MockLLM().script("```python\nFINAL('42 (net revenue, $M)')\n```")
+        sub = MockLLM(default="COMPLETE")
+        result = await make_runner(root, sub).run("q", CLASSIC, run_dir=tmp_path)
+        assert result.status == "final" and result.iterations == 1
+
+    async def test_ambiguous_checker_reply_accepts(self, tmp_path):
+        root = MockLLM().script("```python\nFINAL('x')\n```")
+        sub = MockLLM(default="UNCLEAR")   # not MISSING -> accept
+        result = await make_runner(root, sub).run("q", CLASSIC, run_dir=tmp_path)
+        assert result.status == "final" and result.iterations == 1
+
+    async def test_resubmission_after_pushback_accepted(self, tmp_path):
+        # model insists the answer was complete; second FINAL passes unchecked
+        root = MockLLM(default="```python\nFINAL('done')\n```")
+        sub = MockLLM(default="MISSING: something imaginary")
+        result = await make_runner(root, sub).run("q", CLASSIC, run_dir=tmp_path)
+        assert result.status == "final"
+        assert result.iterations == 2

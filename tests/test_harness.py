@@ -155,3 +155,16 @@ class TestRootResilience:
         result = await make_runner(root, max_root_iters=1).run("q", CLASSIC,
                                                                run_dir=tmp_path)
         assert result.status == "budget_exhausted"
+
+
+class TestRecoveryExcludesToolOutput:
+    def test_search_hit_dumps_excluded(self):
+        vars_ = {
+            "hits": {"type": "list", "repr": "[{'rung': 0, 'kind': 'sql', 'provenance': {...}}]"},
+            "revenue_total": {"type": "int", "repr": "3234"},
+        }
+        assert rank_candidates(vars_) == ["revenue_total"]
+
+    def test_all_junk_yields_empty(self):
+        vars_ = {"cur": {"type": "Cursor", "repr": "<sqlite3.Cursor object at 0x10>"}}
+        assert rank_candidates(vars_) == []

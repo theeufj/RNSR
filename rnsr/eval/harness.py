@@ -88,7 +88,14 @@ async def run_eval(
     results_path = run_dir / "results.jsonl"
     if results_path.exists():
         for line in results_path.read_text().splitlines():
-            results.append(EvalResult(**json.loads(line)))
+            r = EvalResult(**json.loads(line))
+            # Void rows — nothing was ever attempted (network outage, parse
+            # crash) — are dropped so resume retries them.
+            if r.status == "error" or (r.predicted is None and r.iterations == 0):
+                continue
+            results.append(r)
+        results_path.write_text(
+            "".join(json.dumps(r.to_dict()) + "\n" for r in results))
     done = {r.qid for r in results}
 
     with open(results_path, "a") as out:

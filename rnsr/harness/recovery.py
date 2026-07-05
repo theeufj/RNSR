@@ -11,11 +11,16 @@ import re
 
 _ANSWERISH = re.compile(r"answer|result|final|out(put)?|pairs|total|value", re.IGNORECASE)
 
+# Raw tool output is never an answer: search-hit dumps, sqlite handles, etc.
+# Recovering one produced garbage results live (predicted = "[{'rung': 0, ...").
+_TOOL_OUTPUT = re.compile(r"'rung':|'provenance':|<sqlite3\.|<function |object at 0x")
+
 
 def rank_candidates(vars_: dict[str, dict]) -> list[str]:
     """Namespace vars, most answer-like first (name match, then recency —
-    dict order reflects creation order, so later wins ties)."""
-    names = list(vars_)
+    dict order reflects creation order, so later wins ties). Variables whose
+    repr looks like raw tool output are excluded outright."""
+    names = [n for n in vars_ if not _TOOL_OUTPUT.search(vars_[n]["repr"])]
     return sorted(
         names,
         key=lambda n: (bool(_ANSWERISH.search(n)), names.index(n)),

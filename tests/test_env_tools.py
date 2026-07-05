@@ -303,3 +303,18 @@ class TestVerifiedFinal:
             assert res.final["verification"] is None
         finally:
             await repl.close()
+
+    async def test_third_final_attempt_accepted_with_failed_verification(self, corpus):
+        from rnsr.env.sandbox import SandboxedRepl
+
+        repl = SandboxedRepl()
+        await repl.start(mode="docdb", corpus_db=str(corpus))
+        try:
+            r1 = await repl.exec_cell("FINAL('x', quotes=['fabricated one'])")
+            r2 = await repl.exec_cell("FINAL('x', quotes=['fabricated two'])")
+            assert not r1.ok and not r2.ok
+            r3 = await repl.exec_cell("FINAL('x', quotes=['fabricated three'])")
+            assert r3.final is not None
+            assert r3.final["verification"]["passed"] is False
+        finally:
+            await repl.close()

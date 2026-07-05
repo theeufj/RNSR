@@ -199,10 +199,11 @@ class RootRunner:
 
         Provider SDK defaults allow requests to hang for up to 10 minutes —
         long enough for one stuck call to eat the entire §7 wall cap (seen
-        live on FinanceBench). Two attempts, each capped, then give up so
-        recovery still has budget to run.
+        live on FinanceBench). Three attempts with backoff (transient
+        network loss killed back-to-back attempts, also seen live), each
+        capped, then give up so recovery still has budget to run.
         """
-        for attempt in (1, 2):
+        for attempt in (1, 2, 3):
             timeout = min(120.0, ledger.remaining_wall_s())
             try:
                 async with asyncio.timeout(timeout):
@@ -213,6 +214,9 @@ class RootRunner:
             except Exception as e:  # timeout or any provider error
                 trajectory.event("root_call_failed", attempt=attempt,
                                  timeout_s=timeout, error=f"{type(e).__name__}: {e}"[:200])
+                backoff = min(5.0 * attempt, ledger.remaining_wall_s() / 4)
+                if backoff > 0.1:
+                    await asyncio.sleep(backoff)
         return None
 
     def _observe(self, cell) -> str:

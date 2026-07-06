@@ -44,3 +44,19 @@ def fixture_pdf(tmp_path_factory):
     ]
     SimpleDocTemplate(str(path), pagesize=LETTER).build(story)
     return path
+
+
+@pytest.fixture(scope="session")
+def scanned_pdf(fixture_pdf, tmp_path_factory):
+    """An image-only PDF (the fixture rasterized) — no text layer at all."""
+    pytest.importorskip("pypdfium2")
+    import pypdfium2 as pdfium
+
+    pdf = pdfium.PdfDocument(str(fixture_pdf))
+    try:
+        images = [page.render(scale=2.0).to_pil() for page in pdf]
+    finally:
+        pdf.close()
+    out = tmp_path_factory.mktemp("pdfs") / "acme_scanned.pdf"
+    images[0].save(out, format="PDF", save_all=True, append_images=images[1:])
+    return out

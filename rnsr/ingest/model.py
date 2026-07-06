@@ -59,6 +59,7 @@ class ParsedDocument:
     parser: str
     elements: list[Element] = field(default_factory=list)
     tables: list[RawTable] = field(default_factory=list)
+    scanned_pages: list[int] = field(default_factory=list)  # no text layer; VLM candidates
 
     def page_text(self, page: int) -> str:
         return "\n".join(e.text for e in self.elements if e.page == page and e.text)

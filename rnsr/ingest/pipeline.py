@@ -45,6 +45,8 @@ class IngestReport:
     tables: list[TableReport] = field(default_factory=list)
     n_chunks: int = 0
     skipped_stages: list[str] = field(default_factory=list)
+    scanned_pages_transcribed: int = 0
+    scanned_pages_untranscribed: list[dict] = field(default_factory=list)  # visible gaps
 
     @property
     def validation_pass_rate(self) -> float:
@@ -63,9 +65,39 @@ class IngestReport:
                 "n_chunks": self.n_chunks,
                 "validation_pass_rate": round(self.validation_pass_rate, 4),
                 "skipped_stages": self.skipped_stages,
+                "scanned_pages_transcribed": self.scanned_pages_transcribed,
+                "scanned_pages_untranscribed": self.scanned_pages_untranscribed,
             },
             indent=2,
         )
+
+
+def _merge_transcriptions(parsed: ParsedDocument,
+                          transcriptions: dict[int, dict | None]) -> list[int]:
+    """Fold VLM page transcriptions into the parsed document; returns pages
+    that failed to transcribe. Elements/tables are stamped extractor=vision
+    and flow through the normal checksum-validation path (§3.3)."""
+    failed: list[int] = []
+    for page in sorted(transcriptions):
+        t = transcriptions[page]
+        if t is None:
+            failed.append(page)
+            continue
+        for block in t.get("blocks", []):
+            text = str(block.get("text", "")).strip()
+            if not text:
+                continue
+            kind = "heading" if block.get("kind") == "heading" else "text"
+            level = 1 if kind == "heading" else None
+            parsed.elements.append(Element(kind, text, page, heading_level=level))
+        for grid in t.get("tables", []):
+            header = [str(h) if h is not None else "" for h in grid.get("header", [])]
+            rows = [[None if c is None else str(c) for c in row]
+                    for row in grid.get("rows", [])]
+            if header and rows:
+                parsed.tables.append(RawTable(page=page, header=header, rows=rows,
+                                              extractor="vision"))
+    return failed
 
 
 def _validate(raw: RawTable, config: Settings, prose_checker: ProseChecker | None,
@@ -158,11 +190,15 @@ def ingest(
     config: Settings | None = None,
     prose_checker: ProseChecker | None = None,
     vision: VisionExtractor | None = None,
+    transcriber=None,
     parse=parse_pdf,
 ) -> IngestReport:
     """Ingest documents into a single self-contained corpus.db artifact.
 
     `parse` is injectable for tests (any callable path -> ParsedDocument).
+    `transcriber` (llm_hooks.make_page_transcriber) turns scanned pages into
+    elements/tables via the VLM; without it, scanned pages are reported as
+    untranscribed — visible, never silent.
     """
     config = config or Settings()
     if isinstance(sources, (str, Path)):
@@ -174,6 +210,8 @@ def ingest(
         report.skipped_stages.append("prose_cross_check (no LLM client)")
     if vision is None:
         report.skipped_stages.append("vision_reextraction (no LLM client)")
+    if transcriber is None:
+        report.skipped_stages.append("scanned_page_transcription (no LLM client)")
 
     # Atomic artifact creation: build under a temp name, rename on success.
     # An interruption mid-ingest must never leave a partial corpus.db that a
@@ -190,6 +228,21 @@ def ingest(
             if parsed.doc_id in seen_ids:
                 parsed.doc_id = f"{parsed.doc_id}_{len(seen_ids)}"
             seen_ids.add(parsed.doc_id)
+
+            if parsed.scanned_pages:
+                if transcriber is not None:
+                    transcriptions = transcriber(src, parsed.scanned_pages)
+                    failed = _merge_transcriptions(parsed, transcriptions)
+                    report.scanned_pages_transcribed += (
+                        len(parsed.scanned_pages) - len(failed))
+                    if failed:
+                        report.scanned_pages_untranscribed.append(
+                            {"doc_id": parsed.doc_id, "pages": failed,
+                             "reason": "transcription failed"})
+                else:
+                    report.scanned_pages_untranscribed.append(
+                        {"doc_id": parsed.doc_id, "pages": parsed.scanned_pages,
+                         "reason": "no transcriber (run with --llm)"})
 
             pages, chunks = chunk_document(
                 parsed, chunk_chars=config.chunk_chars, overlap=config.chunk_overlap

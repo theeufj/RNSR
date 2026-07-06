@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import json
 import re
+from collections.abc import Callable
 from pathlib import Path
 
 from rnsr.ingest.fallback import VisionExtractor
@@ -80,6 +81,60 @@ def _parse_grid(text: str) -> dict | None:
     if not isinstance(obj.get("header"), list) or not isinstance(obj.get("rows"), list):
         return None
     return obj
+
+
+_TRANSCRIBE_PROMPT = """\
+This image is a scanned page from a document. Transcribe it fully as JSON
+with exactly this shape:
+{"blocks": [{"kind": "heading"|"text", "text": "..."}, ...],
+ "tables": [{"header": ["col", ...], "rows": [["cell", ...], ...]}, ...]}
+Rules: transcribe text exactly (keep numbers, currency symbols, commas,
+parentheses); reading order top to bottom; each paragraph is one block;
+put tabular data in "tables" (use null for empty cells), not in blocks.
+Return ONLY the JSON object."""
+
+
+def _parse_transcription(text: str) -> dict | None:
+    m = re.search(r"\{.*\}", text, re.DOTALL)
+    if not m:
+        return None
+    try:
+        obj = json.loads(m.group())
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(obj.get("blocks"), list):
+        return None
+    obj.setdefault("tables", [])
+    return obj
+
+
+# transcribe(pdf_path, pages) -> {page: transcription dict | None}
+PageTranscriber = Callable[[Path, list[int]], dict[int, dict | None]]
+
+
+def make_page_transcriber(client: LLMClient, model: str, *,
+                          concurrency: int = 4) -> PageTranscriber:
+    """VLM transcription of scanned pages (no OCR engine — spec §3.1 vision
+    rung applied to whole pages). One vision call per page, concurrent."""
+
+    async def _run(pdf_path: Path, pages: list[int]) -> dict[int, dict | None]:
+        sem = asyncio.Semaphore(concurrency)
+
+        async def one(page: int) -> tuple[int, dict | None]:
+            async with sem:
+                try:
+                    png = rasterize_page(pdf_path, page)
+                    resp = await client.vision(_TRANSCRIBE_PROMPT, png, model=model)
+                    return page, _parse_transcription(resp.text)
+                except Exception:
+                    return page, None
+
+        return dict(await asyncio.gather(*(one(p) for p in pages)))
+
+    def transcribe(pdf_path: Path, pages: list[int]) -> dict[int, dict | None]:
+        return asyncio.run(_run(pdf_path, pages))
+
+    return transcribe
 
 
 def make_vision_extractor(client: LLMClient, model: str) -> VisionExtractor:

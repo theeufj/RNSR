@@ -34,9 +34,13 @@ def ingest(
     from rnsr.ingest.pipeline import ingest as run_ingest
 
     settings = Settings.from_env()
-    prose_checker = vision = None
+    prose_checker = vision = transcriber = None
     if llm:
-        from rnsr.ingest.llm_hooks import make_prose_checker, make_vision_extractor
+        from rnsr.ingest.llm_hooks import (
+            make_page_transcriber,
+            make_prose_checker,
+            make_vision_extractor,
+        )
         from rnsr.llm.router import Router
 
         router = Router(settings)
@@ -44,9 +48,11 @@ def ingest(
         prose_checker = make_prose_checker(sub.client, sub.model,
                                            concurrency=settings.sub_concurrency)
         vision = make_vision_extractor(vis.client, vis.model)
+        transcriber = make_page_transcriber(vis.client, vis.model)
 
     report = run_ingest(sources, out, config=settings,
-                        prose_checker=prose_checker, vision=vision)
+                        prose_checker=prose_checker, vision=vision,
+                        transcriber=transcriber)
 
     t = Table(title=f"Ingested -> {out}")
     for col in ("table", "status", "confidence", "extractor", "rows"):
@@ -58,6 +64,10 @@ def ingest(
         f"{len(report.documents)} document(s), {report.n_chunks} chunks, "
         f"validation pass rate {report.validation_pass_rate:.0%}"
     )
+    if report.scanned_pages_transcribed:
+        console.print(f"{report.scanned_pages_transcribed} scanned page(s) transcribed via VLM")
+    if report.scanned_pages_untranscribed:
+        console.print(f"[red]untranscribed scanned pages:[/red] {report.scanned_pages_untranscribed}")
     if report.skipped_stages:
         console.print(f"[yellow]skipped:[/yellow] {', '.join(report.skipped_stages)}")
     if report_path:

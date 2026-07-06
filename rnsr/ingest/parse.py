@@ -139,4 +139,13 @@ def parse_pdf(path: str | Path, doc_id: str | None = None, *, ocr: bool = False)
             if item.text and item.text.strip():
                 parsed.elements.append(Element("text", item.text, page, bbox))
 
+    # Pages with (almost) no extractable text have no text layer — scanned.
+    # OCR engines are deliberately not used; the VLM transcribes these pages
+    # when an LLM client is provided at ingest (pipeline.transcriber).
+    chars_by_page: dict[int, int] = {}
+    for e in parsed.elements:
+        chars_by_page[e.page] = chars_by_page.get(e.page, 0) + len(e.text)
+    parsed.scanned_pages = [
+        p for p in range(1, parsed.n_pages + 1) if chars_by_page.get(p, 0) < 50
+    ]
     return parsed

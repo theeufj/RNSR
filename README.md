@@ -29,13 +29,40 @@ flat-string environment — on a numeric-needle set with exact golds): **PASS**.
 DocDB 89% vs classic 78% accuracy, at lower cost (p50 $0.055 vs $0.075;
 p95 $0.106 vs $0.225 — classic re-reads its giant context every turn).
 
+**Legal benchmarks** (30-question samples; scoring as above; ContractNLI
+and LegalBench items carry no document, so classic and DocDB environments
+are identical for them by construction):
+
+| Benchmark | DocDB | RLM-classic (same questions) |
+|---|---|---|
+| CUAD clause extraction | **90%** (27/30) | 83% (25/30) |
+| — of which absent-clause questions | **20/23** | 18/23 |
+| ContractNLI (3-way NLI, clause-scale) | 67% | — (identical env) |
+| LegalBench (4-task slice) | 84% | — (identical env) |
+
+On CUAD the A/B split is informative: extraction parity (7/7 both) —
+sampled contracts are small (median 23k chars) and fit one context
+window — but DocDB is better at *absent* clauses (all four disagreements
+were absent-clause questions, 3–1 DocDB), i.e. it resists finding
+plausible-but-nonexistent clauses. Classic is cheaper on sub-window
+documents ($0.10 vs $0.19/question). A long-contract A/B (230–300k-char
+agreements) is in progress. These are QA-protocol numbers on samples,
+not the official CUAD span-AUPR metric — not leaderboard-comparable.
+
 **OOLONG** (Phase B harness acceptance; `oolongbench/oolong-synth`
 trec_coarse, 50 questions, 1k–65k-token contexts): RLM-classic scores
-**60%** with all questions reaching a clean final answer — in the ballpark
-the RLM paper reports, closing the reproduction gate. DocDB scores 56% at
-~1.5× cost on this flat-text benchmark — statistically indistinguishable
-(2-question gap), and the expected shape: when the whole context fits in
-one window and there are no tables, structure buys nothing (§1.3).
+**60%/58%** across two runs, in the ballpark the RLM paper reports —
+closing the reproduction gate. DocDB progressed 56% → 62% → **64%**
+through targeted fixes (lines-table for semantic_annotate, per-item
+labeling rubric, majority voting); the residual misses are dominated by
+per-item label ambiguity that OOLONG's aggregation amplifies (a 97.8%
+per-line labeler still miscounts), plus a measured share of contestable
+golds. Flat-text costs ~1.5× classic: when the whole context fits in one
+window and carries no structure, structure buys nothing (§1.3) — the
+harness exposes classic mode as a flag for exactly that regime. Bonus
+finding, measured live: annotation columns persist in the artifact, so a
+second run over the same corpora answered at **half cost with a median of
+1 sub-call per question** — semantic work amortizes across queries (§4.1).
 
 **Real-filing ingestion health**: 87% table-validation pass rate on two 3M
 10-Ks (412 pages, 228 detected tables), against the spec's 70% stop threshold.
@@ -43,6 +70,16 @@ Scoring: exact string/numeric match first; sub-model equivalence judge only
 on string failure. Answers carry code-verified quotes (§6) — supporting
 quotes are string-matched against retained source text, with failures fed
 back into the loop.
+
+**The honest regime map**, consistent across every controlled A/B:
+
+| Regime | Verdict |
+|---|---|
+| Long/structured documents, numeric needles | DocDB wins on accuracy AND cost |
+| Documents fitting one context window | Parity at ~1.5× cost — use classic mode (a flag) |
+| Absent-needle questions ("no such clause") | DocDB's verification discipline resists confabulation |
+| Many questions per document | DocDB amortizes: ingest + annotations pay once |
+| Any regime | Only DocDB returns code-verified quotes with char offsets |
 
 ## Install
 

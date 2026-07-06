@@ -30,7 +30,7 @@ DEFAULT_MODELS: dict[str, dict[str, str]] = {
     "gemini": {
         "root": "gemini-2.5-pro",
         "sub": "gemini-2.5-flash",
-        "embed": "text-embedding-004",
+        "embed": "gemini-embedding-001",  # text-embedding-00x line is retired (404)
         "vision": "gemini-2.5-flash",
     },
 }
@@ -95,15 +95,18 @@ class Router:
             raise ValueError(f"unknown role: {role}")
         override = getattr(self.settings, f"{role}_model", "")
         provider = self.provider
-        model = override or DEFAULT_MODELS[provider][role]
-        if role == "embed" and not model:
+        # A provider with no embedding API falls through to one that has it
+        # BEFORE the override is applied — otherwise an embed-model override
+        # would be routed to a client that cannot embed at all.
+        if role == "embed" and not DEFAULT_MODELS[provider]["embed"]:
             for alt in ("openai", "gemini"):
                 if alt in available_providers():
-                    provider, model = alt, DEFAULT_MODELS[alt]["embed"]
+                    provider = alt
                     break
             else:
                 raise RuntimeError(
                     f"provider '{self.provider}' has no embeddings and no "
                     "OPENAI_API_KEY/GOOGLE_API_KEY fallback is set"
                 )
+        model = override or DEFAULT_MODELS[provider][role]
         return Resolved(self._client_for(provider), model)

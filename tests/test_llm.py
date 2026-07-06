@@ -116,3 +116,14 @@ class TestMock:
         a = await mock.embed(["revenue table"], model="e")
         b = await mock.embed(["revenue table"], model="e")
         assert a == b and len(a[0]) == 10
+
+    def test_embed_override_still_falls_through_anthropic(self, monkeypatch):
+        # an embed-model override must not route embeddings to a client
+        # that has no embedding API (seen live: anthropic + gemini override)
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-a")
+        monkeypatch.setenv("GOOGLE_API_KEY", "g-key")
+        monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+        r = Router(Settings(provider="anthropic", embed_model="gemini-embedding-001"))
+        resolved = r.resolve("embed")
+        assert resolved.client.provider == "gemini"
+        assert resolved.model == "gemini-embedding-001"

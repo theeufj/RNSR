@@ -57,11 +57,11 @@ class TestMatterGen:
         # invoice arithmetic golds match the fact system
         totals = next(i for i in a if "ALL tax invoices" in i.question)
         assert totals.gold == f"${f.total_invoiced:,}"
-        outstanding = next(i for i in a if "outstanding" in i.question)
+        outstanding = next(i for i in a if "still owed" in i.question)
         assert outstanding.gold == f"${sum(x['amount'] for x in f.outstanding):,}"
         # cure deadline is breach + cure_days
         from datetime import timedelta
-        deadline = next(i for i in a if "remedy the breach" in i.question)
+        deadline = next(i for i in a if "drop-dead date" in i.question)
         assert deadline.gold == (f.breach_date + timedelta(days=f.cure_days)).strftime("%-d %B %Y")
         assert "absent" in by_class and "cross-doc" in by_class
 

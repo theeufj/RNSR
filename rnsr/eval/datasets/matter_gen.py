@@ -61,7 +61,7 @@ class MatterFacts:
         self.a2_date = self.a1_date + timedelta(days=rng.randint(120, 240))
         self.indemnity_cap_2 = self.indemnity_cap_0 + rng.randint(5, 15) * 100_000
         self.rates = {r: rng.randint(140, 320) * 5 for r in _ROLES}
-        n_inv = rng.randint(9, 14)
+        n_inv = rng.randint(38, 46)
         self.invoices = []
         inv_date = self.a1_date + timedelta(days=30)
         for i in range(1, n_inv + 1):
@@ -110,6 +110,21 @@ def _pdf(path: Path, title: str, blocks: list, tables: list | None = None) -> No
 
 
 def _write_operative_docs(out: Path, f: MatterFacts) -> None:
+    # Near-duplicate hazard, ubiquitous in real matter files: an early draft
+    # with DIFFERENT terms, clearly marked superseded. Systems that cannot
+    # rank versions return these numbers confidently.
+    _pdf(out / "00_msa_draft_v2_superseded.pdf",
+         f"DRAFT (v2) — Master Services Agreement — {f.client} and {f.vendor}",
+         ["DRAFT FOR NEGOTIATION ONLY — SUPERSEDED BY THE EXECUTED AGREEMENT. "
+          "This draft does not reflect the final agreed terms.",
+          "PAYMENT TERMS (DRAFT)",
+          f"The Client shall pay each invoice within {f.payment_terms_0 + 30} "
+          f"days of receipt (net {f.payment_terms_0 + 30} days).",
+          "LIMITATION AND INDEMNITY (DRAFT)",
+          f"The Vendor's aggregate liability is capped at "
+          f"${f.indemnity_cap_0 + 750_000:,}.",
+          "STATUS",
+          "This version was not executed."])
     _pdf(out / "01_master_services_agreement.pdf",
          f"Master Services Agreement — {f.client} and {f.vendor}",
          [f"This Master Services Agreement is made on {_fmt(f.msa_date)} between "
@@ -214,8 +229,8 @@ def generate_matter(out_dir: str | Path, *, n_filler: int = 32,
          "What is the indemnity cap currently in effect, taking into account all "
          "amendments?", f"${f.indemnity_cap_2:,}"),
         ("cross-doc",
-         "What payment terms currently apply to invoices, taking into account all "
-         "amendments?", f"net {f.payment_terms_1} days"),
+         "If the client gets a bill from the vendor today, how long do they "
+         "actually have to pay it?", f"{f.payment_terms_1} days"),
         ("aggregation",
          "How many tax invoices has the Vendor issued in this matter?",
          str(len(f.invoices))),
@@ -223,11 +238,11 @@ def generate_matter(out_dir: str | Path, *, n_filler: int = 32,
          "What is the total amount across ALL tax invoices issued (paid and "
          "unpaid)?", f"${f.total_invoiced:,}"),
         ("aggregation",
-         "What is the total amount outstanding across unpaid invoices?",
+         "How much money is the vendor actually still owed at this point?",
          f"${out_total:,}"),
         ("timeline",
-         "By what date must the Client remedy the breach identified in the notice "
-         "of breach?", _fmt(f.cure_deadline)),
+         "What is the drop-dead date for the client to fix things before the "
+         "vendor can act on its breach notice?", _fmt(f.cure_deadline)),
         ("timeline",
          "On what date was Amendment No. 2 made?", _fmt(f.a2_date)),
         ("single-doc",

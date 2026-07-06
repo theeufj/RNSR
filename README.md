@@ -89,16 +89,20 @@ window, so prompt-stuffing is disqualified at the door):
 | RLM-classic | 23/24 | $0.07 | 39s |
 | BM25-RAG (top-12 chunks, one call) | 19/24 | $0.006 | 4s |
 | Rerank-RAG (top-60 pool, LLM reranker, top-12) | 7/12 (v2) | $0.018 | 7s |
+| Vector-RAG (gemini-embedding-2, top-12) | 9/12 (v2) | $0.005 | 4s |
 
 RAG aced the retrieval-friendly v1 (12/12 at 1/30th the cost — stated
 plainly) and collapsed to 7/12 on the realistic v2: its five misses are
 structural, not marginal — every invoice aggregation (the set exceeds any
 top-k), the amendment-override question (it confidently answered the
 *original* MSA terms, never seeing the amendment), and a timeline it
-failed to retrieve. Adding an LLM reranker over a top-60 pool changed
-NOTHING — the identical 7/12, same misses, at 3× the cost: the failures
-are architectural (sets beyond k, versions, absence), not retrieval
-precision. Classic's single miss (v1) was a silent arithmetic
+failed to retrieve. The RAG ladder decomposes the failure honestly:
+an LLM reranker over a top-60 lexical pool changed nothing (identical
+7/12 at 3× cost), but semantic embeddings (gemini-embedding-2) fixed both
+retrieval-quality misses — the amendment-override and the timeline —
+reaching 9/12. What NO retrieval flavor fixed is the aggregation class:
+39 invoices cannot occupy 12 excerpt slots regardless of ranking quality.
+That is the architectural boundary of single-shot retrieval. Classic's single miss (v1) was a silent arithmetic
 slip while aggregating by reading — the failure class SQL makes a
 non-event. DocDB was perfect across both versions with every answer
 carrying verified quotes.

@@ -19,7 +19,16 @@ from rnsr.eval.datasets.base import EvalItem
 from rnsr.eval.metrics import EvalResult, judge_answer, score_answer, summarize
 from rnsr.harness.loop import EnvSpec, RootRunner
 
-SYSTEMS = ("docdb", "rlm-classic", "bm25-rag", "vector-rag")
+SYSTEMS = ("docdb", "rlm-classic", "bm25-rag", "vector-rag", "rerank-rag")
+
+_RERANK_PROMPT = """\
+Question: {question}
+
+Candidate excerpt:
+{chunk}
+
+Score this excerpt's usefulness for answering the question, 0 (irrelevant)
+to 10 (contains the answer). Reply with ONLY the integer."""
 
 _RAG_PROMPT = """\
 Answer the question using ONLY the numbered excerpts below, retrieved from
@@ -50,13 +59,43 @@ async def _rag_answer(item: EvalItem, system: str, corpus_path: Path, runner,
     conn = sqlite3.connect(corpus_path, check_same_thread=False)
     spend = {"usd": 0.0, "sub": 0}
     try:
-        if system == "bm25-rag":
+        if system in ("bm25-rag", "rerank-rag"):
             from rnsr.env.search import _terms
 
             terms = _terms(item.question)
             match_q = " OR ".join(terms) if terms else item.question
-            hits = _fts.match(conn, match_q, k=k)
+            pool = k * 5 if system == "rerank-rag" else k
+            hits = _fts.match(conn, match_q, k=pool)
             chunks = [(h["doc_id"], h["text"]) for h in hits]
+            if system == "rerank-rag" and chunks:
+                # LLM listwise-style reranking: sub-model scores each
+                # candidate; answer from the top-k. Improves precision;
+                # cannot widen k (an aggregation beyond k stays beyond k).
+                from rnsr.llm.batch import map_prompts
+
+                prompts = [_RERANK_PROMPT.format(question=item.question,
+                                                 chunk=text[:1200])
+                           for _, text in chunks]
+                usage_total = {"n": 0}
+
+                def _count(u):
+                    spend["usd"] += u.cost_usd
+                    usage_total["n"] += 1
+
+                replies = await map_prompts(runner.sub_client, prompts,
+                                            model=runner.sub_model,
+                                            max_tokens=6, on_usage=_count)
+                spend["sub"] = usage_total["n"]
+
+                def score(reply):
+                    try:
+                        return int((reply.text if reply else "0").strip().split()[0])
+                    except (ValueError, IndexError):
+                        return 0
+
+                ranked = sorted(zip(chunks, replies, strict=True),
+                                key=lambda p: -score(p[1]))
+                chunks = [c for c, _ in ranked[:k]]
         else:  # vector-rag
             if runner.embed_client is None:
                 raise RuntimeError(
@@ -89,7 +128,7 @@ async def _rag_answer(item: EvalItem, system: str, corpus_path: Path, runner,
             _RAG_PROMPT.format(excerpts=excerpts, question=item.question),
             model=runner.root_model, max_tokens=1500,
         )
-        spend["usd"] = resp.usage.cost_usd
+        spend["usd"] += resp.usage.cost_usd
         answer = resp.text.strip()
         status = "final"
     finally:
@@ -97,7 +136,7 @@ async def _rag_answer(item: EvalItem, system: str, corpus_path: Path, runner,
 
     return QueryResult(
         answer=answer, status=status, final=None,
-        ledger={"spend_usd": spend["usd"], "sub_calls": 0},
+        ledger={"spend_usd": spend["usd"], "sub_calls": spend["sub"]},
         trajectory_path="", iterations=1,
     )
 
@@ -223,7 +262,7 @@ async def run_eval(
                 continue
             t0 = time.monotonic()
             try:
-                if system in ("bm25-rag", "vector-rag"):
+                if system in ("bm25-rag", "vector-rag", "rerank-rag"):
                     corpus_path = (
                         _corpus_for(item.sources, cache_dir, settings)
                         if item.sources

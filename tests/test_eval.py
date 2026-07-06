@@ -350,3 +350,25 @@ class TestRagBaselines:
                             embed_client=embedder, embed_model="mock-embed")
         results, _ = await run_eval([item], "vector-rag", runner, run_dir=tmp_path)
         assert results[0].correct
+
+
+class TestRerankRag:
+    async def test_reranker_promotes_relevant_chunk(self, tmp_path):
+        from rnsr.eval.datasets.base import EvalItem
+
+        # 30 keyword-matching decoys + 1 true answer chunk; reranker must
+        # promote the needle into the top-k
+        decoys = "\n".join(
+            f"widget revenue report volume {i}: " + "routine notes and filler. " * 60
+            for i in range(30))
+        context = decoys + "\nwidget revenue was exactly 4321 dollars in the final audit."
+        item = EvalItem(qid="rr-1", question="What was the widget revenue?",
+                        gold="4321", context=context)
+        sub = MockLLM().rule(r"4321", "10").rule(r"routine notes", "1")
+        root = MockLLM().rule(r"excerpts", "The widget revenue was 4321 dollars.")
+        runner = RootRunner(root_client=root, root_model="m", sub_client=sub,
+                            sub_model="m", settings=Settings())
+        results, _ = await run_eval([item], "rerank-rag", runner, run_dir=tmp_path)
+        assert results[0].correct
+        assert results[0].sub_calls > 12          # scored a wide pool
+        assert "4321" in root.calls[-1]["prompt"] # needle survived the cut

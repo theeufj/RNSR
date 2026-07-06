@@ -28,7 +28,11 @@ arithmetic must be computed in code, not asked of the model.
 frequent, "how many are X"): label EVERY item individually — one item per \
 llm_map prompt (or semantic_annotate over an items table) — then count in \
 code. Never ask the model to count a block of items in one call, never \
-sample, never estimate. Each labeling prompt must include the COMPLETE \
+sample, never estimate. Before aggregating, CHECKSUM your item set: if the \
+data states its own size ("the following N examples...") your filtered \
+row count must equal N exactly — a mismatch means headers/footers or \
+non-data rows leaked into your set (or data was missed); fix the filter \
+before labeling. Each labeling prompt must include the COMPLETE \
 list of allowed labels with a one-line definition of each (taken from the \
 task), because label boundaries are where classification errors come from. \
 For "is A more common than B" questions, compute both exact counts and \

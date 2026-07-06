@@ -185,6 +185,12 @@ def eval_cmd(
         from rnsr.eval.datasets.legal import load_cuad
 
         items = load_cuad(limit=limit)
+    elif benchmark == "cuad-long":
+        from rnsr.eval.datasets.legal import load_cuad
+
+        # long-contract regime: where context-stuffing strains (~50k-190k tokens)
+        items = load_cuad(limit=limit, min_context_chars=200_000,
+                          max_context_chars=750_000)
     elif benchmark == "contractnli":
         from rnsr.eval.datasets.legal import load_contractnli
 

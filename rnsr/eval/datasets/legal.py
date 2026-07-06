@@ -32,16 +32,19 @@ LEGALBENCH_DEFAULT_TASKS = (
 
 
 def load_cuad(limit: int | None = 30, *, seed: int = 11,
+              min_context_chars: int = 0,
               max_context_chars: int = 400_000) -> list[EvalItem]:
     """Clause-extraction questions grouped over few contracts (each distinct
     contract becomes one ingested corpus, so grouping controls ingest cost).
-    Keeps the natural mix of present and absent clauses."""
+    Keeps the natural mix of present and absent clauses. min_context_chars
+    selects the long-contract regime (the thesis test: documents where
+    context-stuffing strains)."""
     from datasets import load_dataset
 
     ds = load_dataset(CUAD_ID, revision="refs/convert/parquet", split="test")
     by_contract: dict[str, list] = {}
     for r in ds:
-        if len(r["context"]) <= max_context_chars:
+        if min_context_chars <= len(r["context"]) <= max_context_chars:
             by_contract.setdefault(r["title"], []).append(r)
 
     rng = random.Random(seed)

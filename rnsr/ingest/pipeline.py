@@ -19,7 +19,7 @@ from rnsr.db.artifact import CorpusDB
 from rnsr.ingest.chunk import chunk_document
 from rnsr.ingest.fallback import VisionExtractor, reextract
 from rnsr.ingest.manifest import write_corpus_manifest, write_table_manifest
-from rnsr.ingest.model import ParsedDocument, RawTable
+from rnsr.ingest.model import Element, ParsedDocument, RawTable
 from rnsr.ingest.parse import PARSER_NAME, parse_pdf
 from rnsr.ingest.tables import build_data_table, merge_multipage
 from rnsr.ingest.validate import ProseChecker, TableValidation, validate_table
@@ -116,6 +116,39 @@ def _extract_best_table(
     else:
         status = "reextracted"
     return chosen, validation, status, attempts
+
+
+def ingest_text(
+    named_texts: dict[str, str],
+    out_db: str | Path,
+    *,
+    config: Settings | None = None,
+) -> IngestReport:
+    """Ingest raw text strings (doc_id -> text) into a corpus.db.
+
+    Flat-text benchmarks (OOLONG) and any no-PDF corpus go through the same
+    pipeline — chunks, FTS, manifest, freeze, atomic build — with one
+    element per non-empty line and no tables. Fully deterministic.
+    """
+    import hashlib
+    import re
+
+    def parse(src) -> ParsedDocument:
+        key = str(src)
+        text = named_texts[key]
+        doc_id = re.sub(r"[^a-z0-9]+", "_", key.lower()).strip("_")[:48] or "doc"
+        elements = [Element("text", line, 1)
+                    for line in text.split("\n") if line.strip()]
+        return ParsedDocument(
+            doc_id=doc_id,
+            source_path=f"text:{key}",
+            sha256=hashlib.sha256(text.encode()).hexdigest(),
+            n_pages=1,
+            parser="text",
+            elements=elements,
+        )
+
+    return ingest(list(named_texts), out_db, config=config, parse=parse)
 
 
 def ingest(

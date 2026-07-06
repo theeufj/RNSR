@@ -57,6 +57,21 @@ def _corpus_for(sources: list[Path], cache_dir: Path, settings: Settings) -> Pat
     return out
 
 
+def _text_corpus_for(context: str, cache_dir: Path, settings: Settings) -> Path:
+    """Cached corpus for a flat-text context (shared across questions that
+    reuse the same context window)."""
+    from rnsr.ingest.pipeline import ingest_text
+
+    h = sha256(context.encode()).hexdigest()[:16]
+    out = cache_dir / f"corpus_text_{h}.db"
+    if out.exists() and not _corpus_valid(out, n_sources=1):
+        out.unlink()
+    if not out.exists():
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        ingest_text({"context": context}, out, config=settings)
+    return out
+
+
 def _env_for(item: EvalItem, system: str, cache_dir: Path, settings: Settings) -> EnvSpec:
     if system == "rlm-classic":
         context = item.context
@@ -69,10 +84,13 @@ def _env_for(item: EvalItem, system: str, cache_dir: Path, settings: Settings) -
 
     if system == "docdb":
         if not item.sources:
-            # flat-text benchmarks have no documents to ingest; docdb runs
-            # classic-shaped for them (structure is an accelerant, §1.3)
-            return EnvSpec(mode="classic", context=item.context)
-        corpus_path = _corpus_for(item.sources, cache_dir, settings)
+            if item.context is None:
+                return EnvSpec(mode="classic", context=item.context)
+            # flat-text benchmarks: ingest the context itself, so docdb gets
+            # FTS + semantic_annotate over it instead of a bare string
+            corpus_path = _text_corpus_for(item.context, cache_dir, settings)
+        else:
+            corpus_path = _corpus_for(item.sources, cache_dir, settings)
         with CorpusDB(corpus_path) as corpus:
             manifest = corpus.manifest_dict()
         return EnvSpec(mode="docdb", corpus_db=str(corpus_path), manifest=manifest)

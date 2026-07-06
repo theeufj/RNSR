@@ -12,7 +12,7 @@ import random
 
 from rnsr.eval.datasets.base import EvalItem
 
-DEFAULT_DATASET_ID = "oolong-bench/oolong"
+DEFAULT_DATASET_ID = "oolongbench/oolong-synth"
 
 _LABELS = ("numeric value", "entity", "location",
            "description and abstract concept", "abbreviation", "human being")
@@ -27,8 +27,39 @@ _TEMPLATES = {
 }
 
 
-def load_oolong(dataset_id: str = DEFAULT_DATASET_ID, split: str = "test",
-                limit: int | None = None) -> list[EvalItem]:
+def parse_gold(raw: str) -> str:
+    """Golds are stringified lists like "['spam']" — flatten to plain text."""
+    import ast
+
+    try:
+        value = ast.literal_eval(raw)
+        if isinstance(value, (list, tuple)):
+            return ", ".join(str(v) for v in value)
+        return str(value)
+    except (ValueError, SyntaxError):
+        return str(raw)
+
+
+def load_oolong(
+    dataset_id: str = DEFAULT_DATASET_ID,
+    split: str = "validation",
+    limit: int | None = None,
+    *,
+    subset: str = "trec_coarse",
+    min_tokens: int = 1024,
+    max_tokens: int = 65536,
+    seed: int = 7,
+) -> list[EvalItem]:
+    """OOLONG-synth rows -> EvalItems.
+
+    Defaults follow the RLM reproduction setting: trec_coarse subset,
+    contexts between 1,024 and 65,536 tokens. Rows are sampled round-robin
+    across context-length buckets (each bucket has 50 rows) so a limited
+    run still spans the difficulty range. Uses the unlabeled context
+    variant — `context_window_text_with_labels` would leak answers.
+    """
+    import random
+
     try:
         from datasets import load_dataset
 
@@ -39,16 +70,35 @@ def load_oolong(dataset_id: str = DEFAULT_DATASET_ID, split: str = "test",
             "Pass the correct HF dataset id (rnsr eval --benchmark oolong "
             "--dataset-id <id>) or use synthetic_oolong() for smoke tests."
         ) from e
+
+    rows = [r for r in ds
+            if r["dataset"] == subset and min_tokens <= int(r["context_len"]) <= max_tokens]
+
+    buckets: dict[int, list[dict]] = {}
+    for r in rows:
+        buckets.setdefault(int(r["context_len"]), []).append(r)
+    rng = random.Random(seed)
+    for bucket in buckets.values():
+        rng.shuffle(bucket)
+
+    ordered: list[dict] = []
+    lengths = sorted(buckets)
+    i = 0
+    while any(buckets[le] for le in lengths):
+        length = lengths[i % len(lengths)]
+        if buckets[length]:
+            ordered.append(buckets[length].pop())
+        i += 1
+
     items = []
-    for i, row in enumerate(ds):
-        if limit and i >= limit:
-            break
+    for r in ordered[: limit or len(ordered)]:
         items.append(EvalItem(
-            qid=f"oolong-{i}",
-            question=row["question"],
-            gold=str(row["answer"]),
-            task_class=row.get("task", "oolong"),
-            context=row["context"],
+            qid=f"oolong-{r['id']}",
+            question=r["question"],
+            gold=parse_gold(r["answer"]),
+            task_class=str(r.get("task_group", "oolong")),
+            context=r["context_window_text"],
+            meta={"context_len": int(r["context_len"]), "task": str(r.get("task"))},
         ))
     return items
 

@@ -2,6 +2,8 @@
 
 import math
 
+import pytest
+
 from rnsr.config import Settings
 from rnsr.eval.datasets.oolong import synthetic_oolong
 from rnsr.eval.harness import run_eval
@@ -172,3 +174,57 @@ class TestCorpusCacheValidation:
         junk = tmp_path / "junk.db"
         junk.write_bytes(b"<!DOCTYPE html>not a database")
         assert not _corpus_valid(junk, n_sources=1)
+
+
+class TestOolongLoader:
+    def test_parse_gold_variants(self):
+        from rnsr.eval.datasets.oolong import parse_gold
+
+        assert parse_gold("['spam']") == "spam"
+        assert parse_gold("['a', 'b']") == "a, b"
+        assert parse_gold("[3]") == "3"
+        assert parse_gold("plain") == "plain"
+
+    @pytest.mark.live
+    def test_real_dataset_loads(self):
+        pytest.importorskip("datasets")
+        from rnsr.eval.datasets.oolong import load_oolong
+
+        items = load_oolong(limit=14)
+        assert len(items) == 14
+        lengths = {i.meta["context_len"] for i in items}
+        assert len(lengths) >= 6          # round-robin spans buckets
+        assert all(1024 <= i.meta["context_len"] <= 65536 for i in items)
+        assert all(i.context and i.gold for i in items)
+        # unlabeled variant only: contexts must not carry gold label markup
+        assert all("label:" not in i.context[:200].lower() for i in items)
+
+
+class TestIngestText:
+    def test_text_corpus_end_to_end(self, tmp_path):
+        from rnsr.db import fts
+        from rnsr.db.artifact import CorpusDB
+        from rnsr.ingest.pipeline import ingest_text
+
+        text = "User 1 asked about spam.\nUser 2 asked about geography.\n" * 30
+        report = ingest_text({"conv": text}, tmp_path / "t.db")
+        assert report.n_chunks >= 1
+        assert report.tables == []
+        with CorpusDB(tmp_path / "t.db") as corpus:
+            assert corpus.doc_ids() == ["conv"]
+            assert "geography" in corpus.full_text("conv")
+            assert fts.match(corpus.conn, "geography")
+
+    def test_docdb_env_uses_text_corpus(self, tmp_path):
+        from rnsr.config import Settings
+        from rnsr.eval.datasets.base import EvalItem
+        from rnsr.eval.harness import _env_for
+
+        item = EvalItem(qid="q", question="?", gold="g",
+                        context="line one\nline two with needle\n" * 20)
+        env = _env_for(item, "docdb", tmp_path, Settings())
+        assert env.mode == "docdb"
+        assert env.corpus_db and env.manifest["documents"]
+        # same context -> same cached corpus
+        env2 = _env_for(item, "docdb", tmp_path, Settings())
+        assert env2.corpus_db == env.corpus_db

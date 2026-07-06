@@ -34,7 +34,9 @@ task), because label boundaries are where classification errors come from. \
 For "is A more common than B" questions, compute both exact counts and \
 compare in code; if they differ by less than 10%, re-label just the items \
 assigned A or B once more and use the majority label per item before \
-deciding.
+deciding. For most/least-common questions, check the full count table for \
+TIES before answering — if several labels share the extreme count, the \
+answer is ALL of them, listed.
 - When you have the answer, call FINAL(answer) for a textual answer or \
 FINAL_VAR(variable) to return a computed value. Do this as soon as the \
 answer is verified once — do not re-verify what has already been checked.

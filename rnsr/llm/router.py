@@ -30,7 +30,7 @@ DEFAULT_MODELS: dict[str, dict[str, str]] = {
     "gemini": {
         "root": "gemini-2.5-pro",
         "sub": "gemini-2.5-flash",
-        "embed": "gemini-embedding-001",  # text-embedding-00x line is retired (404)
+        "embed": "gemini-embedding-2",  # latest; multimodal-capable. 00x line retired
         "vision": "gemini-2.5-flash",
     },
 }

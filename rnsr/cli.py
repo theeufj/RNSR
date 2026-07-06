@@ -159,6 +159,7 @@ def eval_cmd(
     run_dir: Path = typer.Option(Path("runs/eval"), "--run-dir"),
     dataset_id: str | None = typer.Option(None, "--dataset-id",
                                           help="HF dataset id override"),
+    seed: int = typer.Option(5, "--seed", help="generator seed (matter benchmark)"),
 ) -> None:
     """Run the evaluation harness (§8)."""
     import asyncio
@@ -200,7 +201,7 @@ def eval_cmd(
     elif benchmark == "matter":
         from rnsr.eval.datasets.matter_gen import generate_matter
 
-        items = generate_matter(run_dir / "matter_pdfs")
+        items = generate_matter(run_dir / "matter_pdfs", seed=seed)
     else:
         raise typer.BadParameter(f"unknown benchmark: {benchmark}")
 

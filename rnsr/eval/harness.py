@@ -19,7 +19,87 @@ from rnsr.eval.datasets.base import EvalItem
 from rnsr.eval.metrics import EvalResult, judge_answer, score_answer, summarize
 from rnsr.harness.loop import EnvSpec, RootRunner
 
-SYSTEMS = ("docdb", "rlm-classic")   # vector-rag / base-lc land in Phase D
+SYSTEMS = ("docdb", "rlm-classic", "bm25-rag", "vector-rag")
+
+_RAG_PROMPT = """\
+Answer the question using ONLY the numbered excerpts below, retrieved from
+the document corpus. If the excerpts do not contain the answer, say so
+plainly rather than guessing.
+
+{excerpts}
+
+Question: {question}
+
+Answer:"""
+
+
+async def _rag_answer(item: EvalItem, system: str, corpus_path: Path, runner,
+                      k: int = 12):
+    """Traditional RAG baseline: retrieve top-k chunks, answer in one call.
+
+    bm25-rag uses FTS5 lexical ranking; vector-rag embeds the corpus once
+    (write-back cached) and retrieves by cosine. No loop, no tools, no
+    verification — that is the point of the baseline.
+    """
+    import sqlite3
+
+    from rnsr.db import fts as _fts
+    from rnsr.harness.loop import QueryResult
+
+    # check_same_thread=False: the embedding build runs in a worker thread
+    conn = sqlite3.connect(corpus_path, check_same_thread=False)
+    spend = {"usd": 0.0, "sub": 0}
+    try:
+        if system == "bm25-rag":
+            from rnsr.env.search import _terms
+
+            terms = _terms(item.question)
+            match_q = " OR ".join(terms) if terms else item.question
+            hits = _fts.match(conn, match_q, k=k)
+            chunks = [(h["doc_id"], h["text"]) for h in hits]
+        else:  # vector-rag
+            if runner.embed_client is None:
+                raise RuntimeError(
+                    "vector-rag needs an embedding provider (OPENAI_API_KEY "
+                    "or GOOGLE_API_KEY)")
+            import asyncio as _aio
+
+            from rnsr.env.embeddings import EmbeddingStore
+
+            store = EmbeddingStore(conn)
+
+            def embed_sync(texts: list[str]) -> list[list[float]]:
+                return _aio.run(runner.embed_client.embed(
+                    texts, model=runner.embed_model))
+
+            # ensure() is sync and batch-heavy; keep the event loop free
+            await _aio.to_thread(store.ensure, embed_sync, runner.embed_model)
+            qvec = (await runner.embed_client.embed(
+                [item.question], model=runner.embed_model))[0]
+            scored = store.knn(qvec, k=k)
+            rows = {r[0]: r for r in conn.execute(
+                "SELECT chunk_id, doc_id, text FROM chunks WHERE chunk_id IN "
+                f"({','.join('?' * len(scored))})", [c for c, _ in scored])}
+            chunks = [(rows[c][1], rows[c][2]) for c, _ in scored if c in rows]
+
+        excerpts = "\n\n".join(
+            f"[{i + 1}] (doc: {doc_id})\n{text}" for i, (doc_id, text) in enumerate(chunks)
+        )
+        resp = await runner.root_client.complete(
+            _RAG_PROMPT.format(excerpts=excerpts, question=item.question),
+            model=runner.root_model, max_tokens=1500,
+        )
+        spend["usd"] = resp.usage.cost_usd
+        answer = resp.text.strip()
+        status = "final"
+    finally:
+        conn.close()
+
+    return QueryResult(
+        answer=answer, status=status, final=None,
+        ledger={"spend_usd": spend["usd"], "sub_calls": 0},
+        trajectory_path="", iterations=1,
+    )
 
 
 def _corpus_valid(path: Path, n_sources: int) -> bool:
@@ -143,10 +223,18 @@ async def run_eval(
                 continue
             t0 = time.monotonic()
             try:
-                env = _env_for(item, system, cache_dir, settings)
-                qr = await runner.run(item.question, env,
-                                      run_dir=run_dir / "trajectories",
-                                      query_id=item.qid)
+                if system in ("bm25-rag", "vector-rag"):
+                    corpus_path = (
+                        _corpus_for(item.sources, cache_dir, settings)
+                        if item.sources
+                        else _text_corpus_for(item.context or "", cache_dir, settings)
+                    )
+                    qr = await _rag_answer(item, system, corpus_path, runner)
+                else:
+                    env = _env_for(item, system, cache_dir, settings)
+                    qr = await runner.run(item.question, env,
+                                          run_dir=run_dir / "trajectories",
+                                          query_id=item.qid)
                 predicted = None if qr.answer is None else str(qr.answer)
                 status = qr.status
                 ledger = qr.ledger

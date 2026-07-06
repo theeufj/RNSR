@@ -304,3 +304,49 @@ class TestLegalLoaders:
         assert len(items) == 8
         assert all("Answer with exactly one of:" in i.question for i in items)
         assert all(i.task_class.startswith("legalbench:") for i in items)
+
+
+class TestRagBaselines:
+    async def test_bm25_rag_end_to_end(self, tmp_path):
+        from rnsr.eval.datasets.base import EvalItem
+
+        item = EvalItem(
+            qid="rag-1", question="What was the widget revenue?",
+            gold="1234",
+            context="Filler line about weather.\nWidget revenue was 1234 dollars.\n" * 5,
+        )
+        root = MockLLM().rule(r"excerpts", "The widget revenue was 1234 dollars.")
+        runner = RootRunner(root_client=root, root_model="m", sub_client=MockLLM(),
+                            sub_model="m", settings=Settings())
+        results, summary = await run_eval([item], "bm25-rag", runner, run_dir=tmp_path)
+        assert results[0].correct
+        assert results[0].iterations == 1
+        # retrieval fed real excerpts into the single prompt
+        assert "Widget revenue was 1234" in root.calls[0]["prompt"]
+
+    async def test_vector_rag_requires_embedder(self, tmp_path):
+        from rnsr.eval.datasets.base import EvalItem
+
+        item = EvalItem(qid="rag-2", question="q?", gold="g", context="text\nmore text")
+        runner = RootRunner(root_client=MockLLM(), root_model="m",
+                            sub_client=MockLLM(), sub_model="m", settings=Settings())
+        results, _ = await run_eval([item], "vector-rag", runner, run_dir=tmp_path)
+        assert results[0].status == "error"   # recorded, not crashed
+
+    async def test_vector_rag_with_mock_embedder(self, tmp_path):
+        pytest.importorskip("sqlite_vec")
+        from rnsr.eval.datasets.base import EvalItem
+
+        item = EvalItem(
+            qid="rag-3", question="what about the needle topic?",
+            gold="needle answer",
+            context="\n".join(f"filler sentence number {i} about nothing" for i in range(30))
+            + "\nthe needle topic resolves to: needle answer",
+        )
+        embedder = MockLLM()
+        root = MockLLM().rule(r"excerpts", "needle answer")
+        runner = RootRunner(root_client=root, root_model="m", sub_client=MockLLM(),
+                            sub_model="m", settings=Settings(),
+                            embed_client=embedder, embed_model="mock-embed")
+        results, _ = await run_eval([item], "vector-rag", runner, run_dir=tmp_path)
+        assert results[0].correct

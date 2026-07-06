@@ -318,3 +318,79 @@ class TestVerifiedFinal:
             assert r3.final["verification"]["passed"] is False
         finally:
             await repl.close()
+
+
+class TestSchemaMap:
+    """schema_map proposes column correspondences; never applies them (§9)."""
+
+    @pytest.fixture
+    def two_table_corpus(self, tmp_path):
+        def parse(path):
+            p = _corpus_parse(path)
+            p.tables.append(RawTable(
+                page=1,
+                header=["Business Unit", "Net Revenue"],   # drifted headers
+                rows=[["Widgets", "1,300"], ["Gadgets", "2,100"], ["Total", "3,400"]],
+                extractor="docling",
+            ))
+            return p
+
+        out = tmp_path / "two.db"
+        ingest([tmp_path / "acme.pdf"], out, parse=parse)
+        return out
+
+    async def test_proposals_surface_in_repl(self, two_table_corpus):
+        import json as _json
+
+        from rnsr.env.sandbox import SandboxedRepl
+
+        proposal = _json.dumps([
+            {"a": "segment", "b": "business_unit", "confidence": 0.9,
+             "reason": "same entity labels"},
+            {"a": "revenue_m", "b": "net_revenue", "confidence": 0.8,
+             "reason": "revenue figures"},
+        ])
+
+        async def llm_batch(req):
+            # prompt must describe both tables (columns + sample rows)
+            p = req["prompts"][0]
+            assert "t_acme_001" in p and "t_acme_002" in p
+            assert "segment" in p and "business_unit" in p
+            return {"results": [proposal]}
+
+        async def log(req):
+            return {}
+
+        repl = SandboxedRepl(rpc_handlers={"llm_batch": llm_batch, "log": log})
+        await repl.start(mode="docdb", corpus_db=str(two_table_corpus))
+        try:
+            res = await repl.exec_cell(
+                "props = schema_map('t_acme_001', 't_acme_002')\n"
+                "print(len(props), props[0]['a'], props[0]['b'])\n"
+                "row = db.execute('SELECT count(*) FROM t_acme_002').fetchone()\n"
+                "print(row[0])"
+            )
+            assert res.ok, res.error
+            lines = res.stdout.strip().splitlines()
+            assert lines[0] == "2 segment business_unit"
+            assert lines[1] == "3"          # tables untouched — proposals only
+        finally:
+            await repl.close()
+
+    async def test_garbage_reply_yields_empty_list(self, two_table_corpus):
+        from rnsr.env.sandbox import SandboxedRepl
+
+        async def llm_batch(req):
+            return {"results": ["I think these tables look similar, roughly."]}
+
+        async def log(req):
+            return {}
+
+        repl = SandboxedRepl(rpc_handlers={"llm_batch": llm_batch, "log": log})
+        await repl.start(mode="docdb", corpus_db=str(two_table_corpus))
+        try:
+            res = await repl.exec_cell("print(schema_map('t_acme_001', 't_acme_002'))")
+            assert res.ok, res.error
+            assert res.stdout.strip() == "[]"
+        finally:
+            await repl.close()

@@ -52,7 +52,9 @@ Set at least one provider key in `.env` (see `.env.example`):
 ```bash
 # Phase A: parse → typed tables → checksum validation → FTS5 → manifest.
 # Deterministic and LLM-free by default; --llm enables the vision
-# re-extraction rung and prose cross-checks.
+# re-extraction rung, prose cross-checks, and VLM transcription of scanned
+# pages (no OCR engine — pages without a text layer go through the vision
+# model, and the resulting tables face the same checksum validation).
 rnsr ingest report.pdf -o corpus.db --report report.json
 
 # Query via the RLM loop (root model writes code against db/doc/manifest)
@@ -63,6 +65,20 @@ rnsr eval --benchmark financebench --system docdb
 rnsr eval --benchmark oolong --system rlm-classic     # Phase B acceptance
 rnsr gate                                              # go/no-go vs classic
 rnsr ablate corpus.db                                  # rung-4 quantization ablation
+```
+
+Cross-document joins stay explicit by design (spec §9): headers drift
+between filings, so `schema_map` *proposes* column correspondences and the
+root model (or you) applies them visibly — never automatically:
+
+```python
+# inside the REPL environment (rnsr query), joining 2023 vs 2024 tables
+props = schema_map("t_report2023_004", "t_report2024_007")
+# -> [{"a": "revenue_m", "b": "net_revenue", "confidence": 0.8, "reason": ...}]
+db.execute("""
+    SELECT a.segment, a.revenue_m AS fy2023, b.net_revenue AS fy2024
+    FROM t_report2023_004 a JOIN t_report2024_007 b ON a.segment = b.business_unit
+""").fetchall()   # the join is written out — auditable in the trajectory
 ```
 
 ## Architecture

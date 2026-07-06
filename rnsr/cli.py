@@ -199,6 +199,10 @@ def eval_cmd(
         from rnsr.eval.datasets.legal import load_legalbench
 
         items = load_legalbench(limit=limit)
+    elif benchmark == "matter":
+        from rnsr.eval.datasets.matter_gen import generate_matter
+
+        items = generate_matter(run_dir / "matter_pdfs")
     else:
         raise typer.BadParameter(f"unknown benchmark: {benchmark}")
 

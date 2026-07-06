@@ -209,7 +209,7 @@ class TestIngestText:
         text = "User 1 asked about spam.\nUser 2 asked about geography.\n" * 30
         report = ingest_text({"conv": text}, tmp_path / "t.db")
         assert report.n_chunks >= 1
-        assert report.tables == []
+        assert len(report.tables) == 1  # the (line_no, text) lines table
         with CorpusDB(tmp_path / "t.db") as corpus:
             assert corpus.doc_ids() == ["conv"]
             assert "geography" in corpus.full_text("conv")
@@ -228,3 +228,44 @@ class TestIngestText:
         # same context -> same cached corpus
         env2 = _env_for(item, "docdb", tmp_path, Settings())
         assert env2.corpus_db == env.corpus_db
+
+
+class TestIngestTextLinesTable:
+    def test_lines_table_supports_annotate_groupby(self, tmp_path):
+        import sqlite3
+
+        from rnsr.env.annotate import Annotator
+        from rnsr.ingest.pipeline import ingest_text
+
+        text = "spam offer now\nhi mum\nwin prize cash\nsee you at 5\n"
+        report = ingest_text({"msgs": text}, tmp_path / "m.db")
+        assert report.tables and report.tables[0].status == "trusted"
+        table = report.tables[0].name
+
+        def responder(req):
+            out = []
+            for p in req["prompts"]:
+                lines = []
+                import re
+                for line in p.splitlines():
+                    m = re.match(r"^(\d+)\. (\{.*\})$", line)
+                    if m:
+                        label = "spam" if ("offer" in m.group(2) or "prize" in m.group(2)) else "ham"
+                        lines.append(f"{m.group(1)}. {label}")
+                out.append("\n".join(lines))
+            return {"results": out}
+
+        class Rpc:
+            def __call__(self, req):
+                return {} if req["op"] == "log" else responder(req)
+
+        conn = sqlite3.connect(tmp_path / "m.db")
+        result = Annotator(conn, Rpc()).annotate(table, "label", "spam or ham?")
+        assert result["coverage"] == 1.0
+        counts = dict(conn.execute(
+            f'SELECT label, count(*) FROM "{table}" GROUP BY label').fetchall())
+        assert counts == {"spam": 2, "ham": 2}
+        # line order preserved via line_no
+        first = conn.execute(f'SELECT text FROM "{table}" WHERE line_no = 1').fetchone()[0]
+        assert first == "spam offer now"
+        conn.close()

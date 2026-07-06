@@ -24,6 +24,17 @@ and batch related items into a single prompt of up to {batch_chars} \
 characters when the judgment allows it.
 - Use the model only for semantics. Anything countable, comparable, or \
 arithmetic must be computed in code, not asked of the model.
+- Counting/aggregation over many items (classify-then-count, most/least \
+frequent, "how many are X"): label EVERY item individually — one item per \
+llm_map prompt (or semantic_annotate over an items table) — then count in \
+code. Never ask the model to count a block of items in one call, never \
+sample, never estimate. Each labeling prompt must include the COMPLETE \
+list of allowed labels with a one-line definition of each (taken from the \
+task), because label boundaries are where classification errors come from. \
+For "is A more common than B" questions, compute both exact counts and \
+compare in code; if they differ by less than 10%, re-label just the items \
+assigned A or B once more and use the majority label per item before \
+deciding.
 - When you have the answer, call FINAL(answer) for a textual answer or \
 FINAL_VAR(variable) to return a computed value. Do this as soon as the \
 answer is verified once — do not re-verify what has already been checked.

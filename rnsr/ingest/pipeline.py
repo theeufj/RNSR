@@ -160,7 +160,10 @@ def ingest_text(
 
     Flat-text benchmarks (OOLONG) and any no-PDF corpus go through the same
     pipeline — chunks, FTS, manifest, freeze, atomic build — with one
-    element per non-empty line and no tables. Fully deterministic.
+    element per non-empty line. Lines also become a `lines`-shaped table
+    (line_no, text) so semantic_annotate + exact SQL aggregation work over
+    them: the §4.1 pattern needs a table to write its column back to.
+    Fully deterministic.
     """
     import hashlib
     import re
@@ -169,8 +172,17 @@ def ingest_text(
         key = str(src)
         text = named_texts[key]
         doc_id = re.sub(r"[^a-z0-9]+", "_", key.lower()).strip("_")[:48] or "doc"
-        elements = [Element("text", line, 1)
-                    for line in text.split("\n") if line.strip()]
+        lines = [line for line in text.split("\n") if line.strip()]
+        elements = [Element("text", line, 1) for line in lines]
+        tables = []
+        if len(lines) > 1:
+            tables.append(RawTable(
+                page=1,
+                header=["line_no", "text"],
+                rows=[[str(i), line] for i, line in enumerate(lines, 1)],
+                extractor="text",
+                caption=f"lines of {doc_id}",
+            ))
         return ParsedDocument(
             doc_id=doc_id,
             source_path=f"text:{key}",
@@ -178,6 +190,7 @@ def ingest_text(
             n_pages=1,
             parser="text",
             elements=elements,
+            tables=tables,
         )
 
     return ingest(list(named_texts), out_db, config=config, parse=parse)

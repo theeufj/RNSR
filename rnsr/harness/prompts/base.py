@@ -62,10 +62,15 @@ confidence flags: for an untrusted table, read `doc` text instead.
 - semantic_annotate(table, new_col, prompt, where=None, votes=1): one \
 batched sub-LM pass over rows; writes results back as a real column you \
 can then use in SQL. The cheapest way to turn a semantic property into \
-something exactly queryable. For counting/frequency questions whose answer \
-depends on per-row label accuracy, use votes=3 — it labels every row three \
-times in different orders and keeps the per-row majority, which cancels \
-most classification noise (3× labeling cost, usually worth it).
+something exactly queryable. ALWAYS use votes=3 when creating a label \
+column that any count or comparison will depend on — it labels every row \
+three times in different orders and keeps the per-row majority, cancelling \
+most classification noise. This matters doubly because annotation columns \
+persist and later questions reuse them: a single-pass column poisons every \
+future count over it. If a needed column already exists, check its quality \
+before trusting it: annotation_log records each column's prompt — if it \
+was created without votes and your question hinges on exact counts, \
+re-annotate into a new column with votes=3 rather than inheriting noise.
 - search(query, rung=None, k=10): tiered search — SQL-aware routing, \
 regex, BM25 full-text, sub-LM term expansion. Escalates automatically. \
 Every hit has keys: rung, kind ('sql'|'chunk'|'estimate'), text, page, \

@@ -117,6 +117,26 @@ carrying verified quotes.
 | Many questions per document | DocDB amortizes: ingest + annotations pay once |
 | Any regime | Only DocDB returns code-verified quotes with char offsets |
 
+## When to use it (legal decision guide)
+
+**Just load the document into model context** when all of these hold: a
+single document under ~150k tokens; one-off questions; lookup/reading
+answers rather than computation; no independently verifiable citation
+required. We measured accuracy parity there, and stuffing is cheaper.
+
+**Use DocDB** when any of these hold — each measured in the results above:
+
+| Trigger | Measured basis |
+|---|---|
+| Multi-document matter / exceeds the context window | Stuffing disqualified at ~200k tokens; a modest matter file is already there |
+| Answers computed over sets (invoice totals, counts, chronologies) | 0/3 for every RAG flavor; silent arithmetic slip for the flat-string loop; SQL makes it exact |
+| Absence must be provable ("no such clause/guarantee") | Retrieval can't tell not-found from not-there; DocDB enumerates |
+| Superseded versions in the file (drafts, amendments) | RAG confidently returned pre-amendment terms; DocDB date-orders the file |
+| Working sessions: many questions per matter | Ingest + annotations amortize — second pass at half cost, median 1 model call |
+| Citations that survive scrutiny | Code-verified quotes with character offsets — unique to DocDB |
+
+One line: **read a document → context window; interrogate a matter → DocDB.**
+
 ## Install
 
 ```bash

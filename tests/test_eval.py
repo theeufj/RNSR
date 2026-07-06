@@ -269,3 +269,38 @@ class TestIngestTextLinesTable:
         first = conn.execute(f'SELECT text FROM "{table}" WHERE line_no = 1').fetchone()[0]
         assert first == "spam offer now"
         conn.close()
+
+
+class TestLegalLoaders:
+    @pytest.mark.live
+    def test_cuad_loads_grouped_by_contract(self):
+        pytest.importorskip("datasets")
+        from rnsr.eval.datasets.legal import load_cuad
+
+        items = load_cuad(limit=12)
+        assert len(items) == 12
+        assert all(i.context for i in items)
+        contracts = {i.meta["contract"] for i in items}
+        assert len(contracts) <= 4          # grouped: few corpora to ingest
+        assert any(i.task_class == "absent-clause" for i in items) or \
+               any(i.task_class == "extraction" for i in items)
+
+    @pytest.mark.live
+    def test_contractnli_three_way(self):
+        pytest.importorskip("datasets")
+        from rnsr.eval.datasets.legal import load_contractnli
+
+        items = load_contractnli(limit=10)
+        assert len(items) == 10
+        assert all(i.gold in ("entailment", "contradiction", "neutral") for i in items)
+        assert all(i.context is None for i in items)   # short reasoning; classic-shaped
+
+    @pytest.mark.live
+    def test_legalbench_labels_quoted(self):
+        pytest.importorskip("datasets")
+        from rnsr.eval.datasets.legal import load_legalbench
+
+        items = load_legalbench(limit=8)
+        assert len(items) == 8
+        assert all("Answer with exactly one of:" in i.question for i in items)
+        assert all(i.task_class.startswith("legalbench:") for i in items)

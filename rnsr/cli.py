@@ -181,6 +181,18 @@ def eval_cmd(
         from rnsr.eval.datasets.financebench import load_financebench
 
         items = load_financebench(limit=limit)
+    elif benchmark == "cuad":
+        from rnsr.eval.datasets.legal import load_cuad
+
+        items = load_cuad(limit=limit)
+    elif benchmark == "contractnli":
+        from rnsr.eval.datasets.legal import load_contractnli
+
+        items = load_contractnli(limit=limit)
+    elif benchmark == "legalbench":
+        from rnsr.eval.datasets.legal import load_legalbench
+
+        items = load_legalbench(limit=limit)
     else:
         raise typer.BadParameter(f"unknown benchmark: {benchmark}")
 

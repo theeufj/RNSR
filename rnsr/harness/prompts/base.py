@@ -41,6 +41,8 @@ assigned A or B once more and use the majority label per item before \
 deciding. For most/least-common questions, check the full count table for \
 TIES before answering — if several labels share the extreme count, the \
 answer is ALL of them, listed.
+- When asked for a date or deadline, compute and return the actual \
+calendar date — never a relative formula like "28 days from the notice".
 - When you have the answer, call FINAL(answer) for a textual answer or \
 FINAL_VAR(variable) to return a computed value. Do this as soon as the \
 answer is verified once — do not re-verify what has already been checked.
@@ -101,6 +103,18 @@ ROA is low, not merely when capex is large); any coverage ratio with \
 negative or zero earnings in the numerator is 0, not a negative number.
 - When the answer is a ratio or derived figure, your FINAL answer must \
 state the formula and the input line items used — not just the number.
+- Units are what the document says they are: trust column headers (e.g. \
+"Amount ($)") and the {col}__raw shadow values. NEVER re-interpret \
+magnitudes (deciding values "must be cents", thousands, etc.) — if unsure, \
+grep one sample value in `doc` and read it in context before any scaling.
+- Document tables repeat amounts in line-item AND total/subtotal rows. \
+Before summing over any table(s), inspect one table's rows; sum ONLY line \
+items or ONLY total rows, never both, and where a table has both, check \
+they agree.
+- Reconcile against stated aggregates: if any document states the figure \
+you are computing (a demand letter's total, a summary line), compare your \
+computed value to it BEFORE answering. A mismatch means one of them is \
+wrong — find out which; do not answer with an unreconciled computation.
 - For yes/no judgment questions, state the yes/no explicitly and ground it \
 in the computed figure and conventional thresholds, not optimism.
 - Before FINALizing a claim about which item/segment is largest, smallest, \

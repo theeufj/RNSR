@@ -45,9 +45,15 @@ sampled contracts are small (median 23k chars) and fit one context
 window — but DocDB is better at *absent* clauses (all four disagreements
 were absent-clause questions, 3–1 DocDB), i.e. it resists finding
 plausible-but-nonexistent clauses. Classic is cheaper on sub-window
-documents ($0.10 vs $0.19/question). A long-contract A/B (230–300k-char
-agreements) is in progress. These are QA-protocol numbers on samples,
-not the official CUAD span-AUPR metric — not leaderboard-comparable.
+documents ($0.10 vs $0.19/question). On a long-contract cut (230–300k-char
+agreements, ~60–75k tokens): parity within noise (classic 7/10, DocDB
+6/10; two misses shared, incl. one contestable gold), classic slightly
+cheaper, DocDB 2× faster (p50 114s vs 230s — classic re-reads ~75k tokens
+every turn). Note CUAD cannot test the beyond-window regime for modern
+models: its largest contract (~190k tokens) still fits Claude's window —
+beyond-window means multi-document corpora, covered by the needle gate
+and FinanceBench. These are QA-protocol numbers on samples, not the
+official CUAD span-AUPR metric — not leaderboard-comparable.
 
 **OOLONG** (Phase B harness acceptance; `oolongbench/oolong-synth`
 trec_coarse, 50 questions, 1k–65k-token contexts): RLM-classic scores
@@ -75,8 +81,8 @@ back into the loop.
 
 | Regime | Verdict |
 |---|---|
-| Long/structured documents, numeric needles | DocDB wins on accuracy AND cost |
-| Documents fitting one context window | Parity at ~1.5× cost — use classic mode (a flag) |
+| Multi-document / beyond-window corpora, numeric needles | DocDB wins on accuracy AND cost |
+| Single documents fitting one context window (incl. 75k-token contracts) | Accuracy parity; classic somewhat cheaper, DocDB ~2× faster at depth |
 | Absent-needle questions ("no such clause") | DocDB's verification discipline resists confabulation |
 | Many questions per document | DocDB amortizes: ingest + annotations pay once |
 | Any regime | Only DocDB returns code-verified quotes with char offsets |

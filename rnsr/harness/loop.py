@@ -123,6 +123,7 @@ class RootRunner:
         seen_candidates: dict[str, int] = {}
         damped = False
         completeness_checked = False
+        budget_warned = False
 
         try:
             await sandbox.start(mode=env.mode, context=env.context,
@@ -199,6 +200,25 @@ class RootRunner:
                             continue
                     final = cell.final
                     break
+
+                # Budget pressure (§7): the harness can see the wall clock;
+                # the model can't. Seen live: five careful exploration turns,
+                # then death mid-thought with the right verdict unconcluded.
+                remaining = ledger.max_wall_s - ledger.wall_s
+                iters_left = ledger.max_root_iters - ledger.root_iters
+                if not budget_warned and (remaining < max(120.0, 0.2 * ledger.max_wall_s)
+                                          or iters_left <= 2):
+                    budget_warned = True
+                    observation += (
+                        f"\n[harness] BUDGET LOW: ~{int(remaining)}s and "
+                        f"{iters_left} iterations remain. Converge NOW: give "
+                        "FINAL with the best-supported answer from what you "
+                        "have already seen (including a definitive negative "
+                        "like 'No such clause' if that is where the evidence "
+                        "points). Do not start new exploration."
+                    )
+                    trajectory.event("budget_warning", remaining_s=int(remaining),
+                                     iters_left=iters_left)
 
                 # Damping (§7): same normalized output recomputed twice ->
                 # force a confirm-or-reject turn, once.

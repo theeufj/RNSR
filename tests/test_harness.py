@@ -220,3 +220,18 @@ class TestCompletenessGate:
         result = await make_runner(root, sub).run("q", CLASSIC, run_dir=tmp_path)
         assert result.status == "final"
         assert result.iterations == 2
+
+
+class TestBudgetWarning:
+    async def test_low_iterations_triggers_converge_nudge(self, tmp_path):
+        root = MockLLM().script(
+            "```python\nprint('explore 1')\n```",
+            "```python\nprint('explore 2')\n```",
+            "```python\nFINAL('converged')\n```",
+        )
+        result = await make_runner(root, max_root_iters=4).run("q", CLASSIC,
+                                                               run_dir=tmp_path)
+        assert result.status == "final"
+        # warning lands when <=2 iterations remain: visible in the 3rd prompt
+        assert "BUDGET LOW" in root.calls[2]["prompt"]
+        assert "BUDGET LOW" not in root.calls[1]["prompt"]

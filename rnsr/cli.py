@@ -166,8 +166,6 @@ def eval_cmd(
 
     from rnsr.config import Settings
     from rnsr.eval.harness import run_eval
-    from rnsr.harness.loop import RootRunner
-    from rnsr.llm.router import Router
 
     if benchmark == "synthetic-oolong":
         from rnsr.eval.datasets.oolong import synthetic_oolong
@@ -207,10 +205,7 @@ def eval_cmd(
         raise typer.BadParameter(f"unknown benchmark: {benchmark}")
 
     settings = Settings.from_env()
-    router = Router(settings)
-    root, sub = router.resolve("root"), router.resolve("sub")
-    runner = RootRunner(root_client=root.client, root_model=root.model,
-                        sub_client=sub.client, sub_model=sub.model, settings=settings)
+    runner = _make_runner(settings)
     out_dir = run_dir / f"{benchmark}-{system}"
     _, summary = asyncio.run(
         run_eval(items, system, runner, run_dir=out_dir, limit=limit)

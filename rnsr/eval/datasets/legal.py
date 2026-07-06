@@ -60,8 +60,12 @@ def load_cuad(limit: int | None = 30, *, seed: int = 11,
                 return items
             answers = r["answers"]["text"]
             gold = " | ".join(answers) if answers else "No such clause"
+            # CUAD ids share long title prefixes — hash for uniqueness, keep
+            # a readable tail (category name lives at the end of the id)
+            import hashlib as _h
+            uid = _h.md5(r["id"].encode()).hexdigest()[:8]
             items.append(EvalItem(
-                qid=f"cuad-{r['id'][:60]}",
+                qid=f"cuad-{uid}-{r['id'][-40:]}",
                 question=(
                     r["question"]
                     + " If the contract contains no such clause, answer "

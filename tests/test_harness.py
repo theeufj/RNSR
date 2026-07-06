@@ -235,3 +235,11 @@ class TestBudgetWarning:
         # warning lands when <=2 iterations remain: visible in the 3rd prompt
         assert "BUDGET LOW" in root.calls[2]["prompt"]
         assert "BUDGET LOW" not in root.calls[1]["prompt"]
+
+
+def test_docdb_system_prompt_renders():
+    # regression: stray {braces} in prompt text break .format at runtime
+    from rnsr.harness.prompts.base import render_system
+
+    s = render_system("docdb", manifest={"tables": [{"table_name": "t_x_001"}]})
+    assert "t_x_001" in s and "Reconcile against stated aggregates" in s

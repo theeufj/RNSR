@@ -104,7 +104,7 @@ negative or zero earnings in the numerator is 0, not a negative number.
 - When the answer is a ratio or derived figure, your FINAL answer must \
 state the formula and the input line items used — not just the number.
 - Units are what the document says they are: trust column headers (e.g. \
-"Amount ($)") and the {col}__raw shadow values. NEVER re-interpret \
+"Amount ($)") and the __raw shadow columns. NEVER re-interpret \
 magnitudes (deciding values "must be cents", thousands, etc.) — if unsure, \
 grep one sample value in `doc` and read it in context before any scaling.
 - Document tables repeat amounts in line-item AND total/subtotal rows. \

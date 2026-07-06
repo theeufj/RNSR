@@ -40,8 +40,24 @@ class GeminiClient:
         return LLMResponse(resp.text or "", model, make_usage(model, i, o))
 
     async def embed(self, texts, *, model):
-        resp = await self._client.aio.models.embed_content(model=model, contents=texts)
-        return [e.values for e in resp.embeddings]
+        # gemini-embedding-2 is multimodal: a contents LIST is fused into ONE
+        # embedding (parts of a single content), not treated as a batch — so
+        # each text gets its own request, bounded-concurrent.
+        import asyncio
+
+        sem = asyncio.Semaphore(8)
+
+        async def one(text: str) -> list[float]:
+            async with sem:
+                resp = await self._client.aio.models.embed_content(
+                    model=model, contents=text)
+                return resp.embeddings[0].values
+
+        vectors = list(await asyncio.gather(*(one(t) for t in texts)))
+        if len(vectors) != len(texts):
+            raise RuntimeError(
+                f"embedding count mismatch: {len(texts)} texts -> {len(vectors)} vectors")
+        return vectors
 
     async def vision(self, prompt, image_png, *, model, max_tokens=4096):
         from google.genai import types

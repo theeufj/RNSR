@@ -115,6 +115,17 @@ slip while aggregating by reading — the failure class SQL makes a
 non-event. DocDB was perfect across both versions with every answer
 carrying verified quotes.
 
+
+**Fix-and-confirm cycle** (post three-seed autopsy): the two DocDB SQL
+slips were converted into prompt disciplines (trust document units/headers;
+sum line items OR total rows, never both; reconcile computed aggregates
+against document-stated figures; compute calendar dates). Retested on the
+originating questions: all six misses across systems converted. Confirmed
+on a fresh unseen matter (seed 8): **DocDB 12/12**; classic 11/12 — its
+remaining miss answered $0.00 for a $2.4M invoice total, the silent
+grep-aggregation failure again. The disciplines generalize for the
+architecture that computes; they cannot rescue the one that greps.
+
 **The honest regime map**, consistent across every controlled A/B:
 
 | Regime | Verdict |

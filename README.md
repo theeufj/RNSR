@@ -29,6 +29,14 @@ flat-string environment — on a numeric-needle set with exact golds): **PASS**.
 DocDB 89% vs classic 78% accuracy, at lower cost (p50 $0.055 vs $0.075;
 p95 $0.106 vs $0.225 — classic re-reads its giant context every turn).
 
+**OOLONG** (Phase B harness acceptance; `oolongbench/oolong-synth`
+trec_coarse, 50 questions, 1k–65k-token contexts): RLM-classic scores
+**60%** with all questions reaching a clean final answer — in the ballpark
+the RLM paper reports, closing the reproduction gate. DocDB scores 56% at
+~1.5× cost on this flat-text benchmark — statistically indistinguishable
+(2-question gap), and the expected shape: when the whole context fits in
+one window and there are no tables, structure buys nothing (§1.3).
+
 **Real-filing ingestion health**: 87% table-validation pass rate on two 3M
 10-Ks (412 pages, 228 detected tables), against the spec's 70% stop threshold.
 Scoring: exact string/numeric match first; sub-model equivalence judge only
@@ -121,9 +129,10 @@ pytest            # 204 tests; LLM-free by default (live tests opt-in: -m live)
 ruff check .
 ```
 
-Implementation phases (spec §10) — all delivered: **A** deterministic
-ingestion → **B** RLM harness → **C** fusion + go/no-go gate (passed) →
-**D** hardening (rung-4 embeddings + ablation, schema_map, per-provider
-prompts). Open items: OOLONG Phase B reproduction; OCR for scanned PDFs
-(currently disabled); cross-document schema unification stays deliberately
-manual via `schema_map` proposals.
+Implementation phases (spec §10) — all delivered and all gates closed:
+**A** deterministic ingestion → **B** RLM harness (OOLONG reproduction
+passed) → **C** fusion + go/no-go gate (passed) → **D** hardening (rung-4
+embeddings + ablation, schema_map, per-provider prompts). Scanned PDFs are
+supported via VLM transcription (no OCR engine). Cross-document schema
+unification stays deliberately manual via `schema_map` proposals (§9);
+sub-model serving remains deployment guidance (`docs/sub-lm-serving.md`).

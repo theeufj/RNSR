@@ -394,3 +394,43 @@ class TestSchemaMap:
             assert res.stdout.strip() == "[]"
         finally:
             await repl.close()
+
+
+class TestAnnotateVotes:
+    def test_majority_overrides_one_bad_pass(self, env):
+        conn, _, _ = env
+        calls = {"n": 0}
+
+        def responder(req):
+            calls["n"] += 1
+            out = []
+            for p in req["prompts"]:
+                import re
+                lines = []
+                for line in p.splitlines():
+                    m = re.match(r"^(\d+)\. (\{.*\})$", line)
+                    if m:
+                        # pass 2 (calls 2) mislabels everything; 1 and 3 are right
+                        if calls["n"] == 2:
+                            label = "wrong"
+                        else:
+                            label = "total" if "Total" in m.group(2) else "item"
+                        lines.append(f"{m.group(1)}. {label}")
+                out.append("\n".join(lines))
+            return {"results": out}
+
+        annotator = Annotator(conn, FakeRpc(responder))
+        result = annotator.annotate("t_acme_001", "kind3", "classify", votes=3)
+        assert result["coverage"] == 1.0
+        rows = conn.execute(
+            "SELECT segment, kind3 FROM t_acme_001 ORDER BY rowid").fetchall()
+        assert rows == [("Widgets", "item"), ("Gadgets", "item"), ("Total", "total")]
+        assert calls["n"] == 3   # three labeling passes
+
+    def test_votes_changes_idempotency_key(self, env):
+        conn, _, _ = env
+        annotator = Annotator(conn, FakeRpc(TestAnnotate._label_responder))
+        annotator.annotate("t_acme_001", "k1", "classify", votes=1)
+        # same prompt with different votes is a distinct annotation, not a noop
+        second = annotator.annotate("t_acme_001", "k1", "classify", votes=3)
+        assert second.get("noop") is None

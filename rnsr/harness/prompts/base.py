@@ -57,10 +57,13 @@ grep/slice it like any string).
 - `manifest`: dict describing everything — documents, per-table schemas, \
 row counts, confidence scores, and which tables are untrusted. Trust its \
 confidence flags: for an untrusted table, read `doc` text instead.
-- semantic_annotate(table, new_col, prompt, where=None): one batched \
-sub-LM pass over rows; writes results back as a real column you can then \
-use in SQL. The cheapest way to turn a semantic property into something \
-exactly queryable.
+- semantic_annotate(table, new_col, prompt, where=None, votes=1): one \
+batched sub-LM pass over rows; writes results back as a real column you \
+can then use in SQL. The cheapest way to turn a semantic property into \
+something exactly queryable. For counting/frequency questions whose answer \
+depends on per-row label accuracy, use votes=3 — it labels every row three \
+times in different orders and keeps the per-row majority, which cancels \
+most classification noise (3× labeling cost, usually worth it).
 - search(query, rung=None, k=10): tiered search — SQL-aware routing, \
 regex, BM25 full-text, sub-LM term expansion. Escalates automatically. \
 Every hit has keys: rung, kind ('sql'|'chunk'|'estimate'), text, page, \

@@ -91,6 +91,7 @@ by question class):
 | **DocDB** | **34/36 (94%)** | 7/9 | **6/6** | **21/21** | $0.17 |
 | RLM-classic | 32/36 (89%) | 7/9 | 4/6 | **21/21** | $0.07 |
 | Vector-RAG (gemini-embedding-2) | 27/36 (75%) | **0/9** | 6/6 | **18/18** | $0.005 |
+| Graph-RAG (lean reimpl., entity graph + community summaries) | 30/36 (83%) | 3/9 | 6/6 | **21/21** | $0.17 incl. index |
 | BM25-RAG / +LLM reranker (1 matter) | 7/12 both | 0/3 | — | — | $0.006/$0.018 |
 
 RAG aced the retrieval-friendly v1 (12/12 at 1/30th the cost — stated
@@ -106,7 +107,13 @@ reaching 9/12. What NO retrieval flavor fixed is the aggregation class:
 39 invoices cannot occupy 12 excerpt slots regardless of ranking quality.
 That is the architectural boundary of single-shot retrieval:
 vector-RAG missed ALL NINE aggregations across three seeds while scoring
-perfectly on everything else. Honest ledger for the leaders too: DocDB's
+perfectly on everything else. GraphRAG — the incumbent answer to exactly
+this criticism — raises the ceiling (30/36; its community summaries
+sometimes carry the needed totals, 3/9) but every one of its six misses
+is still an aggregation: a knowledge graph's summaries contain whatever
+the index-time LLM happened to compile, not computation. The retrieval
+ladder climbs — BM25 7 → rerank 7 → vector 9 → graph 10 per matter —
+and every rung stops at the same wall, the one SQL walks through. Honest ledger for the leaders too: DocDB's
 two misses are SQL slips (a unit error; a double-count from summing
 invoice tables including their TOTAL rows — a fair real-world trap), and
 classic twice answered a timeline with "28 days from the notice" instead

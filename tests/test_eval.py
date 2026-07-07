@@ -423,3 +423,58 @@ class TestGraphRag:
         results, _ = await run_eval(items, "graph-rag", runner, run_dir=tmp_path)
         # second question reuses the graph: zero new extraction sub-calls
         assert results[1].sub_calls == 0
+
+
+class TestAnswerCsvAdapter:
+    def test_contract_shape(self, tmp_path, monkeypatch):
+        """answers_chunk1.csv: exact header, verbatim order, no empty cells."""
+        import csv
+
+        from typer.testing import CliRunner
+
+        from rnsr.cli import app
+
+        corpus = tmp_path / "corpus"
+        corpus.mkdir()
+        # generate one small real PDF so ingest works (docling-free? needs docling)
+        import pytest as _pytest
+
+        _pytest.importorskip("docling")
+        from reportlab.lib.pagesizes import LETTER
+        from reportlab.lib.styles import getSampleStyleSheet
+        from reportlab.platypus import Paragraph, SimpleDocTemplate
+
+        styles = getSampleStyleSheet()
+        SimpleDocTemplate(str(corpus / "doc.pdf"), pagesize=LETTER).build(
+            [Paragraph("The secret number is 7714.", styles["BodyText"])])
+
+        questions = tmp_path / "q.csv"
+        with open(questions, "w", newline="") as f:
+            w = csv.writer(f)
+            w.writerow(["ground_truth_question", "extra_col"])
+            w.writerow(["What is the secret number?", "x"])
+            w.writerow(['A question, with "quotes" and, commas?', "y"])
+
+        # stub the runner so no live LLM is needed
+        import rnsr.cli as cli_mod
+
+        class FakeRunner:
+            async def run(self, q, env, run_dir=None, query_id=None):
+                class R:
+                    answer = f"answer to: {q[:20]}"
+                    ledger = {"spend_usd": 0, "sub_calls": 0}
+                return R()
+
+        monkeypatch.setattr(cli_mod, "_make_runner", lambda s: FakeRunner())
+
+        result = CliRunner().invoke(app, [
+            "answer-csv", "--corpus", str(corpus), "--questions", str(questions),
+            "--output", str(tmp_path / "out"), "--work-dir", str(tmp_path / "work")])
+        assert result.exit_code == 0, result.output
+
+        with open(tmp_path / "out" / "answers_chunk1.csv", newline="") as f:
+            rows = list(csv.reader(f))
+        assert rows[0] == ["ground_truth_question", "model_answer"]
+        assert rows[1][0] == "What is the secret number?"
+        assert rows[2][0] == 'A question, with "quotes" and, commas?'  # verbatim incl. punctuation
+        assert all(r[1].strip() for r in rows[1:])

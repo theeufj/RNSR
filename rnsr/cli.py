@@ -215,6 +215,91 @@ def eval_cmd(
     console.print(f"results in {out_dir}")
 
 
+@app.command("answer-csv")
+def answer_csv(
+    corpus_dir: Path = typer.Option(..., "--corpus", exists=True, file_okay=False,
+                                    help="matter corpus directory (read-only)"),
+    questions: Path = typer.Option(..., "--questions", exists=True,
+                                   help="questions CSV"),
+    output: Path = typer.Option(..., "--output", help="output dir for answers_chunk1.csv"),
+    question_col: str = typer.Option("ground_truth_question", "--question-col"),
+    work_dir: Path = typer.Option(Path("runs/answer-csv"), "--work-dir",
+                                  help="corpus.db cache + trajectories (outside corpus)"),
+    concurrency: int = typer.Option(3, "--concurrency"),
+    not_found: str = typer.Option("Not found in matter corpus", "--not-found-phrase"),
+) -> None:
+    """Answer a questions CSV over a document corpus (fable-replicate contract).
+
+    Emits output/answers_chunk1.csv with header '<question-col>,model_answer',
+    questions verbatim in input order, no empty answers. The corpus is never
+    written to; all state lives under --work-dir.
+    """
+    import asyncio
+    import csv as _csv
+
+    from rnsr.config import Settings
+    from rnsr.db.artifact import CorpusDB
+    from rnsr.eval.harness import _corpus_for
+    from rnsr.harness.loop import EnvSpec
+
+    settings = Settings.from_env()
+    with open(questions, newline="", encoding="utf-8") as f:
+        rows = list(_csv.DictReader(f))
+    if not rows or question_col not in rows[0]:
+        raise typer.BadParameter(
+            f"questions CSV has no column {question_col!r}; "
+            f"columns: {list(rows[0].keys()) if rows else 'none'}")
+    qs = [r[question_col] for r in rows]
+    console.print(f"{len(qs)} questions over corpus {corpus_dir}")
+
+    # ingest once, cached by content (PDFs via docling)
+    pdfs = sorted(p for p in corpus_dir.rglob("*")
+                  if p.is_file() and p.suffix.lower() == ".pdf")
+    others = sorted(p for p in corpus_dir.rglob("*")
+                    if p.is_file() and p.suffix.lower() in
+                    (".txt", ".md", ".eml", ".csv"))
+    if not pdfs and not others:
+        raise typer.BadParameter(f"no ingestable files under {corpus_dir}")
+    console.print(f"ingesting {len(pdfs)} PDFs + {len(others)} text-like files "
+                  "(cached across runs)")
+    if others:
+        console.print("[yellow]note:[/yellow] text-like files present; "
+                      "current adapter ingests PDFs only — flag if these matter")
+    corpus_path = _corpus_for(pdfs, work_dir / "corpora", settings)
+    with CorpusDB(corpus_path) as c:
+        manifest = c.manifest_dict()
+    env = EnvSpec(mode="docdb", corpus_db=str(corpus_path), manifest=manifest)
+
+    runner = _make_runner(settings)
+    sem = asyncio.Semaphore(concurrency)
+
+    async def answer(i: int, q: str) -> tuple[int, str]:
+        async with sem:
+            try:
+                res = await runner.run(q, env, run_dir=work_dir / "trajectories",
+                                       query_id=f"q{i:03d}")
+                text = "" if res.answer is None else str(res.answer).strip()
+                return i, text or not_found
+            except Exception:
+                return i, not_found
+
+    async def main() -> list[str]:
+        results = await asyncio.gather(*(answer(i, q) for i, q in enumerate(qs)))
+        return [a for _, a in sorted(results)]
+
+    answers = asyncio.run(main())
+
+    output.mkdir(parents=True, exist_ok=True)
+    out_path = output / "answers_chunk1.csv"
+    with open(out_path, "w", newline="", encoding="utf-8") as f:
+        w = _csv.writer(f)
+        w.writerow([question_col, "model_answer"])
+        for q, a in zip(qs, answers, strict=True):
+            w.writerow([q, a])
+    n_nf = sum(a.startswith(not_found) for a in answers)
+    console.print(f"wrote {out_path} ({len(answers)} rows, {n_nf} not-found)")
+
+
 @app.command()
 def ablate(
     corpus: Path = typer.Argument(..., exists=True, help="corpus.db artifact"),

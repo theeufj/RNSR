@@ -137,6 +137,21 @@ def compact_manifest(manifest: dict) -> dict:
     turn, which dominates docdb's per-query input cost.
     """
     out = {k: v for k, v in manifest.items() if k not in ("tables",)}
+    docs = out.get("documents")
+    if isinstance(docs, list) and len(docs) > 100:
+        out["documents"] = {
+            "n_documents": len(docs),
+            "note": "too many to inline — query: SELECT doc_id, source_path, "
+                    "n_pages FROM documents",
+        }
+    all_tables = manifest.get("tables", [])
+    if len(all_tables) > 100:
+        out["tables_summary"] = {
+            "n_tables": len(all_tables),
+            "note": "too many to inline — query: SELECT table_name, doc_id, "
+                    "title, n_rows, confidence, status FROM manifest_tables",
+        }
+        manifest = {**manifest, "tables": all_tables[:100]}
     out["tables"] = [
         {
             "table_name": t.get("table_name"),

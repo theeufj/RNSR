@@ -227,19 +227,28 @@ def answer_csv(
                                   help="corpus.db cache + trajectories (outside corpus)"),
     concurrency: int = typer.Option(3, "--concurrency"),
     not_found: str = typer.Option("Not found in matter corpus", "--not-found-phrase"),
+    llm: bool = typer.Option(False, "--llm/--no-llm",
+                             help="LLM-assisted ingest: VLM transcription of scanned "
+                                  "pages, vision table re-extraction, prose checks"),
+    fast_ingest: bool = typer.Option(False, "--fast-ingest",
+                                     help="corpus-scale text-tier ingest (pdfium, no "
+                                          "layout ML): use for thousands of files; "
+                                          "resumable per document"),
 ) -> None:
     """Answer a questions CSV over a document corpus (fable-replicate contract).
 
     Emits output/answers_chunk1.csv with header '<question-col>,model_answer',
     questions verbatim in input order, no empty answers. The corpus is never
-    written to; all state lives under --work-dir.
+    written to; all state lives under --work-dir. Answers checkpoint
+    incrementally — rerunning resumes instead of re-paying.
     """
     import asyncio
     import csv as _csv
+    import json as _json
 
     from rnsr.config import Settings
     from rnsr.db.artifact import CorpusDB
-    from rnsr.eval.harness import _corpus_for
+    from rnsr.eval.harness import _corpus_valid
     from rnsr.harness.loop import EnvSpec
 
     settings = Settings.from_env()
@@ -265,7 +274,67 @@ def answer_csv(
     if others:
         console.print("[yellow]note:[/yellow] text-like files present; "
                       "current adapter ingests PDFs only — flag if these matter")
-    corpus_path = _corpus_for(pdfs, work_dir / "corpora", settings)
+
+    from hashlib import sha256 as _sha256
+
+    h = _sha256()
+    for s in pdfs:
+        h.update(s.read_bytes())
+    cache_dir = work_dir / "corpora"
+    corpus_path = cache_dir / f"corpus_{h.hexdigest()[:16]}.db"
+    if corpus_path.exists() and not _corpus_valid(corpus_path, len(pdfs)):
+        corpus_path.unlink()
+    if not corpus_path.exists() and fast_ingest:
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        transcriber = None
+        if llm:
+            from rnsr.ingest.llm_hooks import make_page_transcriber
+            from rnsr.llm.router import Router
+
+            vis = Router(settings).resolve("vision")
+            transcriber = make_page_transcriber(vis.client, vis.model)
+        from rnsr.ingest.bulk import ingest_bulk
+
+        stats = ingest_bulk(pdfs, corpus_path, config=settings,
+                            transcriber=transcriber,
+                            progress=lambda s: console.print(f"[dim]{s}[/dim]"))
+        console.print(f"bulk ingest: {stats}")
+        if stats.get("scanned_pages_untranscribed"):
+            console.print(
+                f"[red]WARNING:[/red] {stats['scanned_pages_untranscribed']} scanned "
+                "pages have no text — rerun with --llm to transcribe, or answers "
+                "may miss their content")
+    if not corpus_path.exists():
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        prose_checker = vision = transcriber = None
+        if llm:
+            from rnsr.ingest.llm_hooks import (
+                make_page_transcriber,
+                make_prose_checker,
+                make_vision_extractor,
+            )
+            from rnsr.llm.router import Router
+
+            router = Router(settings)
+            sub, vis = router.resolve("sub"), router.resolve("vision")
+            prose_checker = make_prose_checker(sub.client, sub.model,
+                                               concurrency=settings.sub_concurrency)
+            vision = make_vision_extractor(vis.client, vis.model)
+            transcriber = make_page_transcriber(vis.client, vis.model)
+        from rnsr.ingest.pipeline import ingest as _ingest
+
+        report = _ingest(pdfs, corpus_path, config=settings,
+                         prose_checker=prose_checker, vision=vision,
+                         transcriber=transcriber)
+        console.print(f"ingested: {report.n_chunks} chunks, validation pass rate "
+                      f"{report.validation_pass_rate:.0%}")
+        if report.scanned_pages_untranscribed:
+            console.print(
+                f"[red]WARNING:[/red] scanned pages without text: "
+                f"{sum(len(x['pages']) for x in report.scanned_pages_untranscribed)} "
+                "pages across "
+                f"{len(report.scanned_pages_untranscribed)} docs — rerun with "
+                "--llm to transcribe them, or answers may miss their content")
     with CorpusDB(corpus_path) as c:
         manifest = c.manifest_dict()
     env = EnvSpec(mode="docdb", corpus_db=str(corpus_path), manifest=manifest)
@@ -273,21 +342,40 @@ def answer_csv(
     runner = _make_runner(settings)
     sem = asyncio.Semaphore(concurrency)
 
+    # incremental checkpoint: rerun resumes, never re-pays
+    ckpt = work_dir / "answers_partial.jsonl"
+    done: dict[int, str] = {}
+    if ckpt.exists():
+        for line in ckpt.read_text().splitlines():
+            rec = _json.loads(line)
+            if rec.get("q") == qs[rec["i"]] if rec["i"] < len(qs) else False:
+                done[rec["i"]] = rec["a"]
+        if done:
+            console.print(f"resuming: {len(done)}/{len(qs)} already answered")
+    ckpt.parent.mkdir(parents=True, exist_ok=True)
+    ckpt_f = open(ckpt, "a", encoding="utf-8")  # noqa: SIM115 — spans the run
+
     async def answer(i: int, q: str) -> tuple[int, str]:
+        if i in done:
+            return i, done[i]
         async with sem:
             try:
                 res = await runner.run(q, env, run_dir=work_dir / "trajectories",
                                        query_id=f"q{i:03d}")
                 text = "" if res.answer is None else str(res.answer).strip()
-                return i, text or not_found
+                a = text or not_found
             except Exception:
-                return i, not_found
+                a = not_found
+            ckpt_f.write(_json.dumps({"i": i, "q": q, "a": a}) + "\n")
+            ckpt_f.flush()
+            return i, a
 
     async def main() -> list[str]:
         results = await asyncio.gather(*(answer(i, q) for i, q in enumerate(qs)))
         return [a for _, a in sorted(results)]
 
     answers = asyncio.run(main())
+    ckpt_f.close()
 
     output.mkdir(parents=True, exist_ok=True)
     out_path = output / "answers_chunk1.csv"

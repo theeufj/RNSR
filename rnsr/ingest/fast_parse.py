@@ -13,7 +13,18 @@ from __future__ import annotations
 from pathlib import Path
 
 from rnsr.ingest.model import Element, ParsedDocument
-from rnsr.ingest.parse import _sha256, make_doc_id
+from rnsr.ingest.parse import make_doc_id
+
+
+def stat_identity(path: Path) -> str:
+    """Identity from path+size+mtime — no byte reads (fable-replicate's own
+    manifest scheme). Content-exact dedupe is traded for speed at scale."""
+    import hashlib
+
+    st = path.stat()
+    return hashlib.sha256(
+        f"{path.resolve()}|{st.st_size}|{st.st_mtime_ns}".encode()).hexdigest()
+
 
 FAST_PARSER_NAME = "pdfium-fast"
 
@@ -41,7 +52,7 @@ def parse_pdf_fast(path: str | Path, doc_id: str | None = None) -> ParsedDocumen
         return ParsedDocument(
             doc_id=doc_id or make_doc_id(path),
             source_path=str(path),
-            sha256=_sha256(path),
+            sha256=stat_identity(path),
             n_pages=n_pages or 1,
             parser=FAST_PARSER_NAME,
             elements=elements,

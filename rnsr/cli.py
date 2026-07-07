@@ -278,8 +278,9 @@ def answer_csv(
     from hashlib import sha256 as _sha256
 
     h = _sha256()
-    for s in pdfs:
-        h.update(s.read_bytes())
+    for s in pdfs:  # stat-identity: no byte reads over the corpus
+        st = s.stat()
+        h.update(f"{s}|{st.st_size}|{st.st_mtime_ns}".encode())
     cache_dir = work_dir / "corpora"
     corpus_path = cache_dir / f"corpus_{h.hexdigest()[:16]}.db"
     if corpus_path.exists() and not _corpus_valid(corpus_path, len(pdfs)):

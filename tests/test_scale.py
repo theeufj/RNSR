@@ -149,3 +149,27 @@ class TestManifestSummarization:
         assert "SELECT" in out["documents"]["note"]
         assert out["tables_summary"]["n_tables"] == 500
         assert len(out["tables"]) == 100
+
+
+class TestParallelIngest:
+    def test_parallel_matches_serial(self, many_pdfs, tmp_path):
+        from rnsr.db.artifact import CorpusDB
+        from rnsr.ingest.bulk import ingest_bulk
+
+        serial = tmp_path / "serial.db"
+        parallel = tmp_path / "parallel.db"
+        ingest_bulk(many_pdfs, serial, workers=1)
+        stats = ingest_bulk(many_pdfs, parallel, workers=4)
+        assert stats["new_docs"] == 12
+        with CorpusDB(serial) as a, CorpusDB(parallel) as b:
+            assert sorted(a.doc_ids()) == sorted(b.doc_ids())
+            ta = a.conn.execute("SELECT count(*) FROM chunks").fetchone()[0]
+            tb = b.conn.execute("SELECT count(*) FROM chunks").fetchone()[0]
+            assert ta == tb
+
+    def test_stat_identity_no_content_read(self, many_pdfs):
+        from rnsr.ingest.fast_parse import stat_identity
+
+        a = stat_identity(many_pdfs[0])
+        b = stat_identity(many_pdfs[0])
+        assert a == b and a != stat_identity(many_pdfs[1])

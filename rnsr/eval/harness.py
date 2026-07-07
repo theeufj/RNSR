@@ -19,7 +19,8 @@ from rnsr.eval.datasets.base import EvalItem
 from rnsr.eval.metrics import EvalResult, judge_answer, score_answer, summarize
 from rnsr.harness.loop import EnvSpec, RootRunner
 
-SYSTEMS = ("docdb", "rlm-classic", "bm25-rag", "vector-rag", "rerank-rag")
+SYSTEMS = ("docdb", "rlm-classic", "bm25-rag", "vector-rag", "rerank-rag",
+           "graph-rag")
 
 _RERANK_PROMPT = """\
 Question: {question}
@@ -59,6 +60,33 @@ async def _rag_answer(item: EvalItem, system: str, corpus_path: Path, runner,
     conn = sqlite3.connect(corpus_path, check_same_thread=False)
     spend = {"usd": 0.0, "sub": 0}
     try:
+        if system == "graph-rag":
+            from rnsr.eval.graphrag import (
+                _ANSWER_PROMPT,
+                build_graph_index,
+                graph_retrieve,
+            )
+
+            def _count(u):
+                spend["usd"] += u.cost_usd
+                spend["sub"] += 1
+
+            await build_graph_index(conn, runner.sub_client, runner.sub_model,
+                                    on_usage=_count)
+            summaries, gchunks = graph_retrieve(conn, item.question, k_chunks=k)
+            resp = await runner.root_client.complete(
+                _ANSWER_PROMPT.format(
+                    summaries="\n\n".join(
+                        f"[{i + 1}] {s}" for i, s in enumerate(summaries)),
+                    excerpts="\n\n".join(
+                        f"({d})\n{t[:1200]}" for d, t in gchunks),
+                    question=item.question),
+                model=runner.root_model, max_tokens=1500)
+            spend["usd"] += resp.usage.cost_usd
+            return QueryResult(
+                answer=resp.text.strip(), status="final", final=None,
+                ledger={"spend_usd": spend["usd"], "sub_calls": spend["sub"]},
+                trajectory_path="", iterations=1)
         if system in ("bm25-rag", "rerank-rag"):
             from rnsr.env.search import _terms
 
@@ -262,7 +290,7 @@ async def run_eval(
                 continue
             t0 = time.monotonic()
             try:
-                if system in ("bm25-rag", "vector-rag", "rerank-rag"):
+                if system in ("bm25-rag", "vector-rag", "rerank-rag", "graph-rag"):
                     corpus_path = (
                         _corpus_for(item.sources, cache_dir, settings)
                         if item.sources

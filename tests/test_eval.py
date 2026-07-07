@@ -372,3 +372,54 @@ class TestRerankRag:
         assert results[0].correct
         assert results[0].sub_calls > 12          # scored a wide pool
         assert "4321" in root.calls[-1]["prompt"] # needle survived the cut
+
+
+class TestGraphRag:
+    async def test_index_and_answer_end_to_end(self, tmp_path):
+        import json as _json
+
+        from rnsr.eval.datasets.base import EvalItem
+
+        context = ("Invoice INV-9001 issued by Vendor Corp for 5000 dollars.\n"
+                   "Invoice INV-9002 issued by Vendor Corp for 7000 dollars.\n"
+                   "A letter from Client Ltd confirms payment of INV-9001.\n")
+        item = EvalItem(qid="g-1", question="What invoices did Vendor Corp issue?",
+                        gold="INV-9001, INV-9002", context=context)
+
+        extraction = _json.dumps({
+            "entities": [{"name": "INV-9001", "type": "document"},
+                         {"name": "Vendor Corp", "type": "org"}],
+            "relations": [{"src": "Vendor Corp", "rel": "issued", "dst": "INV-9001"}],
+        })
+        sub = MockLLM()
+        sub.rule(r"Extract entities", extraction)
+        sub.rule(r"Summarize this community",
+                 "Vendor Corp issued invoices INV-9001 and INV-9002.")
+        root = MockLLM().rule(r"COMMUNITY SUMMARIES",
+                              "Vendor Corp issued INV-9001 and INV-9002.")
+        runner = RootRunner(root_client=root, root_model="m", sub_client=sub,
+                            sub_model="m", settings=Settings())
+        results, _ = await run_eval([item], "graph-rag", runner, run_dir=tmp_path)
+        assert results[0].correct
+        assert results[0].sub_calls >= 2         # extraction + summary
+        # graph summaries reached the answer prompt
+        assert "Vendor Corp issued invoices" in root.calls[0]["prompt"]
+
+    async def test_index_cached_second_question(self, tmp_path):
+        import json as _json
+
+        from rnsr.eval.datasets.base import EvalItem
+
+        extraction = _json.dumps({"entities": [{"name": "X", "type": "other"}],
+                                  "relations": []})
+        sub = MockLLM(default="a summary")
+        sub.rule(r"Extract entities", extraction)
+        root = MockLLM(default="answer")
+        items = [EvalItem(qid=f"g-{i}", question="about X?", gold="answer",
+                          context="X did a thing.\nMore text about X here.")
+                 for i in range(2)]
+        runner = RootRunner(root_client=root, root_model="m", sub_client=sub,
+                            sub_model="m", settings=Settings())
+        results, _ = await run_eval(items, "graph-rag", runner, run_dir=tmp_path)
+        # second question reuses the graph: zero new extraction sub-calls
+        assert results[1].sub_calls == 0

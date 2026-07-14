@@ -2,7 +2,7 @@
 .env
 .venv/
 venv/
-env/
+/env/
 .Python
 
 # Plans and rules (local development)

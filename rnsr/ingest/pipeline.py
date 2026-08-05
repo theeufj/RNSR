@@ -17,10 +17,11 @@ from rnsr.config import Settings
 from rnsr.db import fts, schema
 from rnsr.db.artifact import CorpusDB
 from rnsr.ingest.chunk import chunk_document
+from rnsr.ingest.dispatch import parse_any
 from rnsr.ingest.fallback import VisionExtractor, reextract
 from rnsr.ingest.manifest import write_corpus_manifest, write_table_manifest
 from rnsr.ingest.model import Element, ParsedDocument, RawTable
-from rnsr.ingest.parse import PARSER_NAME, parse_pdf
+from rnsr.ingest.parse import PARSER_NAME
 from rnsr.ingest.tables import build_data_table, merge_multipage
 from rnsr.ingest.validate import ProseChecker, TableValidation, validate_table
 
@@ -204,10 +205,13 @@ def ingest(
     prose_checker: ProseChecker | None = None,
     vision: VisionExtractor | None = None,
     transcriber=None,
-    parse=parse_pdf,
+    parse=parse_any,
 ) -> IngestReport:
     """Ingest documents into a single self-contained corpus.db artifact.
 
+    Formats are dispatched by extension: PDFs through Docling, office
+    formats (Word/Excel/PowerPoint/OpenDocument/RTF/EPUB/CSV) through
+    anydoc, and .md/.txt/.eml through the built-in text-like parsers.
     `parse` is injectable for tests (any callable path -> ParsedDocument).
     `transcriber` (llm_hooks.make_page_transcriber) turns scanned pages into
     elements/tables via the VLM; without it, scanned pages are reported as

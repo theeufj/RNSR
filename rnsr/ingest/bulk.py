@@ -21,6 +21,7 @@ from pathlib import Path
 from rnsr.config import Settings
 from rnsr.db import fts, schema
 from rnsr.ingest.chunk import chunk_document
+from rnsr.ingest.dispatch import parse_any_fast
 from rnsr.ingest.fast_parse import parse_pdf_fast
 from rnsr.ingest.fast_parse import stat_identity as _file_sha
 from rnsr.ingest.manifest import write_corpus_manifest, write_table_manifest
@@ -43,7 +44,7 @@ def ingest_bulk(
     out_db: str | Path,
     *,
     config: Settings | None = None,
-    parse=parse_pdf_fast,
+    parse=parse_any_fast,
     transcriber=None,
     commit_every: int = 50,
     workers: int | None = None,
@@ -144,7 +145,7 @@ def ingest_bulk(
             # serially unless workers is set explicitly.
             if workers is None:
                 workers = (max(1, (os.cpu_count() or 2) - 2)
-                           if parse is parse_pdf_fast else 1)
+                           if parse in (parse_pdf_fast, parse_any_fast) else 1)
             if workers > 1 and pending:
                 progress(f"parsing with {workers} workers")
                 with ProcessPoolExecutor(max_workers=workers) as pool:

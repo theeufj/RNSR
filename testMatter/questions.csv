@@ -1,0 +1,439 @@
+ground_truth_question,field_id
+"[Checkbox — Yes/No only] Daniel Robert Mitchell is currently present in Australia. If this is correct, return exactly ""yes""
+
+For Respondent 1 — Daniel Robert Mitchell. Respondent 1: Present in Australia
+
+FIELD TYPE: checkbox. Respond with EXACTLY one of: ""Yes"" or ""No"". Do NOT return any name, label, or other text — any value other than Yes/No will be discarded.
+
+Context: Form: Initiating Application.
+Roles: Applicant 1 = Sarah Jane Mitchell; respondent_1 = Daniel Robert Mitchell; child_1 = Olivia Grace Mitchell; child_2 = Liam Thomas Mitchell; applicant_lawyer = Imogen Forms; applicant_law_firm = Second Up Family Law; respondent_lawyer = Victoria Sue; respondent_law_firm = Sue & Sue.",respondent_1_present_in_australia
+"[Radio button — exact option only] Daniel Robert Mitchell is of Aboriginal and Torres Strait Islander origin? If this is correct, return exactly ""yes""
+
+For Respondent 1 — Daniel Robert Mitchell. Respondent 1: Aboriginal/Torres Strait Islander - Yes Aboriginal and Torres Strait Islander
+
+FIELD TYPE: radio button. Respond with the exact option text shown on the form, or ""No"" if not applicable. Do not return free-form text.
+
+MUTUALLY EXCLUSIVE GROUP ""Respondent 1: Aboriginal and/or torres strait islander origin"" (Is {{person}} of Aboriginal and/or Torres Strait Islander origin?): this field and [""Respondent 1: Aboriginal/Torres Strait Islander - No""; ""Respondent 1: Aboriginal/Torres Strait Islander - Yes Aboriginal""; ""Respondent 1: Aboriginal/Torres Strait Islander - Yes Torres Strait Islander""] are alternative answers to the same question — EXACTLY ONE of them may have a value. Select this option ONLY if the matter documents affirmatively indicate it is the correct answer for the group; if a sibling field holds the real value, answer ""No"".
+
+Context: Form: Initiating Application.
+Roles: Applicant 1 = Sarah Jane Mitchell; respondent_1 = Daniel Robert Mitchell; child_1 = Olivia Grace Mitchell; child_2 = Liam Thomas Mitchell; applicant_lawyer = Imogen Forms; applicant_law_firm = Second Up Family Law; respondent_lawyer = Victoria Sue; respondent_law_firm = Sue & Sue.",respondent_1_atsi_yes_both
+"[Radio button — exact option only] Daniel Robert Mitchell is of Torres Strait Islander origin? If this is correct, return exactly ""yes""
+
+For Respondent 1 — Daniel Robert Mitchell. Respondent 1: Aboriginal/Torres Strait Islander - Yes Torres Strait Islander
+
+FIELD TYPE: radio button. Respond with the exact option text shown on the form, or ""No"" if not applicable. Do not return free-form text.
+
+MUTUALLY EXCLUSIVE GROUP ""Respondent 1: Aboriginal and/or torres strait islander origin"" (Is {{person}} of Aboriginal and/or Torres Strait Islander origin?): this field and [""Respondent 1: Aboriginal/Torres Strait Islander - No""; ""Respondent 1: Aboriginal/Torres Strait Islander - Yes Aboriginal""; ""Respondent 1: Aboriginal/Torres Strait Islander - Yes Aboriginal and Torres Strait Islander""] are alternative answers to the same question — EXACTLY ONE of them may have a value. Select this option ONLY if the matter documents affirmatively indicate it is the correct answer for the group; if a sibling field holds the real value, answer ""No"".
+
+Context: Form: Initiating Application.
+Roles: Applicant 1 = Sarah Jane Mitchell; respondent_1 = Daniel Robert Mitchell; child_1 = Olivia Grace Mitchell; child_2 = Liam Thomas Mitchell; applicant_lawyer = Imogen Forms; applicant_law_firm = Second Up Family Law; respondent_lawyer = Victoria Sue; respondent_law_firm = Sue & Sue.",respondent_1_atsi_yes_torres_strait
+"[Radio button — exact option only] Daniel Robert Mitchell is not of Aboriginal and/or Torres Strait Islander origin? If this is correct, return exactly ""yes""
+
+For Respondent 1 — Daniel Robert Mitchell. Respondent 1: Aboriginal/Torres Strait Islander - No
+
+FIELD TYPE: radio button. Respond with the exact option text shown on the form, or ""No"" if not applicable. Do not return free-form text.
+
+MUTUALLY EXCLUSIVE GROUP ""Respondent 1: Aboriginal and/or torres strait islander origin"" (Is {{person}} of Aboriginal and/or Torres Strait Islander origin?): this field and [""Respondent 1: Aboriginal/Torres Strait Islander - Yes Aboriginal""; ""Respondent 1: Aboriginal/Torres Strait Islander - Yes Aboriginal and Torres Strait Islander""; ""Respondent 1: Aboriginal/Torres Strait Islander - Yes Torres Strait Islander""] are alternative answers to the same question — EXACTLY ONE of them may have a value. Select this option ONLY if the matter documents affirmatively indicate it is the correct answer for the group; if a sibling field holds the real value, answer ""No"".
+
+Context: Form: Initiating Application.
+Roles: Applicant 1 = Sarah Jane Mitchell; respondent_1 = Daniel Robert Mitchell; child_1 = Olivia Grace Mitchell; child_2 = Liam Thomas Mitchell; applicant_lawyer = Imogen Forms; applicant_law_firm = Second Up Family Law; respondent_lawyer = Victoria Sue; respondent_law_firm = Sue & Sue.",respondent_1_atsi_no
+"[Radio button — exact option only] Daniel Robert Mitchell is of Aboriginal origin? If this is correct, return exactly ""yes""
+
+For Respondent 1 — Daniel Robert Mitchell. Respondent 1: Aboriginal/Torres Strait Islander - Yes Aboriginal
+
+FIELD TYPE: radio button. Respond with the exact option text shown on the form, or ""No"" if not applicable. Do not return free-form text.
+
+MUTUALLY EXCLUSIVE GROUP ""Respondent 1: Aboriginal and/or torres strait islander origin"" (Is {{person}} of Aboriginal and/or Torres Strait Islander origin?): this field and [""Respondent 1: Aboriginal/Torres Strait Islander - No""; ""Respondent 1: Aboriginal/Torres Strait Islander - Yes Aboriginal and Torres Strait Islander""; ""Respondent 1: Aboriginal/Torres Strait Islander - Yes Torres Strait Islander""] are alternative answers to the same question — EXACTLY ONE of them may have a value. Select this option ONLY if the matter documents affirmatively indicate it is the correct answer for the group; if a sibling field holds the real value, answer ""No"".
+
+Context: Form: Initiating Application.
+Roles: Applicant 1 = Sarah Jane Mitchell; respondent_1 = Daniel Robert Mitchell; child_1 = Olivia Grace Mitchell; child_2 = Liam Thomas Mitchell; applicant_lawyer = Imogen Forms; applicant_law_firm = Second Up Family Law; respondent_lawyer = Victoria Sue; respondent_law_firm = Sue & Sue.",respondent_1_atsi_yes_aboriginal
+"[Radio button — exact option only] Sarah Jane Mitchell is of Torres Strait Islander origin? If this is correct, return exactly ""yes""
+
+For Applicant 1 — Sarah Jane Mitchell. Applicant 1: Aboriginal/Torres Strait Islander - Yes Torres Strait Islander
+
+FIELD TYPE: radio button. Respond with the exact option text shown on the form, or ""No"" if not applicable. Do not return free-form text.
+
+MUTUALLY EXCLUSIVE GROUP ""Applicant 1: Aboriginal and/or torres strait islander origin"" (Is {{person}} of Aboriginal and/or Torres Strait Islander origin?): this field and [""Applicant 1: Aboriginal/Torres Strait Islander - No""; ""Applicant 1: Aboriginal/Torres Strait Islander - Yes Aboriginal""; ""Applicant 1: Aboriginal/Torres Strait Islander - Yes Aboriginal and Torres Strait Islander""] are alternative answers to the same question — EXACTLY ONE of them may have a value. Select this option ONLY if the matter documents affirmatively indicate it is the correct answer for the group; if a sibling field holds the real value, answer ""No"".
+
+Context: Form: Initiating Application.
+Roles: Applicant 1 = Sarah Jane Mitchell; respondent_1 = Daniel Robert Mitchell; child_1 = Olivia Grace Mitchell; child_2 = Liam Thomas Mitchell; applicant_lawyer = Imogen Forms; applicant_law_firm = Second Up Family Law; respondent_lawyer = Victoria Sue; respondent_law_firm = Sue & Sue.",applicant1_indigenous_torres_strait
+"[Radio button — exact option only] Sarah Jane Mitchell is not of Aboriginal and/or Torres Strait Islander origin? If this is correct, return exactly ""yes""
+
+For Applicant 1 — Sarah Jane Mitchell. Applicant 1: Aboriginal/Torres Strait Islander - No
+
+FIELD TYPE: radio button. Respond with the exact option text shown on the form, or ""No"" if not applicable. Do not return free-form text.
+
+MUTUALLY EXCLUSIVE GROUP ""Applicant 1: Aboriginal and/or torres strait islander origin"" (Is {{person}} of Aboriginal and/or Torres Strait Islander origin?): this field and [""Applicant 1: Aboriginal/Torres Strait Islander - Yes Aboriginal""; ""Applicant 1: Aboriginal/Torres Strait Islander - Yes Torres Strait Islander""; ""Applicant 1: Aboriginal/Torres Strait Islander - Yes Aboriginal and Torres Strait Islander""] are alternative answers to the same question — EXACTLY ONE of them may have a value. Select this option ONLY if the matter documents affirmatively indicate it is the correct answer for the group; if a sibling field holds the real value, answer ""No"".
+
+Context: Form: Initiating Application.
+Roles: Applicant 1 = Sarah Jane Mitchell; respondent_1 = Daniel Robert Mitchell; child_1 = Olivia Grace Mitchell; child_2 = Liam Thomas Mitchell; applicant_lawyer = Imogen Forms; applicant_law_firm = Second Up Family Law; respondent_lawyer = Victoria Sue; respondent_law_firm = Sue & Sue.",applicant1_indigenous_no
+"[Radio button — exact option only] Sarah Jane Mitchell is of Aboriginal origin? If this is correct, return exactly ""yes""
+
+For Applicant 1 — Sarah Jane Mitchell. Applicant 1: Aboriginal/Torres Strait Islander - Yes Aboriginal
+
+FIELD TYPE: radio button. Respond with the exact option text shown on the form, or ""No"" if not applicable. Do not return free-form text.
+
+MUTUALLY EXCLUSIVE GROUP ""Applicant 1: Aboriginal and/or torres strait islander origin"" (Is {{person}} of Aboriginal and/or Torres Strait Islander origin?): this field and [""Applicant 1: Aboriginal/Torres Strait Islander - No""; ""Applicant 1: Aboriginal/Torres Strait Islander - Yes Torres Strait Islander""; ""Applicant 1: Aboriginal/Torres Strait Islander - Yes Aboriginal and Torres Strait Islander""] are alternative answers to the same question — EXACTLY ONE of them may have a value. Select this option ONLY if the matter documents affirmatively indicate it is the correct answer for the group; if a sibling field holds the real value, answer ""No"".
+
+Context: Form: Initiating Application.
+Roles: Applicant 1 = Sarah Jane Mitchell; respondent_1 = Daniel Robert Mitchell; child_1 = Olivia Grace Mitchell; child_2 = Liam Thomas Mitchell; applicant_lawyer = Imogen Forms; applicant_law_firm = Second Up Family Law; respondent_lawyer = Victoria Sue; respondent_law_firm = Sue & Sue.",applicant1_indigenous_aboriginal
+"[Radio button — exact option only] Sarah Jane Mitchell is of Aboriginal and Torres Strait Islander origin? If this is correct, return exactly ""yes""
+
+For Applicant 1 — Sarah Jane Mitchell. Applicant 1: Aboriginal/Torres Strait Islander - Yes Aboriginal and Torres Strait Islander
+
+FIELD TYPE: radio button. Respond with the exact option text shown on the form, or ""No"" if not applicable. Do not return free-form text.
+
+MUTUALLY EXCLUSIVE GROUP ""Applicant 1: Aboriginal and/or torres strait islander origin"" (Is {{person}} of Aboriginal and/or Torres Strait Islander origin?): this field and [""Applicant 1: Aboriginal/Torres Strait Islander - No""; ""Applicant 1: Aboriginal/Torres Strait Islander - Yes Aboriginal""; ""Applicant 1: Aboriginal/Torres Strait Islander - Yes Torres Strait Islander""] are alternative answers to the same question — EXACTLY ONE of them may have a value. Select this option ONLY if the matter documents affirmatively indicate it is the correct answer for the group; if a sibling field holds the real value, answer ""No"".
+
+Context: Form: Initiating Application.
+Roles: Applicant 1 = Sarah Jane Mitchell; respondent_1 = Daniel Robert Mitchell; child_1 = Olivia Grace Mitchell; child_2 = Liam Thomas Mitchell; applicant_lawyer = Imogen Forms; applicant_law_firm = Second Up Family Law; respondent_lawyer = Victoria Sue; respondent_law_firm = Sue & Sue.",applicant1_indigenous_both
+"[Radio button — exact option only] Is Daniel Robert Mitchell a male? answer exactly ""yes"" or ""no"" in lowercase
+
+For Respondent 1 — Daniel Robert Mitchell. Respondent 1: Gender - M (male)
+
+FIELD TYPE: radio button. Respond with the exact option text shown on the form, or ""No"" if not applicable. Do not return free-form text.
+
+MUTUALLY EXCLUSIVE GROUP ""Respondent 1: gender"" (What is {{person}}'s gender?): this field and [""Respondent 1: Gender - Choose not to answer""; ""Respondent 1: Gender - X (indeterminate/intersex/unspecified)""; ""Respondent 1: Gender - F (female)""] are alternative answers to the same question — EXACTLY ONE of them may have a value. Select this option ONLY if the matter documents affirmatively indicate it is the correct answer for the group; if a sibling field holds the real value, answer ""No"".
+
+Context: Form: Initiating Application.
+Roles: Applicant 1 = Sarah Jane Mitchell; respondent_1 = Daniel Robert Mitchell; child_1 = Olivia Grace Mitchell; child_2 = Liam Thomas Mitchell; applicant_lawyer = Imogen Forms; applicant_law_firm = Second Up Family Law; respondent_lawyer = Victoria Sue; respondent_law_firm = Sue & Sue.",respondent_1_gender_male
+"[Radio button — exact option only] Is Daniel Robert Mitchell a female?  answer exactly ""yes"" or ""no"" in lowercase
+
+For Respondent 1 — Daniel Robert Mitchell. Respondent 1: Gender - F (female)
+
+FIELD TYPE: radio button. Respond with the exact option text shown on the form, or ""No"" if not applicable. Do not return free-form text.
+
+MUTUALLY EXCLUSIVE GROUP ""Respondent 1: gender"" (What is {{person}}'s gender?): this field and [""Respondent 1: Gender - Choose not to answer""; ""Respondent 1: Gender - X (indeterminate/intersex/unspecified)""; ""Respondent 1: Gender - M (male)""] are alternative answers to the same question — EXACTLY ONE of them may have a value. Select this option ONLY if the matter documents affirmatively indicate it is the correct answer for the group; if a sibling field holds the real value, answer ""No"".
+
+Context: Form: Initiating Application.
+Roles: Applicant 1 = Sarah Jane Mitchell; respondent_1 = Daniel Robert Mitchell; child_1 = Olivia Grace Mitchell; child_2 = Liam Thomas Mitchell; applicant_lawyer = Imogen Forms; applicant_law_firm = Second Up Family Law; respondent_lawyer = Victoria Sue; respondent_law_firm = Sue & Sue.",respondent_1_gender_female
+"[Radio button — exact option only] Has Daniel Robert Mitchell chosen not to provide their gender? answer exactly ""yes"" or ""no"" in lowercase
+
+For Respondent 1 — Daniel Robert Mitchell. Respondent 1: Gender - Choose not to answer
+
+FIELD TYPE: radio button. Respond with the exact option text shown on the form, or ""No"" if not applicable. Do not return free-form text.
+
+MUTUALLY EXCLUSIVE GROUP ""Respondent 1: gender"" (What is {{person}}'s gender?): this field and [""Respondent 1: Gender - X (indeterminate/intersex/unspecified)""; ""Respondent 1: Gender - M (male)""; ""Respondent 1: Gender - F (female)""] are alternative answers to the same question — EXACTLY ONE of them may have a value. Select this option ONLY if the matter documents affirmatively indicate it is the correct answer for the group; if a sibling field holds the real value, answer ""No"".
+
+Context: Form: Initiating Application.
+Roles: Applicant 1 = Sarah Jane Mitchell; respondent_1 = Daniel Robert Mitchell; child_1 = Olivia Grace Mitchell; child_2 = Liam Thomas Mitchell; applicant_lawyer = Imogen Forms; applicant_law_firm = Second Up Family Law; respondent_lawyer = Victoria Sue; respondent_law_firm = Sue & Sue.",respondent_1_gender_choose_not_to_answer
+"[Radio button — exact option only] Is Daniel Robert Mitchell's gender indeterminate, intersex or unspecified? answer exactly ""yes"" or ""no"" in lowercase
+
+For Respondent 1 — Daniel Robert Mitchell. Respondent 1: Gender - X (indeterminate/intersex/unspecified)
+
+FIELD TYPE: radio button. Respond with the exact option text shown on the form, or ""No"" if not applicable. Do not return free-form text.
+
+MUTUALLY EXCLUSIVE GROUP ""Respondent 1: gender"" (What is {{person}}'s gender?): this field and [""Respondent 1: Gender - Choose not to answer""; ""Respondent 1: Gender - M (male)""; ""Respondent 1: Gender - F (female)""] are alternative answers to the same question — EXACTLY ONE of them may have a value. Select this option ONLY if the matter documents affirmatively indicate it is the correct answer for the group; if a sibling field holds the real value, answer ""No"".
+
+Context: Form: Initiating Application.
+Roles: Applicant 1 = Sarah Jane Mitchell; respondent_1 = Daniel Robert Mitchell; child_1 = Olivia Grace Mitchell; child_2 = Liam Thomas Mitchell; applicant_lawyer = Imogen Forms; applicant_law_firm = Second Up Family Law; respondent_lawyer = Victoria Sue; respondent_law_firm = Sue & Sue.",respondent_1_gender_x
+"[Checkbox — Yes/No only] Daniel Robert Mitchell is ordinarily resident in Australia? If this is correct, return exactly ""yes""
+
+For Respondent 1 — Daniel Robert Mitchell. Respondent 1: Ordinarily resident in Australia
+
+FIELD TYPE: checkbox. Respond with EXACTLY one of: ""Yes"" or ""No"". Do NOT return any name, label, or other text — any value other than Yes/No will be discarded.
+
+Context: Form: Initiating Application.
+Roles: Applicant 1 = Sarah Jane Mitchell; respondent_1 = Daniel Robert Mitchell; child_1 = Olivia Grace Mitchell; child_2 = Liam Thomas Mitchell; applicant_lawyer = Imogen Forms; applicant_law_firm = Second Up Family Law; respondent_lawyer = Victoria Sue; respondent_law_firm = Sue & Sue.",respondent_1_ordinarily_resident_in_australia
+"What is Daniel Robert Mitchell's email address?
+
+For Respondent 1 — Daniel Robert Mitchell. Respondent 1: Email address
+
+Context: Form: Initiating Application.
+Roles: Applicant 1 = Sarah Jane Mitchell; respondent_1 = Daniel Robert Mitchell; child_1 = Olivia Grace Mitchell; child_2 = Liam Thomas Mitchell; applicant_lawyer = Imogen Forms; applicant_law_firm = Second Up Family Law; respondent_lawyer = Victoria Sue; respondent_law_firm = Sue & Sue.",respondent_1_email
+"[Radio button — exact option only] Sarah Jane Mitchell does not speak english and requires an interpreter. If this is correct, return exactly ""yes""
+
+For Applicant 1 — Sarah Jane Mitchell. Applicant 1: Interpreter required - Yes
+
+FIELD TYPE: radio button. Respond with the exact option text shown on the form, or ""No"" if not applicable. Do not return free-form text.
+
+MUTUALLY EXCLUSIVE GROUP ""Applicant 1: interpreter"" (Does {{person}} need an interpreter?): this field and [""Applicant 1: Interpreter required - No""] are alternative answers to the same question — EXACTLY ONE of them may have a value. Select this option ONLY if the matter documents affirmatively indicate it is the correct answer for the group; if a sibling field holds the real value, answer ""No"".
+
+Context: Form: Initiating Application.
+Roles: Applicant 1 = Sarah Jane Mitchell; respondent_1 = Daniel Robert Mitchell; child_1 = Olivia Grace Mitchell; child_2 = Liam Thomas Mitchell; applicant_lawyer = Imogen Forms; applicant_law_firm = Second Up Family Law; respondent_lawyer = Victoria Sue; respondent_law_firm = Sue & Sue.",applicant1_interpreter_yes
+"[Radio button — exact option only] Sarah Jane Mitchell speaks english and does not require an interpreter. If this is correct, return exactly ""yes""
+
+For Applicant 1 — Sarah Jane Mitchell. Applicant 1: Interpreter required - No
+
+FIELD TYPE: radio button. Respond with the exact option text shown on the form, or ""No"" if not applicable. Do not return free-form text.
+
+MUTUALLY EXCLUSIVE GROUP ""Applicant 1: interpreter"" (Does {{person}} need an interpreter?): this field and [""Applicant 1: Interpreter required - Yes""] are alternative answers to the same question — EXACTLY ONE of them may have a value. Select this option ONLY if the matter documents affirmatively indicate it is the correct answer for the group; if a sibling field holds the real value, answer ""No"".
+
+Context: Form: Initiating Application.
+Roles: Applicant 1 = Sarah Jane Mitchell; respondent_1 = Daniel Robert Mitchell; child_1 = Olivia Grace Mitchell; child_2 = Liam Thomas Mitchell; applicant_lawyer = Imogen Forms; applicant_law_firm = Second Up Family Law; respondent_lawyer = Victoria Sue; respondent_law_firm = Sue & Sue.",applicant1_interpreter_no
+"[Radio button — exact option only] Has Liam Thomas Mitchell chosen not to provide their gender? answer exactly ""yes"" or ""no"" in lowercase
+
+For Child 2 — Liam Thomas Mitchell. Child 2: Gender - Choose not to answer
+
+FIELD TYPE: radio button. Respond with the exact option text shown on the form, or ""No"" if not applicable. Do not return free-form text.
+
+MUTUALLY EXCLUSIVE GROUP ""Child 2: gender"" (What is {{person}}'s gender?): this field and [""Child 2: Gender - F (female)""; ""Child 2: Gender - X (indeterminate/intersex/unspecified)""; ""Child 2: Gender - M (male)""] are alternative answers to the same question — EXACTLY ONE of them may have a value. Select this option ONLY if the matter documents affirmatively indicate it is the correct answer for the group; if a sibling field holds the real value, answer ""No"".
+
+Context: Form: Initiating Application.
+Roles: Applicant 1 = Sarah Jane Mitchell; respondent_1 = Daniel Robert Mitchell; child_1 = Olivia Grace Mitchell; child_2 = Liam Thomas Mitchell; applicant_lawyer = Imogen Forms; applicant_law_firm = Second Up Family Law; respondent_lawyer = Victoria Sue; respondent_law_firm = Sue & Sue.",child_2_gender_choose_not_to_answer
+"[Radio button — exact option only] Is Liam Thomas Mitchell's gender indeterminate, intersex or unspecified? answer exactly ""yes"" or ""no"" in lowercase
+
+For Child 2 — Liam Thomas Mitchell. Child 2: Gender - X (indeterminate/intersex/unspecified)
+
+FIELD TYPE: radio button. Respond with the exact option text shown on the form, or ""No"" if not applicable. Do not return free-form text.
+
+MUTUALLY EXCLUSIVE GROUP ""Child 2: gender"" (What is {{person}}'s gender?): this field and [""Child 2: Gender - F (female)""; ""Child 2: Gender - Choose not to answer""; ""Child 2: Gender - M (male)""] are alternative answers to the same question — EXACTLY ONE of them may have a value. Select this option ONLY if the matter documents affirmatively indicate it is the correct answer for the group; if a sibling field holds the real value, answer ""No"".
+
+Context: Form: Initiating Application.
+Roles: Applicant 1 = Sarah Jane Mitchell; respondent_1 = Daniel Robert Mitchell; child_1 = Olivia Grace Mitchell; child_2 = Liam Thomas Mitchell; applicant_lawyer = Imogen Forms; applicant_law_firm = Second Up Family Law; respondent_lawyer = Victoria Sue; respondent_law_firm = Sue & Sue.",child_2_gender_indeterminate
+"[Radio button — exact option only] Is Liam Thomas Mitchell a female?  answer exactly ""yes"" or ""no"" in lowercase
+
+For Child 2 — Liam Thomas Mitchell. Child 2: Gender - F (female)
+
+FIELD TYPE: radio button. Respond with the exact option text shown on the form, or ""No"" if not applicable. Do not return free-form text.
+
+MUTUALLY EXCLUSIVE GROUP ""Child 2: gender"" (What is {{person}}'s gender?): this field and [""Child 2: Gender - Choose not to answer""; ""Child 2: Gender - X (indeterminate/intersex/unspecified)""; ""Child 2: Gender - M (male)""] are alternative answers to the same question — EXACTLY ONE of them may have a value. Select this option ONLY if the matter documents affirmatively indicate it is the correct answer for the group; if a sibling field holds the real value, answer ""No"".
+
+Context: Form: Initiating Application.
+Roles: Applicant 1 = Sarah Jane Mitchell; respondent_1 = Daniel Robert Mitchell; child_1 = Olivia Grace Mitchell; child_2 = Liam Thomas Mitchell; applicant_lawyer = Imogen Forms; applicant_law_firm = Second Up Family Law; respondent_lawyer = Victoria Sue; respondent_law_firm = Sue & Sue.",child_2_gender_female
+"[Radio button — exact option only] Is Liam Thomas Mitchell a male?  answer exactly ""yes"" or ""no"" in lowercase
+
+For Child 2 — Liam Thomas Mitchell. Child 2: Gender - M (male)
+
+FIELD TYPE: radio button. Respond with the exact option text shown on the form, or ""No"" if not applicable. Do not return free-form text.
+
+MUTUALLY EXCLUSIVE GROUP ""Child 2: gender"" (What is {{person}}'s gender?): this field and [""Child 2: Gender - F (female)""; ""Child 2: Gender - Choose not to answer""; ""Child 2: Gender - X (indeterminate/intersex/unspecified)""] are alternative answers to the same question — EXACTLY ONE of them may have a value. Select this option ONLY if the matter documents affirmatively indicate it is the correct answer for the group; if a sibling field holds the real value, answer ""No"".
+
+Context: Form: Initiating Application.
+Roles: Applicant 1 = Sarah Jane Mitchell; respondent_1 = Daniel Robert Mitchell; child_1 = Olivia Grace Mitchell; child_2 = Liam Thomas Mitchell; applicant_lawyer = Imogen Forms; applicant_law_firm = Second Up Family Law; respondent_lawyer = Victoria Sue; respondent_law_firm = Sue & Sue.",child_2_gender_male
+"[Radio button — exact option only] Is Olivia Grace Mitchell's gender indeterminate, intersex or unspecified? answer exactly ""yes"" or ""no"" in lowercase
+
+For Child 1 — Olivia Grace Mitchell. Child 1: Gender - X (indeterminate/intersex/unspecified)
+
+FIELD TYPE: radio button. Respond with the exact option text shown on the form, or ""No"" if not applicable. Do not return free-form text.
+
+MUTUALLY EXCLUSIVE GROUP ""Child 1: gender"" (What is {{person}}'s gender?): this field and [""Child 1 - Female""; ""Child 1: Gender - M (male)""; ""Child 1: Gender - Choose not to answer""] are alternative answers to the same question — EXACTLY ONE of them may have a value. Select this option ONLY if the matter documents affirmatively indicate it is the correct answer for the group; if a sibling field holds the real value, answer ""No"".
+
+Context: Form: Initiating Application.
+Roles: Applicant 1 = Sarah Jane Mitchell; respondent_1 = Daniel Robert Mitchell; child_1 = Olivia Grace Mitchell; child_2 = Liam Thomas Mitchell; applicant_lawyer = Imogen Forms; applicant_law_firm = Second Up Family Law; respondent_lawyer = Victoria Sue; respondent_law_firm = Sue & Sue.",child_1_gender_indeterminate
+"[Radio button — exact option only] Is Olivia Grace Mitchell a female?  answer exactly ""yes"" or ""no"" in lowercase
+
+For Child 1 — Olivia Grace Mitchell. Child 1 - Female
+
+FIELD TYPE: radio button. Respond with the exact option text shown on the form, or ""No"" if not applicable. Do not return free-form text.
+
+MUTUALLY EXCLUSIVE GROUP ""Child 1: gender"" (What is {{person}}'s gender?): this field and [""Child 1: Gender - M (male)""; ""Child 1: Gender - Choose not to answer""; ""Child 1: Gender - X (indeterminate/intersex/unspecified)""] are alternative answers to the same question — EXACTLY ONE of them may have a value. Select this option ONLY if the matter documents affirmatively indicate it is the correct answer for the group; if a sibling field holds the real value, answer ""No"".
+
+Context: Form: Initiating Application.
+Roles: Applicant 1 = Sarah Jane Mitchell; respondent_1 = Daniel Robert Mitchell; child_1 = Olivia Grace Mitchell; child_2 = Liam Thomas Mitchell; applicant_lawyer = Imogen Forms; applicant_law_firm = Second Up Family Law; respondent_lawyer = Victoria Sue; respondent_law_firm = Sue & Sue.",custom_1776587212064
+"[Radio button — exact option only] Is Olivia Grace Mitchell a male? answer exactly ""yes"" or ""no"" in lowercase
+
+For Child 1 — Olivia Grace Mitchell. Child 1: Gender - M (male)
+
+FIELD TYPE: radio button. Respond with the exact option text shown on the form, or ""No"" if not applicable. Do not return free-form text.
+
+MUTUALLY EXCLUSIVE GROUP ""Child 1: gender"" (What is {{person}}'s gender?): this field and [""Child 1 - Female""; ""Child 1: Gender - Choose not to answer""; ""Child 1: Gender - X (indeterminate/intersex/unspecified)""] are alternative answers to the same question — EXACTLY ONE of them may have a value. Select this option ONLY if the matter documents affirmatively indicate it is the correct answer for the group; if a sibling field holds the real value, answer ""No"".
+
+Context: Form: Initiating Application.
+Roles: Applicant 1 = Sarah Jane Mitchell; respondent_1 = Daniel Robert Mitchell; child_1 = Olivia Grace Mitchell; child_2 = Liam Thomas Mitchell; applicant_lawyer = Imogen Forms; applicant_law_firm = Second Up Family Law; respondent_lawyer = Victoria Sue; respondent_law_firm = Sue & Sue.",child_1_gender_male
+"[Radio button — exact option only] Has Olivia Grace Mitchell chosen not to provide their gender? answer exactly ""yes"" or ""no"" in lowercase
+
+For Child 1 — Olivia Grace Mitchell. Child 1: Gender - Choose not to answer
+
+FIELD TYPE: radio button. Respond with the exact option text shown on the form, or ""No"" if not applicable. Do not return free-form text.
+
+MUTUALLY EXCLUSIVE GROUP ""Child 1: gender"" (What is {{person}}'s gender?): this field and [""Child 1 - Female""; ""Child 1: Gender - M (male)""; ""Child 1: Gender - X (indeterminate/intersex/unspecified)""] are alternative answers to the same question — EXACTLY ONE of them may have a value. Select this option ONLY if the matter documents affirmatively indicate it is the correct answer for the group; if a sibling field holds the real value, answer ""No"".
+
+Context: Form: Initiating Application.
+Roles: Applicant 1 = Sarah Jane Mitchell; respondent_1 = Daniel Robert Mitchell; child_1 = Olivia Grace Mitchell; child_2 = Liam Thomas Mitchell; applicant_lawyer = Imogen Forms; applicant_law_firm = Second Up Family Law; respondent_lawyer = Victoria Sue; respondent_law_firm = Sue & Sue.",child_1_gender_choose_not_to_answer
+"What is the the applicants relationship to this initiating application? ""Party to a marriage"" Party to a de facto relationship"" ""Parent"" ""Grandparent"" ""Other"". State all that apply, separated by commas
+
+For Applicant 1 — Sarah Jane Mitchell. Applicant's relationship to application
+
+Context: Form: Initiating Application.
+Roles: Applicant 1 = Sarah Jane Mitchell; respondent_1 = Daniel Robert Mitchell; child_1 = Olivia Grace Mitchell; child_2 = Liam Thomas Mitchell; applicant_lawyer = Imogen Forms; applicant_law_firm = Second Up Family Law; respondent_lawyer = Victoria Sue; respondent_law_firm = Sue & Sue.",custom_1776828542892
+"What is Imogen Forms's lawyer's code?
+
+For Applicant - Lawyer — Imogen Forms. Lawyer's Code
+
+Context: Form: Initiating Application.
+Roles: Applicant 1 = Sarah Jane Mitchell; respondent_1 = Daniel Robert Mitchell; child_1 = Olivia Grace Mitchell; child_2 = Liam Thomas Mitchell; applicant_lawyer = Imogen Forms; applicant_law_firm = Second Up Family Law; respondent_lawyer = Victoria Sue; respondent_law_firm = Sue & Sue.",lawyers_code
+"[Checkbox — Yes/No only] The applicant is not seeking parenting orders or financial or property orders? If this correct, return Yes
+
+1A Other (specify)
+
+FIELD TYPE: checkbox. Respond with EXACTLY one of: ""Yes"" or ""No"". Do NOT return any name, label, or other text — any value other than Yes/No will be discarded.
+
+Context: Form: Initiating Application.
+Roles: Applicant 1 = Sarah Jane Mitchell; respondent_1 = Daniel Robert Mitchell; child_1 = Olivia Grace Mitchell; child_2 = Liam Thomas Mitchell; applicant_lawyer = Imogen Forms; applicant_law_firm = Second Up Family Law; respondent_lawyer = Victoria Sue; respondent_law_firm = Sue & Sue.",order_other
+"[Checkbox — Yes/No only] Sarah Jane Mitchell is related to this matter other than being a party to a marriage, a party to a defacto relationship, a parent or a grandparent. If this is correct, return exactly ""yes""
+
+For Applicant 1 — Sarah Jane Mitchell. Applicant 1: Other (specify)
+
+FIELD TYPE: checkbox. Respond with EXACTLY one of: ""Yes"" or ""No"". Do NOT return any name, label, or other text — any value other than Yes/No will be discarded.
+
+Context: Form: Initiating Application.
+Roles: Applicant 1 = Sarah Jane Mitchell; respondent_1 = Daniel Robert Mitchell; child_1 = Olivia Grace Mitchell; child_2 = Liam Thomas Mitchell; applicant_lawyer = Imogen Forms; applicant_law_firm = Second Up Family Law; respondent_lawyer = Victoria Sue; respondent_law_firm = Sue & Sue.",applicant1_other_specify
+"What are the given names of Parent 2 of Liam Thomas Mitchell? Do not include family name
+
+For Child 2 — Liam Thomas Mitchell. Child 2: Parent 2 given names
+
+Context: Form: Initiating Application.
+Roles: Applicant 1 = Sarah Jane Mitchell; respondent_1 = Daniel Robert Mitchell; child_1 = Olivia Grace Mitchell; child_2 = Liam Thomas Mitchell; applicant_lawyer = Imogen Forms; applicant_law_firm = Second Up Family Law; respondent_lawyer = Victoria Sue; respondent_law_firm = Sue & Sue.",child_2_parent_2_given_names
+"What is Second Up Family Law's address for service? Do not include state or postcode
+
+For Applicant - Law Firm — Second Up Family Law. Address for service in Australia
+
+Context: Form: Initiating Application.
+Roles: Applicant 1 = Sarah Jane Mitchell; respondent_1 = Daniel Robert Mitchell; child_1 = Olivia Grace Mitchell; child_2 = Liam Thomas Mitchell; applicant_lawyer = Imogen Forms; applicant_law_firm = Second Up Family Law; respondent_lawyer = Victoria Sue; respondent_law_firm = Sue & Sue.",address_for_service_in_australia
+"What is the date of marriage of the parties (day/month/year)?
+
+Date of marriage
+
+FIELD TYPE: date. Respond in DD/MM/YYYY format only.
+
+MUTUALLY EXCLUSIVE GROUP ""Date of marriage"" (When did the marriage take place?): this field and [""26. Date of marriage - Not applicable""] are alternative answers to the same question — EXACTLY ONE of them may have a value. Provide this field's value ONLY if it is the correct way to answer the group; if a sibling option is the correct answer instead, leave this field unanswered.
+
+Context: Form: Initiating Application.
+Roles: Applicant 1 = Sarah Jane Mitchell; respondent_1 = Daniel Robert Mitchell; child_1 = Olivia Grace Mitchell; child_2 = Liam Thomas Mitchell; applicant_lawyer = Imogen Forms; applicant_law_firm = Second Up Family Law; respondent_lawyer = Victoria Sue; respondent_law_firm = Sue & Sue.",date_of_marriage
+"[Radio button — exact option only] The parties are not married, have never been married or there is no mention of marriage. If this is correct, return exactly 'yes'
+
+26. Date of marriage - Not applicable
+
+FIELD TYPE: radio button. Respond with the exact option text shown on the form, or ""No"" if not applicable. Do not return free-form text.
+
+MUTUALLY EXCLUSIVE GROUP ""Date of marriage"" (When did the marriage take place?): this field and [""Date of marriage""] are alternative answers to the same question — EXACTLY ONE of them may have a value. Select this option ONLY if the matter documents affirmatively indicate it is the correct answer for the group; if a sibling field holds the real value, answer ""No"".
+
+Context: Form: Initiating Application.
+Roles: Applicant 1 = Sarah Jane Mitchell; respondent_1 = Daniel Robert Mitchell; child_1 = Olivia Grace Mitchell; child_2 = Liam Thomas Mitchell; applicant_lawyer = Imogen Forms; applicant_law_firm = Second Up Family Law; respondent_lawyer = Victoria Sue; respondent_law_firm = Sue & Sue.",date_of_marriage_not_applicable
+"What is Daniel Robert Mitchell's residential address including postcode?
+
+For Respondent 1 — Daniel Robert Mitchell. Respondent 1: Residential address line 1
+
+Context: Form: Initiating Application.
+Roles: Applicant 1 = Sarah Jane Mitchell; respondent_1 = Daniel Robert Mitchell; child_1 = Olivia Grace Mitchell; child_2 = Liam Thomas Mitchell; applicant_lawyer = Imogen Forms; applicant_law_firm = Second Up Family Law; respondent_lawyer = Victoria Sue; respondent_law_firm = Sue & Sue.",respondent_1_residential_address_line1
+"What is the the respondents relationship to this initiating application? ""Party to a marriage"" Party to a de facto relationship"" ""Parent"" ""Grandparent"" ""Other"". State all that apply, separated by commas
+
+For Respondent 1 — Daniel Robert Mitchell. Respondent's relationship to application
+
+Context: Form: Initiating Application.
+Roles: Applicant 1 = Sarah Jane Mitchell; respondent_1 = Daniel Robert Mitchell; child_1 = Olivia Grace Mitchell; child_2 = Liam Thomas Mitchell; applicant_lawyer = Imogen Forms; applicant_law_firm = Second Up Family Law; respondent_lawyer = Victoria Sue; respondent_law_firm = Sue & Sue.",custom_1776832899270
+"What is the date of birth of Olivia Grace Mitchell?
+
+For Child 1 — Olivia Grace Mitchell. Child 1: Date of birth
+
+FIELD TYPE: date. Respond in DD/MM/YYYY format only.
+
+Context: Form: Initiating Application.
+Roles: Applicant 1 = Sarah Jane Mitchell; respondent_1 = Daniel Robert Mitchell; child_1 = Olivia Grace Mitchell; child_2 = Liam Thomas Mitchell; applicant_lawyer = Imogen Forms; applicant_law_firm = Second Up Family Law; respondent_lawyer = Victoria Sue; respondent_law_firm = Sue & Sue.",child_1_date_of_birth
+"[Checkbox — Yes/No only] Respondent 1 description other
+
+For Respondent 1 — Daniel Robert Mitchell. Respondent 1 description other
+
+FIELD TYPE: checkbox. Respond with EXACTLY one of: ""Yes"" or ""No"". Do NOT return any name, label, or other text — any value other than Yes/No will be discarded.
+
+Context: Form: Initiating Application.
+Roles: Applicant 1 = Sarah Jane Mitchell; respondent_1 = Daniel Robert Mitchell; child_1 = Olivia Grace Mitchell; child_2 = Liam Thomas Mitchell; applicant_lawyer = Imogen Forms; applicant_law_firm = Second Up Family Law; respondent_lawyer = Victoria Sue; respondent_law_firm = Sue & Sue.",custom_1776665232297
+"What is Sarah Jane Mitchell's email address?
+
+For Applicant 1 — Sarah Jane Mitchell. Applicant 1: Email address
+
+Context: Form: Initiating Application.
+Roles: Applicant 1 = Sarah Jane Mitchell; respondent_1 = Daniel Robert Mitchell; child_1 = Olivia Grace Mitchell; child_2 = Liam Thomas Mitchell; applicant_lawyer = Imogen Forms; applicant_law_firm = Second Up Family Law; respondent_lawyer = Victoria Sue; respondent_law_firm = Sue & Sue.",applicant1_email_address
+"What is the family name of Parent 2 of Olivia Grace Mitchell?
+
+For Child 1 — Olivia Grace Mitchell. Child 1: Parent 2 family name
+
+Context: Form: Initiating Application.
+Roles: Applicant 1 = Sarah Jane Mitchell; respondent_1 = Daniel Robert Mitchell; child_1 = Olivia Grace Mitchell; child_2 = Liam Thomas Mitchell; applicant_lawyer = Imogen Forms; applicant_law_firm = Second Up Family Law; respondent_lawyer = Victoria Sue; respondent_law_firm = Sue & Sue.",child_1_parent_2_family_name
+"[Checkbox — Yes/No only] Sarah Jane Mitchell is an Australian citizen? If this is correct, return exactly ""yes""
+
+For Applicant 1 — Sarah Jane Mitchell. Applicant 1: An Australian citizen
+
+FIELD TYPE: checkbox. Respond with EXACTLY one of: ""Yes"" or ""No"". Do NOT return any name, label, or other text — any value other than Yes/No will be discarded.
+
+Context: Form: Initiating Application.
+Roles: Applicant 1 = Sarah Jane Mitchell; respondent_1 = Daniel Robert Mitchell; child_1 = Olivia Grace Mitchell; child_2 = Liam Thomas Mitchell; applicant_lawyer = Imogen Forms; applicant_law_firm = Second Up Family Law; respondent_lawyer = Victoria Sue; respondent_law_firm = Sue & Sue.",applicant1_australian_citizen
+"What is the date of final separation of the parties (day/month/year)?
+
+Date of final separation
+
+FIELD TYPE: date. Respond in DD/MM/YYYY format only.
+
+MUTUALLY EXCLUSIVE GROUP ""Date of final separation"" (What was the date of final separation, or is it not applicable?): this field and [""27. Date of final separation - Not applicable""] are alternative answers to the same question — EXACTLY ONE of them may have a value. Provide this field's value ONLY if it is the correct way to answer the group; if a sibling option is the correct answer instead, leave this field unanswered.
+
+Context: Form: Initiating Application.
+Roles: Applicant 1 = Sarah Jane Mitchell; respondent_1 = Daniel Robert Mitchell; child_1 = Olivia Grace Mitchell; child_2 = Liam Thomas Mitchell; applicant_lawyer = Imogen Forms; applicant_law_firm = Second Up Family Law; respondent_lawyer = Victoria Sue; respondent_law_firm = Sue & Sue.",date_of_final_separation
+"[Radio button — exact option only] The parties have not had their final separation. If this is correct, return exactly 'yes'
+
+27. Date of final separation - Not applicable
+
+FIELD TYPE: radio button. Respond with the exact option text shown on the form, or ""No"" if not applicable. Do not return free-form text.
+
+MUTUALLY EXCLUSIVE GROUP ""Date of final separation"" (What was the date of final separation, or is it not applicable?): this field and [""Date of final separation""] are alternative answers to the same question — EXACTLY ONE of them may have a value. Select this option ONLY if the matter documents affirmatively indicate it is the correct answer for the group; if a sibling field holds the real value, answer ""No"".
+
+Context: Form: Initiating Application.
+Roles: Applicant 1 = Sarah Jane Mitchell; respondent_1 = Daniel Robert Mitchell; child_1 = Olivia Grace Mitchell; child_2 = Liam Thomas Mitchell; applicant_lawyer = Imogen Forms; applicant_law_firm = Second Up Family Law; respondent_lawyer = Victoria Sue; respondent_law_firm = Sue & Sue.",date_of_final_separation_not_applicable
+"[Radio button — exact option only] There is a child of the de facto relationship.  If this is correct, return yes
+
+55c. Is there a child of the de facto relationship - Yes
+
+FIELD TYPE: radio button. Respond with the exact option text shown on the form, or ""No"" if not applicable. Do not return free-form text.
+
+MUTUALLY EXCLUSIVE GROUP ""55c: Child Of Relationship"" (Is there a child of the de facto relationship?): this field and [""55c. Is there a child of the de facto relationship - No""] are alternative answers to the same question — EXACTLY ONE of them may have a value. Select this option ONLY if the matter documents affirmatively indicate it is the correct answer for the group; if a sibling field holds the real value, answer ""No"".
+
+Context: Form: Initiating Application.
+Roles: Applicant 1 = Sarah Jane Mitchell; respondent_1 = Daniel Robert Mitchell; child_1 = Olivia Grace Mitchell; child_2 = Liam Thomas Mitchell; applicant_lawyer = Imogen Forms; applicant_law_firm = Second Up Family Law; respondent_lawyer = Victoria Sue; respondent_law_firm = Sue & Sue.",q55c_child_of_relationship_yes
+"[Radio button — exact option only] There is not a child of the de facto relationship. If this is correct, return yes
+
+55c. Is there a child of the de facto relationship - No
+
+FIELD TYPE: radio button. Respond with the exact option text shown on the form, or ""No"" if not applicable. Do not return free-form text.
+
+MUTUALLY EXCLUSIVE GROUP ""55c: Child Of Relationship"" (Is there a child of the de facto relationship?): this field and [""55c. Is there a child of the de facto relationship - Yes""] are alternative answers to the same question — EXACTLY ONE of them may have a value. Select this option ONLY if the matter documents affirmatively indicate it is the correct answer for the group; if a sibling field holds the real value, answer ""No"".
+
+Context: Form: Initiating Application.
+Roles: Applicant 1 = Sarah Jane Mitchell; respondent_1 = Daniel Robert Mitchell; child_1 = Olivia Grace Mitchell; child_2 = Liam Thomas Mitchell; applicant_lawyer = Imogen Forms; applicant_law_firm = Second Up Family Law; respondent_lawyer = Victoria Sue; respondent_law_firm = Sue & Sue.",q55c_child_of_relationship_no
+"[Radio button — exact option only] The de facto relationship or total of the periods of the de facto relationship is not at least two years? If this is correct, return yes
+
+55b. Is the period at least two years - No
+
+FIELD TYPE: radio button. Respond with the exact option text shown on the form, or ""No"" if not applicable. Do not return free-form text.
+
+MUTUALLY EXCLUSIVE GROUP ""55b: Period Two Years"" (Has the relationship lasted at least two years?): this field and [""55b. Is the period at least two years - Yes""] are alternative answers to the same question — EXACTLY ONE of them may have a value. Select this option ONLY if the matter documents affirmatively indicate it is the correct answer for the group; if a sibling field holds the real value, answer ""No"".
+
+Context: Form: Initiating Application.
+Roles: Applicant 1 = Sarah Jane Mitchell; respondent_1 = Daniel Robert Mitchell; child_1 = Olivia Grace Mitchell; child_2 = Liam Thomas Mitchell; applicant_lawyer = Imogen Forms; applicant_law_firm = Second Up Family Law; respondent_lawyer = Victoria Sue; respondent_law_firm = Sue & Sue.",q55b_period_two_years_no
+"[Radio button — exact option only] The de facto relationship or total of the periods of the de facto relationship is at least two years? If this is correct, return yes
+
+55b. Is the period at least two years - Yes
+
+FIELD TYPE: radio button. Respond with the exact option text shown on the form, or ""No"" if not applicable. Do not return free-form text.
+
+MUTUALLY EXCLUSIVE GROUP ""55b: Period Two Years"" (Has the relationship lasted at least two years?): this field and [""55b. Is the period at least two years - No""] are alternative answers to the same question — EXACTLY ONE of them may have a value. Select this option ONLY if the matter documents affirmatively indicate it is the correct answer for the group; if a sibling field holds the real value, answer ""No"".
+
+Context: Form: Initiating Application.
+Roles: Applicant 1 = Sarah Jane Mitchell; respondent_1 = Daniel Robert Mitchell; child_1 = Olivia Grace Mitchell; child_2 = Liam Thomas Mitchell; applicant_lawyer = Imogen Forms; applicant_law_firm = Second Up Family Law; respondent_lawyer = Victoria Sue; respondent_law_firm = Sue & Sue.",q55b_period_two_years_yes
+"[Radio button — exact option only] 55e: No
+
+55e: No
+
+FIELD TYPE: radio button. Respond with the exact option text shown on the form, or ""No"" if not applicable. Do not return free-form text.
+
+MUTUALLY EXCLUSIVE GROUP ""55e"" (Does this apply?): this field and [""55e: Yes""] are alternative answers to the same question — EXACTLY ONE of them may have a value. Select this option ONLY if the matter documents affirmatively indicate it is the correct answer for the group; if a sibling field holds the real value, answer ""No"".
+
+Context: Form: Initiating Application.
+Roles: Applicant 1 = Sarah Jane Mitchell; respondent_1 = Daniel Robert Mitchell; child_1 = Olivia Grace Mitchell; child_2 = Liam Thomas Mitchell; applicant_lawyer = Imogen Forms; applicant_law_firm = Second Up Family Law; respondent_lawyer = Victoria Sue; respondent_law_firm = Sue & Sue.",55e_no
+"[Radio button — exact option only] The de facto relationship is or was registered under a prescribed law of a state or territory of Australia. If this is correct, return yes
+
+55e: Yes
+
+FIELD TYPE: radio button. Respond with the exact option text shown on the form, or ""No"" if not applicable. Do not return free-form text.
+
+MUTUALLY EXCLUSIVE GROUP ""55e"" (Does this apply?): this field and [""55e: No""] are alternative answers to the same question — EXACTLY ONE of them may have a value. Select this option ONLY if the matter documents affirmatively indicate it is the correct answer for the group; if a sibling field holds the real value, answer ""No"".
+
+Context: Form: Initiating Application.
+Roles: Applicant 1 = Sarah Jane Mitchell; respondent_1 = Daniel Robert Mitchell; child_1 = Olivia Grace Mitchell; child_2 = Liam Thomas Mitchell; applicant_lawyer = Imogen Forms; applicant_law_firm = Second Up Family Law; respondent_lawyer = Victoria Sue; respondent_law_firm = Sue & Sue.",55e_yes
+"What is Daniel Robert Mitchell's date of birth?
+
+For Respondent 1 — Daniel Robert Mitchell. Respondent 1: Date of birth
+
+FIELD TYPE: date. Respond in DD/MM/YYYY format only.
+
+Context: Form: Initiating Application.
+Roles: Applicant 1 = Sarah Jane Mitchell; respondent_1 = Daniel Robert Mitchell; child_1 = Olivia Grace Mitchell; child_2 = Liam Thomas Mitchell; applicant_lawyer = Imogen Forms; applicant_law_firm = Second Up Family Law; respondent_lawyer = Victoria Sue; respondent_law_firm = Sue & Sue.",respondent_1_date_of_birth

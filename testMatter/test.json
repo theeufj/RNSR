@@ -1,0 +1,911 @@
+{
+    "vendor": "corto",
+    "log_event": "corto_getvalues",
+    "traffic_class": "fill",
+    "credential_source": "production",
+    "request": {
+      "method": "POST",
+      "url": "https://publicapi.docorto.ai/v1/documents/fields/getvalues",
+      "json": {
+        "matterId": "a9e88ef8-eba4-9e4e-8020-b0316a5441ad",
+        "firmId": "d6a157c2-be34-44f5-b068-9fd8d571d028",
+        "clientDocumentIds": [],
+        "context": "Form: Initiating Application.\nRoles: Applicant 1 = Sarah Jane Mitchell; respondent_1 = Daniel Robert Mitchell; child_1 = Olivia Grace Mitchell; child_2 = Liam Thomas Mitchell; applicant_lawyer = Imogen Forms; applicant_law_firm = Second Up Family Law; respondent_lawyer = Victoria Sue; respondent_law_firm = Sue & Sue.",
+        "fields": [
+          {
+            "id": "respondent_1_present_in_australia",
+            "title": "[Checkbox \u2014 Yes/No only] Daniel Robert Mitchell is currently present in Australia. If this is correct, return exactly \"yes\"",
+            "notes": "For Respondent 1 \u2014 Daniel Robert Mitchell. Respondent 1: Present in Australia\n\nFIELD TYPE: checkbox. Respond with EXACTLY one of: \"Yes\" or \"No\". Do NOT return any name, label, or other text \u2014 any value other than Yes/No will be discarded."
+          },
+          {
+            "id": "respondent_1_atsi_yes_both",
+            "title": "[Radio button \u2014 exact option only] Daniel Robert Mitchell is of Aboriginal and Torres Strait Islander origin? If this is correct, return exactly \"yes\"",
+            "notes": "For Respondent 1 \u2014 Daniel Robert Mitchell. Respondent 1: Aboriginal/Torres Strait Islander - Yes Aboriginal and Torres Strait Islander\n\nFIELD TYPE: radio button. Respond with the exact option text shown on the form, or \"No\" if not applicable. Do not return free-form text.\n\nMUTUALLY EXCLUSIVE GROUP \"Respondent 1: Aboriginal and/or torres strait islander origin\" (Is {{person}} of Aboriginal and/or Torres Strait Islander origin?): this field and [\"Respondent 1: Aboriginal/Torres Strait Islander - No\"; \"Respondent 1: Aboriginal/Torres Strait Islander - Yes Aboriginal\"; \"Respondent 1: Aboriginal/Torres Strait Islander - Yes Torres Strait Islander\"] are alternative answers to the same question \u2014 EXACTLY ONE of them may have a value. Select this option ONLY if the matter documents affirmatively indicate it is the correct answer for the group; if a sibling field holds the real value, answer \"No\"."
+          },
+          {
+            "id": "respondent_1_atsi_yes_torres_strait",
+            "title": "[Radio button \u2014 exact option only] Daniel Robert Mitchell is of Torres Strait Islander origin? If this is correct, return exactly \"yes\"",
+            "notes": "For Respondent 1 \u2014 Daniel Robert Mitchell. Respondent 1: Aboriginal/Torres Strait Islander - Yes Torres Strait Islander\n\nFIELD TYPE: radio button. Respond with the exact option text shown on the form, or \"No\" if not applicable. Do not return free-form text.\n\nMUTUALLY EXCLUSIVE GROUP \"Respondent 1: Aboriginal and/or torres strait islander origin\" (Is {{person}} of Aboriginal and/or Torres Strait Islander origin?): this field and [\"Respondent 1: Aboriginal/Torres Strait Islander - No\"; \"Respondent 1: Aboriginal/Torres Strait Islander - Yes Aboriginal\"; \"Respondent 1: Aboriginal/Torres Strait Islander - Yes Aboriginal and Torres Strait Islander\"] are alternative answers to the same question \u2014 EXACTLY ONE of them may have a value. Select this option ONLY if the matter documents affirmatively indicate it is the correct answer for the group; if a sibling field holds the real value, answer \"No\"."
+          },
+          {
+            "id": "respondent_1_atsi_no",
+            "title": "[Radio button \u2014 exact option only] Daniel Robert Mitchell is not of Aboriginal and/or Torres Strait Islander origin? If this is correct, return exactly \"yes\"",
+            "notes": "For Respondent 1 \u2014 Daniel Robert Mitchell. Respondent 1: Aboriginal/Torres Strait Islander - No\n\nFIELD TYPE: radio button. Respond with the exact option text shown on the form, or \"No\" if not applicable. Do not return free-form text.\n\nMUTUALLY EXCLUSIVE GROUP \"Respondent 1: Aboriginal and/or torres strait islander origin\" (Is {{person}} of Aboriginal and/or Torres Strait Islander origin?): this field and [\"Respondent 1: Aboriginal/Torres Strait Islander - Yes Aboriginal\"; \"Respondent 1: Aboriginal/Torres Strait Islander - Yes Aboriginal and Torres Strait Islander\"; \"Respondent 1: Aboriginal/Torres Strait Islander - Yes Torres Strait Islander\"] are alternative answers to the same question \u2014 EXACTLY ONE of them may have a value. Select this option ONLY if the matter documents affirmatively indicate it is the correct answer for the group; if a sibling field holds the real value, answer \"No\"."
+          },
+          {
+            "id": "respondent_1_atsi_yes_aboriginal",
+            "title": "[Radio button \u2014 exact option only] Daniel Robert Mitchell is of Aboriginal origin? If this is correct, return exactly \"yes\"",
+            "notes": "For Respondent 1 \u2014 Daniel Robert Mitchell. Respondent 1: Aboriginal/Torres Strait Islander - Yes Aboriginal\n\nFIELD TYPE: radio button. Respond with the exact option text shown on the form, or \"No\" if not applicable. Do not return free-form text.\n\nMUTUALLY EXCLUSIVE GROUP \"Respondent 1: Aboriginal and/or torres strait islander origin\" (Is {{person}} of Aboriginal and/or Torres Strait Islander origin?): this field and [\"Respondent 1: Aboriginal/Torres Strait Islander - No\"; \"Respondent 1: Aboriginal/Torres Strait Islander - Yes Aboriginal and Torres Strait Islander\"; \"Respondent 1: Aboriginal/Torres Strait Islander - Yes Torres Strait Islander\"] are alternative answers to the same question \u2014 EXACTLY ONE of them may have a value. Select this option ONLY if the matter documents affirmatively indicate it is the correct answer for the group; if a sibling field holds the real value, answer \"No\"."
+          },
+          {
+            "id": "applicant1_indigenous_torres_strait",
+            "title": "[Radio button \u2014 exact option only] Sarah Jane Mitchell is of Torres Strait Islander origin? If this is correct, return exactly \"yes\"",
+            "notes": "For Applicant 1 \u2014 Sarah Jane Mitchell. Applicant 1: Aboriginal/Torres Strait Islander - Yes Torres Strait Islander\n\nFIELD TYPE: radio button. Respond with the exact option text shown on the form, or \"No\" if not applicable. Do not return free-form text.\n\nMUTUALLY EXCLUSIVE GROUP \"Applicant 1: Aboriginal and/or torres strait islander origin\" (Is {{person}} of Aboriginal and/or Torres Strait Islander origin?): this field and [\"Applicant 1: Aboriginal/Torres Strait Islander - No\"; \"Applicant 1: Aboriginal/Torres Strait Islander - Yes Aboriginal\"; \"Applicant 1: Aboriginal/Torres Strait Islander - Yes Aboriginal and Torres Strait Islander\"] are alternative answers to the same question \u2014 EXACTLY ONE of them may have a value. Select this option ONLY if the matter documents affirmatively indicate it is the correct answer for the group; if a sibling field holds the real value, answer \"No\"."
+          },
+          {
+            "id": "applicant1_indigenous_no",
+            "title": "[Radio button \u2014 exact option only] Sarah Jane Mitchell is not of Aboriginal and/or Torres Strait Islander origin? If this is correct, return exactly \"yes\"",
+            "notes": "For Applicant 1 \u2014 Sarah Jane Mitchell. Applicant 1: Aboriginal/Torres Strait Islander - No\n\nFIELD TYPE: radio button. Respond with the exact option text shown on the form, or \"No\" if not applicable. Do not return free-form text.\n\nMUTUALLY EXCLUSIVE GROUP \"Applicant 1: Aboriginal and/or torres strait islander origin\" (Is {{person}} of Aboriginal and/or Torres Strait Islander origin?): this field and [\"Applicant 1: Aboriginal/Torres Strait Islander - Yes Aboriginal\"; \"Applicant 1: Aboriginal/Torres Strait Islander - Yes Torres Strait Islander\"; \"Applicant 1: Aboriginal/Torres Strait Islander - Yes Aboriginal and Torres Strait Islander\"] are alternative answers to the same question \u2014 EXACTLY ONE of them may have a value. Select this option ONLY if the matter documents affirmatively indicate it is the correct answer for the group; if a sibling field holds the real value, answer \"No\"."
+          },
+          {
+            "id": "applicant1_indigenous_aboriginal",
+            "title": "[Radio button \u2014 exact option only] Sarah Jane Mitchell is of Aboriginal origin? If this is correct, return exactly \"yes\"",
+            "notes": "For Applicant 1 \u2014 Sarah Jane Mitchell. Applicant 1: Aboriginal/Torres Strait Islander - Yes Aboriginal\n\nFIELD TYPE: radio button. Respond with the exact option text shown on the form, or \"No\" if not applicable. Do not return free-form text.\n\nMUTUALLY EXCLUSIVE GROUP \"Applicant 1: Aboriginal and/or torres strait islander origin\" (Is {{person}} of Aboriginal and/or Torres Strait Islander origin?): this field and [\"Applicant 1: Aboriginal/Torres Strait Islander - No\"; \"Applicant 1: Aboriginal/Torres Strait Islander - Yes Torres Strait Islander\"; \"Applicant 1: Aboriginal/Torres Strait Islander - Yes Aboriginal and Torres Strait Islander\"] are alternative answers to the same question \u2014 EXACTLY ONE of them may have a value. Select this option ONLY if the matter documents affirmatively indicate it is the correct answer for the group; if a sibling field holds the real value, answer \"No\"."
+          },
+          {
+            "id": "applicant1_indigenous_both",
+            "title": "[Radio button \u2014 exact option only] Sarah Jane Mitchell is of Aboriginal and Torres Strait Islander origin? If this is correct, return exactly \"yes\"",
+            "notes": "For Applicant 1 \u2014 Sarah Jane Mitchell. Applicant 1: Aboriginal/Torres Strait Islander - Yes Aboriginal and Torres Strait Islander\n\nFIELD TYPE: radio button. Respond with the exact option text shown on the form, or \"No\" if not applicable. Do not return free-form text.\n\nMUTUALLY EXCLUSIVE GROUP \"Applicant 1: Aboriginal and/or torres strait islander origin\" (Is {{person}} of Aboriginal and/or Torres Strait Islander origin?): this field and [\"Applicant 1: Aboriginal/Torres Strait Islander - No\"; \"Applicant 1: Aboriginal/Torres Strait Islander - Yes Aboriginal\"; \"Applicant 1: Aboriginal/Torres Strait Islander - Yes Torres Strait Islander\"] are alternative answers to the same question \u2014 EXACTLY ONE of them may have a value. Select this option ONLY if the matter documents affirmatively indicate it is the correct answer for the group; if a sibling field holds the real value, answer \"No\"."
+          },
+          {
+            "id": "respondent_1_gender_male",
+            "title": "[Radio button \u2014 exact option only] Is Daniel Robert Mitchell a male? answer exactly \"yes\" or \"no\" in lowercase",
+            "notes": "For Respondent 1 \u2014 Daniel Robert Mitchell. Respondent 1: Gender - M (male)\n\nFIELD TYPE: radio button. Respond with the exact option text shown on the form, or \"No\" if not applicable. Do not return free-form text.\n\nMUTUALLY EXCLUSIVE GROUP \"Respondent 1: gender\" (What is {{person}}'s gender?): this field and [\"Respondent 1: Gender - Choose not to answer\"; \"Respondent 1: Gender - X (indeterminate/intersex/unspecified)\"; \"Respondent 1: Gender - F (female)\"] are alternative answers to the same question \u2014 EXACTLY ONE of them may have a value. Select this option ONLY if the matter documents affirmatively indicate it is the correct answer for the group; if a sibling field holds the real value, answer \"No\"."
+          },
+          {
+            "id": "respondent_1_gender_female",
+            "title": "[Radio button \u2014 exact option only] Is Daniel Robert Mitchell a female?  answer exactly \"yes\" or \"no\" in lowercase",
+            "notes": "For Respondent 1 \u2014 Daniel Robert Mitchell. Respondent 1: Gender - F (female)\n\nFIELD TYPE: radio button. Respond with the exact option text shown on the form, or \"No\" if not applicable. Do not return free-form text.\n\nMUTUALLY EXCLUSIVE GROUP \"Respondent 1: gender\" (What is {{person}}'s gender?): this field and [\"Respondent 1: Gender - Choose not to answer\"; \"Respondent 1: Gender - X (indeterminate/intersex/unspecified)\"; \"Respondent 1: Gender - M (male)\"] are alternative answers to the same question \u2014 EXACTLY ONE of them may have a value. Select this option ONLY if the matter documents affirmatively indicate it is the correct answer for the group; if a sibling field holds the real value, answer \"No\"."
+          },
+          {
+            "id": "respondent_1_gender_choose_not_to_answer",
+            "title": "[Radio button \u2014 exact option only] Has Daniel Robert Mitchell chosen not to provide their gender? answer exactly \"yes\" or \"no\" in lowercase",
+            "notes": "For Respondent 1 \u2014 Daniel Robert Mitchell. Respondent 1: Gender - Choose not to answer\n\nFIELD TYPE: radio button. Respond with the exact option text shown on the form, or \"No\" if not applicable. Do not return free-form text.\n\nMUTUALLY EXCLUSIVE GROUP \"Respondent 1: gender\" (What is {{person}}'s gender?): this field and [\"Respondent 1: Gender - X (indeterminate/intersex/unspecified)\"; \"Respondent 1: Gender - M (male)\"; \"Respondent 1: Gender - F (female)\"] are alternative answers to the same question \u2014 EXACTLY ONE of them may have a value. Select this option ONLY if the matter documents affirmatively indicate it is the correct answer for the group; if a sibling field holds the real value, answer \"No\"."
+          },
+          {
+            "id": "respondent_1_gender_x",
+            "title": "[Radio button \u2014 exact option only] Is Daniel Robert Mitchell's gender indeterminate, intersex or unspecified? answer exactly \"yes\" or \"no\" in lowercase",
+            "notes": "For Respondent 1 \u2014 Daniel Robert Mitchell. Respondent 1: Gender - X (indeterminate/intersex/unspecified)\n\nFIELD TYPE: radio button. Respond with the exact option text shown on the form, or \"No\" if not applicable. Do not return free-form text.\n\nMUTUALLY EXCLUSIVE GROUP \"Respondent 1: gender\" (What is {{person}}'s gender?): this field and [\"Respondent 1: Gender - Choose not to answer\"; \"Respondent 1: Gender - M (male)\"; \"Respondent 1: Gender - F (female)\"] are alternative answers to the same question \u2014 EXACTLY ONE of them may have a value. Select this option ONLY if the matter documents affirmatively indicate it is the correct answer for the group; if a sibling field holds the real value, answer \"No\"."
+          },
+          {
+            "id": "respondent_1_ordinarily_resident_in_australia",
+            "title": "[Checkbox \u2014 Yes/No only] Daniel Robert Mitchell is ordinarily resident in Australia? If this is correct, return exactly \"yes\"",
+            "notes": "For Respondent 1 \u2014 Daniel Robert Mitchell. Respondent 1: Ordinarily resident in Australia\n\nFIELD TYPE: checkbox. Respond with EXACTLY one of: \"Yes\" or \"No\". Do NOT return any name, label, or other text \u2014 any value other than Yes/No will be discarded."
+          },
+          {
+            "id": "respondent_1_email",
+            "title": "What is Daniel Robert Mitchell's email address?",
+            "notes": "For Respondent 1 \u2014 Daniel Robert Mitchell. Respondent 1: Email address"
+          },
+          {
+            "id": "applicant1_interpreter_yes",
+            "title": "[Radio button \u2014 exact option only] Sarah Jane Mitchell does not speak english and requires an interpreter. If this is correct, return exactly \"yes\"",
+            "notes": "For Applicant 1 \u2014 Sarah Jane Mitchell. Applicant 1: Interpreter required - Yes\n\nFIELD TYPE: radio button. Respond with the exact option text shown on the form, or \"No\" if not applicable. Do not return free-form text.\n\nMUTUALLY EXCLUSIVE GROUP \"Applicant 1: interpreter\" (Does {{person}} need an interpreter?): this field and [\"Applicant 1: Interpreter required - No\"] are alternative answers to the same question \u2014 EXACTLY ONE of them may have a value. Select this option ONLY if the matter documents affirmatively indicate it is the correct answer for the group; if a sibling field holds the real value, answer \"No\"."
+          },
+          {
+            "id": "applicant1_interpreter_no",
+            "title": "[Radio button \u2014 exact option only] Sarah Jane Mitchell speaks english and does not require an interpreter. If this is correct, return exactly \"yes\"",
+            "notes": "For Applicant 1 \u2014 Sarah Jane Mitchell. Applicant 1: Interpreter required - No\n\nFIELD TYPE: radio button. Respond with the exact option text shown on the form, or \"No\" if not applicable. Do not return free-form text.\n\nMUTUALLY EXCLUSIVE GROUP \"Applicant 1: interpreter\" (Does {{person}} need an interpreter?): this field and [\"Applicant 1: Interpreter required - Yes\"] are alternative answers to the same question \u2014 EXACTLY ONE of them may have a value. Select this option ONLY if the matter documents affirmatively indicate it is the correct answer for the group; if a sibling field holds the real value, answer \"No\"."
+          },
+          {
+            "id": "child_2_gender_choose_not_to_answer",
+            "title": "[Radio button \u2014 exact option only] Has Liam Thomas Mitchell chosen not to provide their gender? answer exactly \"yes\" or \"no\" in lowercase",
+            "notes": "For Child 2 \u2014 Liam Thomas Mitchell. Child 2: Gender - Choose not to answer\n\nFIELD TYPE: radio button. Respond with the exact option text shown on the form, or \"No\" if not applicable. Do not return free-form text.\n\nMUTUALLY EXCLUSIVE GROUP \"Child 2: gender\" (What is {{person}}'s gender?): this field and [\"Child 2: Gender - F (female)\"; \"Child 2: Gender - X (indeterminate/intersex/unspecified)\"; \"Child 2: Gender - M (male)\"] are alternative answers to the same question \u2014 EXACTLY ONE of them may have a value. Select this option ONLY if the matter documents affirmatively indicate it is the correct answer for the group; if a sibling field holds the real value, answer \"No\"."
+          },
+          {
+            "id": "child_2_gender_indeterminate",
+            "title": "[Radio button \u2014 exact option only] Is Liam Thomas Mitchell's gender indeterminate, intersex or unspecified? answer exactly \"yes\" or \"no\" in lowercase",
+            "notes": "For Child 2 \u2014 Liam Thomas Mitchell. Child 2: Gender - X (indeterminate/intersex/unspecified)\n\nFIELD TYPE: radio button. Respond with the exact option text shown on the form, or \"No\" if not applicable. Do not return free-form text.\n\nMUTUALLY EXCLUSIVE GROUP \"Child 2: gender\" (What is {{person}}'s gender?): this field and [\"Child 2: Gender - F (female)\"; \"Child 2: Gender - Choose not to answer\"; \"Child 2: Gender - M (male)\"] are alternative answers to the same question \u2014 EXACTLY ONE of them may have a value. Select this option ONLY if the matter documents affirmatively indicate it is the correct answer for the group; if a sibling field holds the real value, answer \"No\"."
+          },
+          {
+            "id": "child_2_gender_female",
+            "title": "[Radio button \u2014 exact option only] Is Liam Thomas Mitchell a female?  answer exactly \"yes\" or \"no\" in lowercase",
+            "notes": "For Child 2 \u2014 Liam Thomas Mitchell. Child 2: Gender - F (female)\n\nFIELD TYPE: radio button. Respond with the exact option text shown on the form, or \"No\" if not applicable. Do not return free-form text.\n\nMUTUALLY EXCLUSIVE GROUP \"Child 2: gender\" (What is {{person}}'s gender?): this field and [\"Child 2: Gender - Choose not to answer\"; \"Child 2: Gender - X (indeterminate/intersex/unspecified)\"; \"Child 2: Gender - M (male)\"] are alternative answers to the same question \u2014 EXACTLY ONE of them may have a value. Select this option ONLY if the matter documents affirmatively indicate it is the correct answer for the group; if a sibling field holds the real value, answer \"No\"."
+          },
+          {
+            "id": "child_2_gender_male",
+            "title": "[Radio button \u2014 exact option only] Is Liam Thomas Mitchell a male?  answer exactly \"yes\" or \"no\" in lowercase",
+            "notes": "For Child 2 \u2014 Liam Thomas Mitchell. Child 2: Gender - M (male)\n\nFIELD TYPE: radio button. Respond with the exact option text shown on the form, or \"No\" if not applicable. Do not return free-form text.\n\nMUTUALLY EXCLUSIVE GROUP \"Child 2: gender\" (What is {{person}}'s gender?): this field and [\"Child 2: Gender - F (female)\"; \"Child 2: Gender - Choose not to answer\"; \"Child 2: Gender - X (indeterminate/intersex/unspecified)\"] are alternative answers to the same question \u2014 EXACTLY ONE of them may have a value. Select this option ONLY if the matter documents affirmatively indicate it is the correct answer for the group; if a sibling field holds the real value, answer \"No\"."
+          },
+          {
+            "id": "child_1_gender_indeterminate",
+            "title": "[Radio button \u2014 exact option only] Is Olivia Grace Mitchell's gender indeterminate, intersex or unspecified? answer exactly \"yes\" or \"no\" in lowercase",
+            "notes": "For Child 1 \u2014 Olivia Grace Mitchell. Child 1: Gender - X (indeterminate/intersex/unspecified)\n\nFIELD TYPE: radio button. Respond with the exact option text shown on the form, or \"No\" if not applicable. Do not return free-form text.\n\nMUTUALLY EXCLUSIVE GROUP \"Child 1: gender\" (What is {{person}}'s gender?): this field and [\"Child 1 - Female\"; \"Child 1: Gender - M (male)\"; \"Child 1: Gender - Choose not to answer\"] are alternative answers to the same question \u2014 EXACTLY ONE of them may have a value. Select this option ONLY if the matter documents affirmatively indicate it is the correct answer for the group; if a sibling field holds the real value, answer \"No\"."
+          },
+          {
+            "id": "custom_1776587212064",
+            "title": "[Radio button \u2014 exact option only] Is Olivia Grace Mitchell a female?  answer exactly \"yes\" or \"no\" in lowercase",
+            "notes": "For Child 1 \u2014 Olivia Grace Mitchell. Child 1 - Female\n\nFIELD TYPE: radio button. Respond with the exact option text shown on the form, or \"No\" if not applicable. Do not return free-form text.\n\nMUTUALLY EXCLUSIVE GROUP \"Child 1: gender\" (What is {{person}}'s gender?): this field and [\"Child 1: Gender - M (male)\"; \"Child 1: Gender - Choose not to answer\"; \"Child 1: Gender - X (indeterminate/intersex/unspecified)\"] are alternative answers to the same question \u2014 EXACTLY ONE of them may have a value. Select this option ONLY if the matter documents affirmatively indicate it is the correct answer for the group; if a sibling field holds the real value, answer \"No\"."
+          },
+          {
+            "id": "child_1_gender_male",
+            "title": "[Radio button \u2014 exact option only] Is Olivia Grace Mitchell a male? answer exactly \"yes\" or \"no\" in lowercase",
+            "notes": "For Child 1 \u2014 Olivia Grace Mitchell. Child 1: Gender - M (male)\n\nFIELD TYPE: radio button. Respond with the exact option text shown on the form, or \"No\" if not applicable. Do not return free-form text.\n\nMUTUALLY EXCLUSIVE GROUP \"Child 1: gender\" (What is {{person}}'s gender?): this field and [\"Child 1 - Female\"; \"Child 1: Gender - Choose not to answer\"; \"Child 1: Gender - X (indeterminate/intersex/unspecified)\"] are alternative answers to the same question \u2014 EXACTLY ONE of them may have a value. Select this option ONLY if the matter documents affirmatively indicate it is the correct answer for the group; if a sibling field holds the real value, answer \"No\"."
+          },
+          {
+            "id": "child_1_gender_choose_not_to_answer",
+            "title": "[Radio button \u2014 exact option only] Has Olivia Grace Mitchell chosen not to provide their gender? answer exactly \"yes\" or \"no\" in lowercase",
+            "notes": "For Child 1 \u2014 Olivia Grace Mitchell. Child 1: Gender - Choose not to answer\n\nFIELD TYPE: radio button. Respond with the exact option text shown on the form, or \"No\" if not applicable. Do not return free-form text.\n\nMUTUALLY EXCLUSIVE GROUP \"Child 1: gender\" (What is {{person}}'s gender?): this field and [\"Child 1 - Female\"; \"Child 1: Gender - M (male)\"; \"Child 1: Gender - X (indeterminate/intersex/unspecified)\"] are alternative answers to the same question \u2014 EXACTLY ONE of them may have a value. Select this option ONLY if the matter documents affirmatively indicate it is the correct answer for the group; if a sibling field holds the real value, answer \"No\"."
+          },
+          {
+            "id": "custom_1776828542892",
+            "title": "What is the the applicants relationship to this initiating application? \"Party to a marriage\" Party to a de facto relationship\" \"Parent\" \"Grandparent\" \"Other\". State all that apply, separated by commas",
+            "notes": "For Applicant 1 \u2014 Sarah Jane Mitchell. Applicant's relationship to application"
+          },
+          {
+            "id": "lawyers_code",
+            "title": "What is Imogen Forms's lawyer's code?",
+            "notes": "For Applicant - Lawyer \u2014 Imogen Forms. Lawyer's Code"
+          },
+          {
+            "id": "order_other",
+            "title": "[Checkbox \u2014 Yes/No only] The applicant is not seeking parenting orders or financial or property orders? If this correct, return Yes",
+            "notes": "1A Other (specify)\n\nFIELD TYPE: checkbox. Respond with EXACTLY one of: \"Yes\" or \"No\". Do NOT return any name, label, or other text \u2014 any value other than Yes/No will be discarded."
+          },
+          {
+            "id": "applicant1_other_specify",
+            "title": "[Checkbox \u2014 Yes/No only] Sarah Jane Mitchell is related to this matter other than being a party to a marriage, a party to a defacto relationship, a parent or a grandparent. If this is correct, return exactly \"yes\"",
+            "notes": "For Applicant 1 \u2014 Sarah Jane Mitchell. Applicant 1: Other (specify)\n\nFIELD TYPE: checkbox. Respond with EXACTLY one of: \"Yes\" or \"No\". Do NOT return any name, label, or other text \u2014 any value other than Yes/No will be discarded."
+          },
+          {
+            "id": "child_2_parent_2_given_names",
+            "title": "What are the given names of Parent 2 of Liam Thomas Mitchell? Do not include family name",
+            "notes": "For Child 2 \u2014 Liam Thomas Mitchell. Child 2: Parent 2 given names"
+          },
+          {
+            "id": "address_for_service_in_australia",
+            "title": "What is Second Up Family Law's address for service? Do not include state or postcode",
+            "notes": "For Applicant - Law Firm \u2014 Second Up Family Law. Address for service in Australia"
+          },
+          {
+            "id": "date_of_marriage",
+            "title": "What is the date of marriage of the parties (day/month/year)?",
+            "notes": "Date of marriage\n\nFIELD TYPE: date. Respond in DD/MM/YYYY format only.\n\nMUTUALLY EXCLUSIVE GROUP \"Date of marriage\" (When did the marriage take place?): this field and [\"26. Date of marriage - Not applicable\"] are alternative answers to the same question \u2014 EXACTLY ONE of them may have a value. Provide this field's value ONLY if it is the correct way to answer the group; if a sibling option is the correct answer instead, leave this field unanswered."
+          },
+          {
+            "id": "date_of_marriage_not_applicable",
+            "title": "[Radio button \u2014 exact option only] The parties are not married, have never been married or there is no mention of marriage. If this is correct, return exactly 'yes'",
+            "notes": "26. Date of marriage - Not applicable\n\nFIELD TYPE: radio button. Respond with the exact option text shown on the form, or \"No\" if not applicable. Do not return free-form text.\n\nMUTUALLY EXCLUSIVE GROUP \"Date of marriage\" (When did the marriage take place?): this field and [\"Date of marriage\"] are alternative answers to the same question \u2014 EXACTLY ONE of them may have a value. Select this option ONLY if the matter documents affirmatively indicate it is the correct answer for the group; if a sibling field holds the real value, answer \"No\"."
+          },
+          {
+            "id": "respondent_1_residential_address_line1",
+            "title": "What is Daniel Robert Mitchell's residential address including postcode?",
+            "notes": "For Respondent 1 \u2014 Daniel Robert Mitchell. Respondent 1: Residential address line 1"
+          },
+          {
+            "id": "custom_1776832899270",
+            "title": "What is the the respondents relationship to this initiating application? \"Party to a marriage\" Party to a de facto relationship\" \"Parent\" \"Grandparent\" \"Other\". State all that apply, separated by commas",
+            "notes": "For Respondent 1 \u2014 Daniel Robert Mitchell. Respondent's relationship to application"
+          },
+          {
+            "id": "child_1_date_of_birth",
+            "title": "What is the date of birth of Olivia Grace Mitchell?",
+            "notes": "For Child 1 \u2014 Olivia Grace Mitchell. Child 1: Date of birth\n\nFIELD TYPE: date. Respond in DD/MM/YYYY format only."
+          },
+          {
+            "id": "custom_1776665232297",
+            "title": "[Checkbox \u2014 Yes/No only] Respondent 1 description other",
+            "notes": "For Respondent 1 \u2014 Daniel Robert Mitchell. Respondent 1 description other\n\nFIELD TYPE: checkbox. Respond with EXACTLY one of: \"Yes\" or \"No\". Do NOT return any name, label, or other text \u2014 any value other than Yes/No will be discarded."
+          },
+          {
+            "id": "applicant1_email_address",
+            "title": "What is Sarah Jane Mitchell's email address?",
+            "notes": "For Applicant 1 \u2014 Sarah Jane Mitchell. Applicant 1: Email address"
+          },
+          {
+            "id": "child_1_parent_2_family_name",
+            "title": "What is the family name of Parent 2 of Olivia Grace Mitchell?",
+            "notes": "For Child 1 \u2014 Olivia Grace Mitchell. Child 1: Parent 2 family name"
+          },
+          {
+            "id": "applicant1_australian_citizen",
+            "title": "[Checkbox \u2014 Yes/No only] Sarah Jane Mitchell is an Australian citizen? If this is correct, return exactly \"yes\"",
+            "notes": "For Applicant 1 \u2014 Sarah Jane Mitchell. Applicant 1: An Australian citizen\n\nFIELD TYPE: checkbox. Respond with EXACTLY one of: \"Yes\" or \"No\". Do NOT return any name, label, or other text \u2014 any value other than Yes/No will be discarded."
+          },
+          {
+            "id": "date_of_final_separation",
+            "title": "What is the date of final separation of the parties (day/month/year)?",
+            "notes": "Date of final separation\n\nFIELD TYPE: date. Respond in DD/MM/YYYY format only.\n\nMUTUALLY EXCLUSIVE GROUP \"Date of final separation\" (What was the date of final separation, or is it not applicable?): this field and [\"27. Date of final separation - Not applicable\"] are alternative answers to the same question \u2014 EXACTLY ONE of them may have a value. Provide this field's value ONLY if it is the correct way to answer the group; if a sibling option is the correct answer instead, leave this field unanswered."
+          },
+          {
+            "id": "date_of_final_separation_not_applicable",
+            "title": "[Radio button \u2014 exact option only] The parties have not had their final separation. If this is correct, return exactly 'yes'",
+            "notes": "27. Date of final separation - Not applicable\n\nFIELD TYPE: radio button. Respond with the exact option text shown on the form, or \"No\" if not applicable. Do not return free-form text.\n\nMUTUALLY EXCLUSIVE GROUP \"Date of final separation\" (What was the date of final separation, or is it not applicable?): this field and [\"Date of final separation\"] are alternative answers to the same question \u2014 EXACTLY ONE of them may have a value. Select this option ONLY if the matter documents affirmatively indicate it is the correct answer for the group; if a sibling field holds the real value, answer \"No\"."
+          },
+          {
+            "id": "q55c_child_of_relationship_yes",
+            "title": "[Radio button \u2014 exact option only] There is a child of the de facto relationship.  If this is correct, return yes",
+            "notes": "55c. Is there a child of the de facto relationship - Yes\n\nFIELD TYPE: radio button. Respond with the exact option text shown on the form, or \"No\" if not applicable. Do not return free-form text.\n\nMUTUALLY EXCLUSIVE GROUP \"55c: Child Of Relationship\" (Is there a child of the de facto relationship?): this field and [\"55c. Is there a child of the de facto relationship - No\"] are alternative answers to the same question \u2014 EXACTLY ONE of them may have a value. Select this option ONLY if the matter documents affirmatively indicate it is the correct answer for the group; if a sibling field holds the real value, answer \"No\"."
+          },
+          {
+            "id": "q55c_child_of_relationship_no",
+            "title": "[Radio button \u2014 exact option only] There is not a child of the de facto relationship. If this is correct, return yes",
+            "notes": "55c. Is there a child of the de facto relationship - No\n\nFIELD TYPE: radio button. Respond with the exact option text shown on the form, or \"No\" if not applicable. Do not return free-form text.\n\nMUTUALLY EXCLUSIVE GROUP \"55c: Child Of Relationship\" (Is there a child of the de facto relationship?): this field and [\"55c. Is there a child of the de facto relationship - Yes\"] are alternative answers to the same question \u2014 EXACTLY ONE of them may have a value. Select this option ONLY if the matter documents affirmatively indicate it is the correct answer for the group; if a sibling field holds the real value, answer \"No\"."
+          },
+          {
+            "id": "q55b_period_two_years_no",
+            "title": "[Radio button \u2014 exact option only] The de facto relationship or total of the periods of the de facto relationship is not at least two years? If this is correct, return yes",
+            "notes": "55b. Is the period at least two years - No\n\nFIELD TYPE: radio button. Respond with the exact option text shown on the form, or \"No\" if not applicable. Do not return free-form text.\n\nMUTUALLY EXCLUSIVE GROUP \"55b: Period Two Years\" (Has the relationship lasted at least two years?): this field and [\"55b. Is the period at least two years - Yes\"] are alternative answers to the same question \u2014 EXACTLY ONE of them may have a value. Select this option ONLY if the matter documents affirmatively indicate it is the correct answer for the group; if a sibling field holds the real value, answer \"No\"."
+          },
+          {
+            "id": "q55b_period_two_years_yes",
+            "title": "[Radio button \u2014 exact option only] The de facto relationship or total of the periods of the de facto relationship is at least two years? If this is correct, return yes",
+            "notes": "55b. Is the period at least two years - Yes\n\nFIELD TYPE: radio button. Respond with the exact option text shown on the form, or \"No\" if not applicable. Do not return free-form text.\n\nMUTUALLY EXCLUSIVE GROUP \"55b: Period Two Years\" (Has the relationship lasted at least two years?): this field and [\"55b. Is the period at least two years - No\"] are alternative answers to the same question \u2014 EXACTLY ONE of them may have a value. Select this option ONLY if the matter documents affirmatively indicate it is the correct answer for the group; if a sibling field holds the real value, answer \"No\"."
+          },
+          {
+            "id": "55e_no",
+            "title": "[Radio button \u2014 exact option only] 55e: No",
+            "notes": "55e: No\n\nFIELD TYPE: radio button. Respond with the exact option text shown on the form, or \"No\" if not applicable. Do not return free-form text.\n\nMUTUALLY EXCLUSIVE GROUP \"55e\" (Does this apply?): this field and [\"55e: Yes\"] are alternative answers to the same question \u2014 EXACTLY ONE of them may have a value. Select this option ONLY if the matter documents affirmatively indicate it is the correct answer for the group; if a sibling field holds the real value, answer \"No\"."
+          },
+          {
+            "id": "55e_yes",
+            "title": "[Radio button \u2014 exact option only] The de facto relationship is or was registered under a prescribed law of a state or territory of Australia. If this is correct, return yes",
+            "notes": "55e: Yes\n\nFIELD TYPE: radio button. Respond with the exact option text shown on the form, or \"No\" if not applicable. Do not return free-form text.\n\nMUTUALLY EXCLUSIVE GROUP \"55e\" (Does this apply?): this field and [\"55e: No\"] are alternative answers to the same question \u2014 EXACTLY ONE of them may have a value. Select this option ONLY if the matter documents affirmatively indicate it is the correct answer for the group; if a sibling field holds the real value, answer \"No\"."
+          },
+          {
+            "id": "respondent_1_date_of_birth",
+            "title": "What is Daniel Robert Mitchell's date of birth?",
+            "notes": "For Respondent 1 \u2014 Daniel Robert Mitchell. Respondent 1: Date of birth\n\nFIELD TYPE: date. Respond in DD/MM/YYYY format only."
+          }
+        ]
+      },
+      "extra_headers": null
+    },
+    "response": {
+      "status_code": 200,
+      "upstream_request_ids": {
+        "x-amzn-requestid": "c0cb1c03-ce55-49b7-924d-a8d654cc649b",
+        "x-amz-apigw-id": "Bnm8_FzfPHcEVSA=",
+        "x-amzn-trace-id": "Root=1-6a72eb85-41b4330f61b1ed2138ca3060"
+      },
+      "json": {
+        "result": [
+          {
+            "id": "respondent_1_present_in_australia",
+            "values": [
+              "Yes"
+            ],
+            "references": []
+          },
+          {
+            "id": "respondent_1_ordinarily_resident_in_australia",
+            "values": [
+              "Yes"
+            ],
+            "references": [
+              {
+                "clientDocumentId": "2cffa74d-25e4-48b4-ac25-25d25e090969",
+                "clientDocumentName": "Mitchell_Marriage_Certificate.docx",
+                "parentClientDocumentId": null,
+                "parentDocumentName": null,
+                "providerItemPath": null,
+                "matterId": "a9e88ef8-eba4-9e4e-8020-b0316a5441ad"
+              }
+            ]
+          },
+          {
+            "id": "respondent_1_atsi_yes_both",
+            "values": [],
+            "references": []
+          },
+          {
+            "id": "respondent_1_atsi_yes_torres_strait",
+            "values": [],
+            "references": []
+          },
+          {
+            "id": "respondent_1_atsi_no",
+            "values": [
+              "No"
+            ],
+            "references": []
+          },
+          {
+            "id": "respondent_1_atsi_yes_aboriginal",
+            "values": [],
+            "references": []
+          },
+          {
+            "id": "applicant1_indigenous_torres_strait",
+            "values": [],
+            "references": []
+          },
+          {
+            "id": "applicant1_indigenous_no",
+            "values": [
+              "No"
+            ],
+            "references": []
+          },
+          {
+            "id": "applicant1_indigenous_aboriginal",
+            "values": [
+              "No"
+            ],
+            "references": []
+          },
+          {
+            "id": "applicant1_indigenous_both",
+            "values": [
+              "No"
+            ],
+            "references": []
+          },
+          {
+            "id": "respondent_1_gender_male",
+            "values": [
+              "yes"
+            ],
+            "references": [
+              {
+                "clientDocumentId": "ce1f86fa-fdcb-f54a-9460-83e8dce6107d",
+                "clientDocumentName": "2026-03-16_Initial_Client_Intake_Form.docx",
+                "parentClientDocumentId": null,
+                "parentDocumentName": null,
+                "providerItemPath": null,
+                "matterId": "a9e88ef8-eba4-9e4e-8020-b0316a5441ad"
+              }
+            ]
+          },
+          {
+            "id": "respondent_1_gender_female",
+            "values": [
+              "no"
+            ],
+            "references": [
+              {
+                "clientDocumentId": "ce1f86fa-fdcb-f54a-9460-83e8dce6107d",
+                "clientDocumentName": "2026-03-16_Initial_Client_Intake_Form.docx",
+                "parentClientDocumentId": null,
+                "parentDocumentName": null,
+                "providerItemPath": null,
+                "matterId": "a9e88ef8-eba4-9e4e-8020-b0316a5441ad"
+              }
+            ]
+          },
+          {
+            "id": "respondent_1_gender_choose_not_to_answer",
+            "values": [
+              "no"
+            ],
+            "references": [
+              {
+                "clientDocumentId": "ce1f86fa-fdcb-f54a-9460-83e8dce6107d",
+                "clientDocumentName": "2026-03-16_Initial_Client_Intake_Form.docx",
+                "parentClientDocumentId": null,
+                "parentDocumentName": null,
+                "providerItemPath": null,
+                "matterId": "a9e88ef8-eba4-9e4e-8020-b0316a5441ad"
+              }
+            ]
+          },
+          {
+            "id": "respondent_1_gender_x",
+            "values": [
+              "no"
+            ],
+            "references": [
+              {
+                "clientDocumentId": "ce1f86fa-fdcb-f54a-9460-83e8dce6107d",
+                "clientDocumentName": "2026-03-16_Initial_Client_Intake_Form.docx",
+                "parentClientDocumentId": null,
+                "parentDocumentName": null,
+                "providerItemPath": null,
+                "matterId": "a9e88ef8-eba4-9e4e-8020-b0316a5441ad"
+              }
+            ]
+          },
+          {
+            "id": "child_2_gender_choose_not_to_answer",
+            "values": [
+              "no"
+            ],
+            "references": []
+          },
+          {
+            "id": "child_2_gender_indeterminate",
+            "values": [
+              "no"
+            ],
+            "references": []
+          },
+          {
+            "id": "child_2_gender_female",
+            "values": [
+              "no"
+            ],
+            "references": []
+          },
+          {
+            "id": "child_2_gender_male",
+            "values": [
+              "no"
+            ],
+            "references": []
+          },
+          {
+            "id": "child_1_gender_indeterminate",
+            "values": [
+              "no"
+            ],
+            "references": []
+          },
+          {
+            "id": "custom_1776587212064",
+            "values": [
+              "yes"
+            ],
+            "references": []
+          },
+          {
+            "id": "child_1_gender_male",
+            "values": [
+              "no"
+            ],
+            "references": []
+          },
+          {
+            "id": "child_1_gender_choose_not_to_answer",
+            "values": [
+              "no"
+            ],
+            "references": []
+          },
+          {
+            "id": "applicant1_interpreter_yes",
+            "values": [],
+            "references": []
+          },
+          {
+            "id": "applicant1_interpreter_no",
+            "values": [],
+            "references": []
+          },
+          {
+            "id": "custom_1776828542892",
+            "values": [
+              "Party to a marriage, Parent"
+            ],
+            "references": [
+              {
+                "clientDocumentId": "ce1f86fa-fdcb-f54a-9460-83e8dce6107d",
+                "clientDocumentName": "2026-03-16_Initial_Client_Intake_Form.docx",
+                "parentClientDocumentId": null,
+                "parentDocumentName": null,
+                "providerItemPath": null,
+                "matterId": "a9e88ef8-eba4-9e4e-8020-b0316a5441ad"
+              }
+            ]
+          },
+          {
+            "id": "lawyers_code",
+            "values": [
+              "SUF123",
+              "SUF123",
+              "SUF123",
+              "SUF123",
+              "SUF123",
+              "SUF123"
+            ],
+            "references": [
+              {
+                "clientDocumentId": "ce1f86fa-fdcb-f54a-9460-83e8dce6107d",
+                "clientDocumentName": "2026-03-16_Initial_Client_Intake_Form.docx",
+                "parentClientDocumentId": null,
+                "parentDocumentName": null,
+                "providerItemPath": null,
+                "matterId": "a9e88ef8-eba4-9e4e-8020-b0316a5441ad"
+              },
+              {
+                "clientDocumentId": "12c604a4-222f-264e-a6fc-000074b86836",
+                "clientDocumentName": "Subpoena DCJ 06.06.25.docx",
+                "parentClientDocumentId": null,
+                "parentDocumentName": null,
+                "providerItemPath": null,
+                "matterId": "a9e88ef8-eba4-9e4e-8020-b0316a5441ad"
+              },
+              {
+                "clientDocumentId": "3c70cd15-ac89-4ac6-885b-6daf73b9a02a",
+                "clientDocumentName": "Subpoena NSW Police.docx",
+                "parentClientDocumentId": null,
+                "parentDocumentName": null,
+                "providerItemPath": null,
+                "matterId": "a9e88ef8-eba4-9e4e-8020-b0316a5441ad"
+              },
+              {
+                "clientDocumentId": "56a70191-4a6e-484b-a63b-1310b62f2ac1",
+                "clientDocumentName": "Subpoena Westpac.docx",
+                "parentClientDocumentId": null,
+                "parentDocumentName": null,
+                "providerItemPath": null,
+                "matterId": "a9e88ef8-eba4-9e4e-8020-b0316a5441ad"
+              },
+              {
+                "clientDocumentId": "8d546f34-d25c-2843-9499-022fa59fe402",
+                "clientDocumentName": "Subpoena CBA.docx",
+                "parentClientDocumentId": null,
+                "parentDocumentName": null,
+                "providerItemPath": null,
+                "matterId": "a9e88ef8-eba4-9e4e-8020-b0316a5441ad"
+              },
+              {
+                "clientDocumentId": "966c339b-c12f-044b-bc1f-fb494f790499",
+                "clientDocumentName": "Subpoena DCJ 07.05.26.docx",
+                "parentClientDocumentId": null,
+                "parentDocumentName": null,
+                "providerItemPath": null,
+                "matterId": "a9e88ef8-eba4-9e4e-8020-b0316a5441ad"
+              }
+            ]
+          },
+          {
+            "id": "address_for_service_in_australia",
+            "values": [
+              "123 Sydney Street, Sydney",
+              "123 Sydney Street, Sydney",
+              "123 Sydney Street, Sydney",
+              "123 Sydney Street, Sydney",
+              "123 Sydney Street, Sydney",
+              "123 Sydney Street, Sydney",
+              "123 Sydney Street, Sydney"
+            ],
+            "references": [
+              {
+                "clientDocumentId": "12c604a4-222f-264e-a6fc-000074b86836",
+                "clientDocumentName": "Subpoena DCJ 06.06.25.docx",
+                "parentClientDocumentId": null,
+                "parentDocumentName": null,
+                "providerItemPath": null,
+                "matterId": "a9e88ef8-eba4-9e4e-8020-b0316a5441ad"
+              },
+              {
+                "clientDocumentId": "dd9ac7dc-90b7-c548-8d11-66841c616a69",
+                "clientDocumentName": "DRAFT Letter to Mr Daniel Mitchell - Initial Correspondence.docx",
+                "parentClientDocumentId": null,
+                "parentDocumentName": null,
+                "providerItemPath": null,
+                "matterId": "a9e88ef8-eba4-9e4e-8020-b0316a5441ad"
+              },
+              {
+                "clientDocumentId": "ce1f86fa-fdcb-f54a-9460-83e8dce6107d",
+                "clientDocumentName": "2026-03-16_Initial_Client_Intake_Form.docx",
+                "parentClientDocumentId": null,
+                "parentDocumentName": null,
+                "providerItemPath": null,
+                "matterId": "a9e88ef8-eba4-9e4e-8020-b0316a5441ad"
+              },
+              {
+                "clientDocumentId": "8d546f34-d25c-2843-9499-022fa59fe402",
+                "clientDocumentName": "Subpoena CBA.docx",
+                "parentClientDocumentId": null,
+                "parentDocumentName": null,
+                "providerItemPath": null,
+                "matterId": "a9e88ef8-eba4-9e4e-8020-b0316a5441ad"
+              },
+              {
+                "clientDocumentId": "966c339b-c12f-044b-bc1f-fb494f790499",
+                "clientDocumentName": "Subpoena DCJ 07.05.26.docx",
+                "parentClientDocumentId": null,
+                "parentDocumentName": null,
+                "providerItemPath": null,
+                "matterId": "a9e88ef8-eba4-9e4e-8020-b0316a5441ad"
+              },
+              {
+                "clientDocumentId": "3c70cd15-ac89-4ac6-885b-6daf73b9a02a",
+                "clientDocumentName": "Subpoena NSW Police.docx",
+                "parentClientDocumentId": null,
+                "parentDocumentName": null,
+                "providerItemPath": null,
+                "matterId": "a9e88ef8-eba4-9e4e-8020-b0316a5441ad"
+              },
+              {
+                "clientDocumentId": "56a70191-4a6e-484b-a63b-1310b62f2ac1",
+                "clientDocumentName": "Subpoena Westpac.docx",
+                "parentClientDocumentId": null,
+                "parentDocumentName": null,
+                "providerItemPath": null,
+                "matterId": "a9e88ef8-eba4-9e4e-8020-b0316a5441ad"
+              }
+            ]
+          },
+          {
+            "id": "date_of_marriage",
+            "values": [
+              "14/02/2014",
+              "14/02/2014"
+            ],
+            "references": [
+              {
+                "clientDocumentId": "ce1f86fa-fdcb-f54a-9460-83e8dce6107d",
+                "clientDocumentName": "2026-03-16_Initial_Client_Intake_Form.docx",
+                "parentClientDocumentId": null,
+                "parentDocumentName": null,
+                "providerItemPath": null,
+                "matterId": "a9e88ef8-eba4-9e4e-8020-b0316a5441ad"
+              },
+              {
+                "clientDocumentId": "2cffa74d-25e4-48b4-ac25-25d25e090969",
+                "clientDocumentName": "Mitchell_Marriage_Certificate.docx",
+                "parentClientDocumentId": null,
+                "parentDocumentName": null,
+                "providerItemPath": null,
+                "matterId": "a9e88ef8-eba4-9e4e-8020-b0316a5441ad"
+              }
+            ]
+          },
+          {
+            "id": "date_of_marriage_not_applicable",
+            "values": [],
+            "references": []
+          },
+          {
+            "id": "respondent_1_residential_address_line1",
+            "values": [
+              "17 Strathfield Avenue, Strathfield NSW 2135"
+            ],
+            "references": [
+              {
+                "clientDocumentId": "ce1f86fa-fdcb-f54a-9460-83e8dce6107d",
+                "clientDocumentName": "2026-03-16_Initial_Client_Intake_Form.docx",
+                "parentClientDocumentId": null,
+                "parentDocumentName": null,
+                "providerItemPath": null,
+                "matterId": "a9e88ef8-eba4-9e4e-8020-b0316a5441ad"
+              }
+            ]
+          },
+          {
+            "id": "custom_1776832899270",
+            "values": [
+              "Party to a marriage, Parent"
+            ],
+            "references": [
+              {
+                "clientDocumentId": "ce1f86fa-fdcb-f54a-9460-83e8dce6107d",
+                "clientDocumentName": "2026-03-16_Initial_Client_Intake_Form.docx",
+                "parentClientDocumentId": null,
+                "parentDocumentName": null,
+                "providerItemPath": null,
+                "matterId": "a9e88ef8-eba4-9e4e-8020-b0316a5441ad"
+              }
+            ]
+          },
+          {
+            "id": "child_2_parent_2_given_names",
+            "values": [
+              "Sarah Jane"
+            ],
+            "references": [
+              {
+                "clientDocumentId": "ce1f86fa-fdcb-f54a-9460-83e8dce6107d",
+                "clientDocumentName": "2026-03-16_Initial_Client_Intake_Form.docx",
+                "parentClientDocumentId": null,
+                "parentDocumentName": null,
+                "providerItemPath": null,
+                "matterId": "a9e88ef8-eba4-9e4e-8020-b0316a5441ad"
+              }
+            ]
+          },
+          {
+            "id": "child_1_parent_2_family_name",
+            "values": [
+              "Mitchell"
+            ],
+            "references": []
+          },
+          {
+            "id": "applicant1_email_address",
+            "values": [
+              "sarah.mitchell@email.com.au"
+            ],
+            "references": []
+          },
+          {
+            "id": "respondent_1_email",
+            "values": [
+              "daniel.mitchell@email.com.au"
+            ],
+            "references": []
+          },
+          {
+            "id": "applicant1_australian_citizen",
+            "values": [
+              "Yes"
+            ],
+            "references": []
+          },
+          {
+            "id": "applicant1_other_specify",
+            "values": [
+              "No"
+            ],
+            "references": []
+          },
+          {
+            "id": "order_other",
+            "values": [
+              "No"
+            ],
+            "references": [
+              {
+                "clientDocumentId": "ce1f86fa-fdcb-f54a-9460-83e8dce6107d",
+                "clientDocumentName": "2026-03-16_Initial_Client_Intake_Form.docx",
+                "parentClientDocumentId": null,
+                "parentDocumentName": null,
+                "providerItemPath": null,
+                "matterId": "a9e88ef8-eba4-9e4e-8020-b0316a5441ad"
+              }
+            ]
+          },
+          {
+            "id": "custom_1776665232297",
+            "values": [
+              "No"
+            ],
+            "references": []
+          },
+          {
+            "id": "date_of_final_separation",
+            "values": [
+              "01/02/2025"
+            ],
+            "references": [
+              {
+                "clientDocumentId": "ce1f86fa-fdcb-f54a-9460-83e8dce6107d",
+                "clientDocumentName": "2026-03-16_Initial_Client_Intake_Form.docx",
+                "parentClientDocumentId": null,
+                "parentDocumentName": null,
+                "providerItemPath": null,
+                "matterId": "a9e88ef8-eba4-9e4e-8020-b0316a5441ad"
+              }
+            ]
+          },
+          {
+            "id": "date_of_final_separation_not_applicable",
+            "values": [],
+            "references": []
+          },
+          {
+            "id": "q55c_child_of_relationship_yes",
+            "values": [
+              "55c. Is there a child of the de facto relationship - Yes"
+            ],
+            "references": [
+              {
+                "clientDocumentId": "ce1f86fa-fdcb-f54a-9460-83e8dce6107d",
+                "clientDocumentName": "2026-03-16_Initial_Client_Intake_Form.docx",
+                "parentClientDocumentId": null,
+                "parentDocumentName": null,
+                "providerItemPath": null,
+                "matterId": "a9e88ef8-eba4-9e4e-8020-b0316a5441ad"
+              }
+            ]
+          },
+          {
+            "id": "q55c_child_of_relationship_no",
+            "values": [],
+            "references": []
+          },
+          {
+            "id": "q55b_period_two_years_no",
+            "values": [],
+            "references": []
+          },
+          {
+            "id": "q55b_period_two_years_yes",
+            "values": [],
+            "references": []
+          },
+          {
+            "id": "55e_no",
+            "values": [
+              "55e: No"
+            ],
+            "references": [
+              {
+                "clientDocumentId": "ce1f86fa-fdcb-f54a-9460-83e8dce6107d",
+                "clientDocumentName": "2026-03-16_Initial_Client_Intake_Form.docx",
+                "parentClientDocumentId": null,
+                "parentDocumentName": null,
+                "providerItemPath": null,
+                "matterId": "a9e88ef8-eba4-9e4e-8020-b0316a5441ad"
+              }
+            ]
+          },
+          {
+            "id": "55e_yes",
+            "values": [],
+            "references": []
+          },
+          {
+            "id": "child_1_date_of_birth",
+            "values": [
+              "10/03/2017",
+              "10/03/2017"
+            ],
+            "references": [
+              {
+                "clientDocumentId": "ce1f86fa-fdcb-f54a-9460-83e8dce6107d",
+                "clientDocumentName": "2026-03-16_Initial_Client_Intake_Form.docx",
+                "parentClientDocumentId": null,
+                "parentDocumentName": null,
+                "providerItemPath": null,
+                "matterId": "a9e88ef8-eba4-9e4e-8020-b0316a5441ad"
+              },
+              {
+                "clientDocumentId": "12c604a4-222f-264e-a6fc-000074b86836",
+                "clientDocumentName": "Subpoena DCJ 06.06.25.docx",
+                "parentClientDocumentId": null,
+                "parentDocumentName": null,
+                "providerItemPath": null,
+                "matterId": "a9e88ef8-eba4-9e4e-8020-b0316a5441ad"
+              }
+            ]
+          },
+          {
+            "id": "respondent_1_date_of_birth",
+            "values": [
+              "22/03/1985",
+              "22/03/1985",
+              "22/03/1985",
+              "22/03/1985",
+              "22/03/1985"
+            ],
+            "references": [
+              {
+                "clientDocumentId": "ce1f86fa-fdcb-f54a-9460-83e8dce6107d",
+                "clientDocumentName": "2026-03-16_Initial_Client_Intake_Form.docx",
+                "parentClientDocumentId": null,
+                "parentDocumentName": null,
+                "providerItemPath": null,
+                "matterId": "a9e88ef8-eba4-9e4e-8020-b0316a5441ad"
+              },
+              {
+                "clientDocumentId": "2cffa74d-25e4-48b4-ac25-25d25e090969",
+                "clientDocumentName": "Mitchell_Marriage_Certificate.docx",
+                "parentClientDocumentId": null,
+                "parentDocumentName": null,
+                "providerItemPath": null,
+                "matterId": "a9e88ef8-eba4-9e4e-8020-b0316a5441ad"
+              },
+              {
+                "clientDocumentId": "3c70cd15-ac89-4ac6-885b-6daf73b9a02a",
+                "clientDocumentName": "Subpoena NSW Police.docx",
+                "parentClientDocumentId": null,
+                "parentDocumentName": null,
+                "providerItemPath": null,
+                "matterId": "a9e88ef8-eba4-9e4e-8020-b0316a5441ad"
+              },
+              {
+                "clientDocumentId": "966c339b-c12f-044b-bc1f-fb494f790499",
+                "clientDocumentName": "Subpoena DCJ 07.05.26.docx",
+                "parentClientDocumentId": null,
+                "parentDocumentName": null,
+                "providerItemPath": null,
+                "matterId": "a9e88ef8-eba4-9e4e-8020-b0316a5441ad"
+              },
+              {
+                "clientDocumentId": "12c604a4-222f-264e-a6fc-000074b86836",
+                "clientDocumentName": "Subpoena DCJ 06.06.25.docx",
+                "parentClientDocumentId": null,
+                "parentDocumentName": null,
+                "providerItemPath": null,
+                "matterId": "a9e88ef8-eba4-9e4e-8020-b0316a5441ad"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "captured_at": "2026-08-05T07:51:52.074670+00:00"
+  }

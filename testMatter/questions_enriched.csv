@@ -1,0 +1,749 @@
+ground_truth_question,item_id
+"MATTER ROLES (authoritative - use these to keep the parties straight):
+- The form being completed is: Initiating Application
+- Applicant 1 is Sarah Jane Mitchell, represented by lawyer Imogen Forms of the law firm Second Up Family Law.
+- Respondent 1 is Daniel Robert Mitchell, represented by lawyer Victoria Sue of the law firm Sue & Sue.
+- Child 1 is Olivia Grace Mitchell.
+- Child 2 is Liam Thomas Mitchell.
+
+THIS QUESTION IS ABOUT: Respondent 1 - Daniel Robert Mitchell.
+Do NOT use details belonging to Applicant 1 (Sarah Jane Mitchell); only Daniel Robert Mitchell's own details answer this.
+
+SINGLE-CHOICE FORM QUESTION: Is Daniel Robert Mitchell of Aboriginal and/or Torres Strait Islander origin?
+
+This is ONE form question whose options are mutually exclusive: exactly one option may hold a value. Decide the question once, then name the single option that is correct - do not treat the options as separate questions and do not select more than one.
+
+OPTIONS:
+  [1] option_id: respondent_1_atsi_yes_both
+      form option: Respondent 1: Aboriginal/Torres Strait Islander - Yes Aboriginal and Torres Strait Islander
+  [2] option_id: respondent_1_atsi_yes_torres_strait
+      form option: Respondent 1: Aboriginal/Torres Strait Islander - Yes Torres Strait Islander
+  [3] option_id: respondent_1_atsi_no
+      form option: Respondent 1: Aboriginal/Torres Strait Islander - No
+  [4] option_id: respondent_1_atsi_yes_aboriginal
+      form option: Respondent 1: Aboriginal/Torres Strait Islander - Yes Aboriginal
+
+EVIDENCE RULE:
+- Answer only from the matter documents in this corpus.
+- You may rely on what the documents establish directly (for example, a documented Australian residential address establishes that a person is present in and ordinarily resident in Australia).
+- Blank form scaffolding is NOT evidence. Unticked checkbox labels, printed lists of options with nothing selected, and empty template cells tell you nothing about this matter - ignore them.
+- NEVER guess from a person's name. In particular, never infer gender from a first name: a gender counts as established only where a document records it (for example ""Gender: Male"").
+- If the documents do not establish the answer, say so instead of guessing.
+
+If the documents do not establish which option is correct, choose unknown - that is a valid and expected answer for questions this matter's documents never address.
+
+ANSWER FORMAT - your final answer must be exactly these two lines:
+ANSWER: <one option_id from the list above, or the word unknown>
+VALUE: <the value for the chosen option if it requires one, in the required format; otherwise write n/a>",group::Respondent 1: Aboriginal and/or torres strait islander origin
+"MATTER ROLES (authoritative - use these to keep the parties straight):
+- The form being completed is: Initiating Application
+- Applicant 1 is Sarah Jane Mitchell, represented by lawyer Imogen Forms of the law firm Second Up Family Law.
+- Respondent 1 is Daniel Robert Mitchell, represented by lawyer Victoria Sue of the law firm Sue & Sue.
+- Child 1 is Olivia Grace Mitchell.
+- Child 2 is Liam Thomas Mitchell.
+
+THIS QUESTION IS ABOUT: Applicant 1 - Sarah Jane Mitchell.
+Do NOT use details belonging to Respondent 1 (Daniel Robert Mitchell); only Sarah Jane Mitchell's own details answer this.
+
+SINGLE-CHOICE FORM QUESTION: Is Sarah Jane Mitchell of Aboriginal and/or Torres Strait Islander origin?
+
+This is ONE form question whose options are mutually exclusive: exactly one option may hold a value. Decide the question once, then name the single option that is correct - do not treat the options as separate questions and do not select more than one.
+
+OPTIONS:
+  [1] option_id: applicant1_indigenous_torres_strait
+      form option: Applicant 1: Aboriginal/Torres Strait Islander - Yes Torres Strait Islander
+  [2] option_id: applicant1_indigenous_no
+      form option: Applicant 1: Aboriginal/Torres Strait Islander - No
+  [3] option_id: applicant1_indigenous_aboriginal
+      form option: Applicant 1: Aboriginal/Torres Strait Islander - Yes Aboriginal
+  [4] option_id: applicant1_indigenous_both
+      form option: Applicant 1: Aboriginal/Torres Strait Islander - Yes Aboriginal and Torres Strait Islander
+
+EVIDENCE RULE:
+- Answer only from the matter documents in this corpus.
+- You may rely on what the documents establish directly (for example, a documented Australian residential address establishes that a person is present in and ordinarily resident in Australia).
+- Blank form scaffolding is NOT evidence. Unticked checkbox labels, printed lists of options with nothing selected, and empty template cells tell you nothing about this matter - ignore them.
+- NEVER guess from a person's name. In particular, never infer gender from a first name: a gender counts as established only where a document records it (for example ""Gender: Male"").
+- If the documents do not establish the answer, say so instead of guessing.
+
+If the documents do not establish which option is correct, choose unknown - that is a valid and expected answer for questions this matter's documents never address.
+
+ANSWER FORMAT - your final answer must be exactly these two lines:
+ANSWER: <one option_id from the list above, or the word unknown>
+VALUE: <the value for the chosen option if it requires one, in the required format; otherwise write n/a>",group::Applicant 1: Aboriginal and/or torres strait islander origin
+"MATTER ROLES (authoritative - use these to keep the parties straight):
+- The form being completed is: Initiating Application
+- Applicant 1 is Sarah Jane Mitchell, represented by lawyer Imogen Forms of the law firm Second Up Family Law.
+- Respondent 1 is Daniel Robert Mitchell, represented by lawyer Victoria Sue of the law firm Sue & Sue.
+- Child 1 is Olivia Grace Mitchell.
+- Child 2 is Liam Thomas Mitchell.
+
+THIS QUESTION IS ABOUT: Respondent 1 - Daniel Robert Mitchell.
+Do NOT use details belonging to Applicant 1 (Sarah Jane Mitchell); only Daniel Robert Mitchell's own details answer this.
+
+SINGLE-CHOICE FORM QUESTION: What is Daniel Robert Mitchell's gender?
+
+This is ONE form question whose options are mutually exclusive: exactly one option may hold a value. Decide the question once, then name the single option that is correct - do not treat the options as separate questions and do not select more than one.
+
+OPTIONS:
+  [1] option_id: respondent_1_gender_male
+      form option: Respondent 1: Gender - M (male)
+  [2] option_id: respondent_1_gender_female
+      form option: Respondent 1: Gender - F (female)
+  [3] option_id: respondent_1_gender_choose_not_to_answer
+      form option: Respondent 1: Gender - Choose not to answer
+  [4] option_id: respondent_1_gender_x
+      form option: Respondent 1: Gender - X (indeterminate/intersex/unspecified)
+
+EVIDENCE RULE:
+- Answer only from the matter documents in this corpus.
+- You may rely on what the documents establish directly (for example, a documented Australian residential address establishes that a person is present in and ordinarily resident in Australia).
+- Blank form scaffolding is NOT evidence. Unticked checkbox labels, printed lists of options with nothing selected, and empty template cells tell you nothing about this matter - ignore them.
+- NEVER guess from a person's name. In particular, never infer gender from a first name: a gender counts as established only where a document records it (for example ""Gender: Male"").
+- If the documents do not establish the answer, say so instead of guessing.
+
+If the documents do not establish which option is correct, choose unknown - that is a valid and expected answer for questions this matter's documents never address.
+
+ANSWER FORMAT - your final answer must be exactly these two lines:
+ANSWER: <one option_id from the list above, or the word unknown>
+VALUE: <the value for the chosen option if it requires one, in the required format; otherwise write n/a>",group::Respondent 1: gender
+"MATTER ROLES (authoritative - use these to keep the parties straight):
+- The form being completed is: Initiating Application
+- Applicant 1 is Sarah Jane Mitchell, represented by lawyer Imogen Forms of the law firm Second Up Family Law.
+- Respondent 1 is Daniel Robert Mitchell, represented by lawyer Victoria Sue of the law firm Sue & Sue.
+- Child 1 is Olivia Grace Mitchell.
+- Child 2 is Liam Thomas Mitchell.
+
+THIS QUESTION IS ABOUT: Applicant 1 - Sarah Jane Mitchell.
+Do NOT use details belonging to Respondent 1 (Daniel Robert Mitchell); only Sarah Jane Mitchell's own details answer this.
+
+SINGLE-CHOICE FORM QUESTION: Does Sarah Jane Mitchell need an interpreter?
+
+This is ONE form question whose options are mutually exclusive: exactly one option may hold a value. Decide the question once, then name the single option that is correct - do not treat the options as separate questions and do not select more than one.
+
+OPTIONS:
+  [1] option_id: applicant1_interpreter_yes
+      form option: Applicant 1: Interpreter required - Yes
+  [2] option_id: applicant1_interpreter_no
+      form option: Applicant 1: Interpreter required - No
+
+EVIDENCE RULE:
+- Answer only from the matter documents in this corpus.
+- You may rely on what the documents establish directly (for example, a documented Australian residential address establishes that a person is present in and ordinarily resident in Australia).
+- Blank form scaffolding is NOT evidence. Unticked checkbox labels, printed lists of options with nothing selected, and empty template cells tell you nothing about this matter - ignore them.
+- NEVER guess from a person's name. In particular, never infer gender from a first name: a gender counts as established only where a document records it (for example ""Gender: Male"").
+- If the documents do not establish the answer, say so instead of guessing.
+
+If the documents do not establish which option is correct, choose unknown - that is a valid and expected answer for questions this matter's documents never address.
+
+ANSWER FORMAT - your final answer must be exactly these two lines:
+ANSWER: <one option_id from the list above, or the word unknown>
+VALUE: <the value for the chosen option if it requires one, in the required format; otherwise write n/a>",group::Applicant 1: interpreter
+"MATTER ROLES (authoritative - use these to keep the parties straight):
+- The form being completed is: Initiating Application
+- Applicant 1 is Sarah Jane Mitchell, represented by lawyer Imogen Forms of the law firm Second Up Family Law.
+- Respondent 1 is Daniel Robert Mitchell, represented by lawyer Victoria Sue of the law firm Sue & Sue.
+- Child 1 is Olivia Grace Mitchell.
+- Child 2 is Liam Thomas Mitchell.
+
+THIS QUESTION IS ABOUT: Child 2 - Liam Thomas Mitchell.
+Do NOT use details belonging to the other child(ren) (Olivia Grace Mitchell); only Liam Thomas Mitchell's own details answer this.
+
+SINGLE-CHOICE FORM QUESTION: What is Liam Thomas Mitchell's gender?
+
+This is ONE form question whose options are mutually exclusive: exactly one option may hold a value. Decide the question once, then name the single option that is correct - do not treat the options as separate questions and do not select more than one.
+
+OPTIONS:
+  [1] option_id: child_2_gender_choose_not_to_answer
+      form option: Child 2: Gender - Choose not to answer
+  [2] option_id: child_2_gender_indeterminate
+      form option: Child 2: Gender - X (indeterminate/intersex/unspecified)
+  [3] option_id: child_2_gender_female
+      form option: Child 2: Gender - F (female)
+  [4] option_id: child_2_gender_male
+      form option: Child 2: Gender - M (male)
+
+EVIDENCE RULE:
+- Answer only from the matter documents in this corpus.
+- You may rely on what the documents establish directly (for example, a documented Australian residential address establishes that a person is present in and ordinarily resident in Australia).
+- Blank form scaffolding is NOT evidence. Unticked checkbox labels, printed lists of options with nothing selected, and empty template cells tell you nothing about this matter - ignore them.
+- NEVER guess from a person's name. In particular, never infer gender from a first name: a gender counts as established only where a document records it (for example ""Gender: Male"").
+- If the documents do not establish the answer, say so instead of guessing.
+
+If the documents do not establish which option is correct, choose unknown - that is a valid and expected answer for questions this matter's documents never address.
+
+ANSWER FORMAT - your final answer must be exactly these two lines:
+ANSWER: <one option_id from the list above, or the word unknown>
+VALUE: <the value for the chosen option if it requires one, in the required format; otherwise write n/a>",group::Child 2: gender
+"MATTER ROLES (authoritative - use these to keep the parties straight):
+- The form being completed is: Initiating Application
+- Applicant 1 is Sarah Jane Mitchell, represented by lawyer Imogen Forms of the law firm Second Up Family Law.
+- Respondent 1 is Daniel Robert Mitchell, represented by lawyer Victoria Sue of the law firm Sue & Sue.
+- Child 1 is Olivia Grace Mitchell.
+- Child 2 is Liam Thomas Mitchell.
+
+THIS QUESTION IS ABOUT: Child 1 - Olivia Grace Mitchell.
+Do NOT use details belonging to the other child(ren) (Liam Thomas Mitchell); only Olivia Grace Mitchell's own details answer this.
+
+SINGLE-CHOICE FORM QUESTION: What is Olivia Grace Mitchell's gender?
+
+This is ONE form question whose options are mutually exclusive: exactly one option may hold a value. Decide the question once, then name the single option that is correct - do not treat the options as separate questions and do not select more than one.
+
+OPTIONS:
+  [1] option_id: child_1_gender_indeterminate
+      form option: Child 1: Gender - X (indeterminate/intersex/unspecified)
+  [2] option_id: custom_1776587212064
+      form option: Child 1 - Female
+  [3] option_id: child_1_gender_male
+      form option: Child 1: Gender - M (male)
+  [4] option_id: child_1_gender_choose_not_to_answer
+      form option: Child 1: Gender - Choose not to answer
+
+EVIDENCE RULE:
+- Answer only from the matter documents in this corpus.
+- You may rely on what the documents establish directly (for example, a documented Australian residential address establishes that a person is present in and ordinarily resident in Australia).
+- Blank form scaffolding is NOT evidence. Unticked checkbox labels, printed lists of options with nothing selected, and empty template cells tell you nothing about this matter - ignore them.
+- NEVER guess from a person's name. In particular, never infer gender from a first name: a gender counts as established only where a document records it (for example ""Gender: Male"").
+- If the documents do not establish the answer, say so instead of guessing.
+
+If the documents do not establish which option is correct, choose unknown - that is a valid and expected answer for questions this matter's documents never address.
+
+ANSWER FORMAT - your final answer must be exactly these two lines:
+ANSWER: <one option_id from the list above, or the word unknown>
+VALUE: <the value for the chosen option if it requires one, in the required format; otherwise write n/a>",group::Child 1: gender
+"MATTER ROLES (authoritative - use these to keep the parties straight):
+- The form being completed is: Initiating Application
+- Applicant 1 is Sarah Jane Mitchell, represented by lawyer Imogen Forms of the law firm Second Up Family Law.
+- Respondent 1 is Daniel Robert Mitchell, represented by lawyer Victoria Sue of the law firm Sue & Sue.
+- Child 1 is Olivia Grace Mitchell.
+- Child 2 is Liam Thomas Mitchell.
+
+FORM QUESTION: When did the marriage take place?
+
+Answer in exactly ONE of these three ways, with no other text:
+  - the date in DD/MM/YYYY format - if the documents establish it
+  - the single word not_applicable - if instead the correct answer to this form question is ""26. Date of marriage - Not applicable""
+  - the single word unknown - if the documents establish neither
+
+EVIDENCE RULE:
+- Answer only from the matter documents in this corpus.
+- You may rely on what the documents establish directly (for example, a documented Australian residential address establishes that a person is present in and ordinarily resident in Australia).
+- Blank form scaffolding is NOT evidence. Unticked checkbox labels, printed lists of options with nothing selected, and empty template cells tell you nothing about this matter - ignore them.
+- NEVER guess from a person's name. In particular, never infer gender from a first name: a gender counts as established only where a document records it (for example ""Gender: Male"").
+- If the documents do not establish the answer, say so instead of guessing.",group::Date of marriage
+"MATTER ROLES (authoritative - use these to keep the parties straight):
+- The form being completed is: Initiating Application
+- Applicant 1 is Sarah Jane Mitchell, represented by lawyer Imogen Forms of the law firm Second Up Family Law.
+- Respondent 1 is Daniel Robert Mitchell, represented by lawyer Victoria Sue of the law firm Sue & Sue.
+- Child 1 is Olivia Grace Mitchell.
+- Child 2 is Liam Thomas Mitchell.
+
+FORM QUESTION: What was the date of final separation, or is it not applicable?
+
+Answer in exactly ONE of these three ways, with no other text:
+  - the date in DD/MM/YYYY format - if the documents establish it
+  - the single word not_applicable - if instead the correct answer to this form question is ""27. Date of final separation - Not applicable""
+  - the single word unknown - if the documents establish neither
+
+EVIDENCE RULE:
+- Answer only from the matter documents in this corpus.
+- You may rely on what the documents establish directly (for example, a documented Australian residential address establishes that a person is present in and ordinarily resident in Australia).
+- Blank form scaffolding is NOT evidence. Unticked checkbox labels, printed lists of options with nothing selected, and empty template cells tell you nothing about this matter - ignore them.
+- NEVER guess from a person's name. In particular, never infer gender from a first name: a gender counts as established only where a document records it (for example ""Gender: Male"").
+- If the documents do not establish the answer, say so instead of guessing.",group::Date of final separation
+"MATTER ROLES (authoritative - use these to keep the parties straight):
+- The form being completed is: Initiating Application
+- Applicant 1 is Sarah Jane Mitchell, represented by lawyer Imogen Forms of the law firm Second Up Family Law.
+- Respondent 1 is Daniel Robert Mitchell, represented by lawyer Victoria Sue of the law firm Sue & Sue.
+- Child 1 is Olivia Grace Mitchell.
+- Child 2 is Liam Thomas Mitchell.
+
+This question is about the application as a whole, not about one party.
+
+SINGLE-CHOICE FORM QUESTION: Is there a child of the de facto relationship?
+
+This is ONE form question whose options are mutually exclusive: exactly one option may hold a value. Decide the question once, then name the single option that is correct - do not treat the options as separate questions and do not select more than one.
+
+OPTIONS:
+  [1] option_id: q55c_child_of_relationship_yes
+      form option: 55c. Is there a child of the de facto relationship - Yes
+  [2] option_id: q55c_child_of_relationship_no
+      form option: 55c. Is there a child of the de facto relationship - No
+
+EVIDENCE RULE:
+- Answer only from the matter documents in this corpus.
+- You may rely on what the documents establish directly (for example, a documented Australian residential address establishes that a person is present in and ordinarily resident in Australia).
+- Blank form scaffolding is NOT evidence. Unticked checkbox labels, printed lists of options with nothing selected, and empty template cells tell you nothing about this matter - ignore them.
+- NEVER guess from a person's name. In particular, never infer gender from a first name: a gender counts as established only where a document records it (for example ""Gender: Male"").
+- If the documents do not establish the answer, say so instead of guessing.
+
+If the documents do not establish which option is correct, choose unknown - that is a valid and expected answer for questions this matter's documents never address.
+
+ANSWER FORMAT - your final answer must be exactly these two lines:
+ANSWER: <one option_id from the list above, or the word unknown>
+VALUE: <the value for the chosen option if it requires one, in the required format; otherwise write n/a>",group::55c: Child Of Relationship
+"MATTER ROLES (authoritative - use these to keep the parties straight):
+- The form being completed is: Initiating Application
+- Applicant 1 is Sarah Jane Mitchell, represented by lawyer Imogen Forms of the law firm Second Up Family Law.
+- Respondent 1 is Daniel Robert Mitchell, represented by lawyer Victoria Sue of the law firm Sue & Sue.
+- Child 1 is Olivia Grace Mitchell.
+- Child 2 is Liam Thomas Mitchell.
+
+This question is about the application as a whole, not about one party.
+
+SINGLE-CHOICE FORM QUESTION: Has the relationship lasted at least two years?
+
+This is ONE form question whose options are mutually exclusive: exactly one option may hold a value. Decide the question once, then name the single option that is correct - do not treat the options as separate questions and do not select more than one.
+
+OPTIONS:
+  [1] option_id: q55b_period_two_years_no
+      form option: 55b. Is the period at least two years - No
+  [2] option_id: q55b_period_two_years_yes
+      form option: 55b. Is the period at least two years - Yes
+
+EVIDENCE RULE:
+- Answer only from the matter documents in this corpus.
+- You may rely on what the documents establish directly (for example, a documented Australian residential address establishes that a person is present in and ordinarily resident in Australia).
+- Blank form scaffolding is NOT evidence. Unticked checkbox labels, printed lists of options with nothing selected, and empty template cells tell you nothing about this matter - ignore them.
+- NEVER guess from a person's name. In particular, never infer gender from a first name: a gender counts as established only where a document records it (for example ""Gender: Male"").
+- If the documents do not establish the answer, say so instead of guessing.
+
+If the documents do not establish which option is correct, choose unknown - that is a valid and expected answer for questions this matter's documents never address.
+
+ANSWER FORMAT - your final answer must be exactly these two lines:
+ANSWER: <one option_id from the list above, or the word unknown>
+VALUE: <the value for the chosen option if it requires one, in the required format; otherwise write n/a>",group::55b: Period Two Years
+"MATTER ROLES (authoritative - use these to keep the parties straight):
+- The form being completed is: Initiating Application
+- Applicant 1 is Sarah Jane Mitchell, represented by lawyer Imogen Forms of the law firm Second Up Family Law.
+- Respondent 1 is Daniel Robert Mitchell, represented by lawyer Victoria Sue of the law firm Sue & Sue.
+- Child 1 is Olivia Grace Mitchell.
+- Child 2 is Liam Thomas Mitchell.
+
+This question is about the application as a whole, not about one party.
+
+SINGLE-CHOICE FORM QUESTION: Does this apply?
+
+This is ONE form question whose options are mutually exclusive: exactly one option may hold a value. Decide the question once, then name the single option that is correct - do not treat the options as separate questions and do not select more than one.
+
+OPTIONS:
+  [1] option_id: 55e_no
+      form option: 55e: No
+  [2] option_id: 55e_yes
+      form option: 55e: Yes
+
+EVIDENCE RULE:
+- Answer only from the matter documents in this corpus.
+- You may rely on what the documents establish directly (for example, a documented Australian residential address establishes that a person is present in and ordinarily resident in Australia).
+- Blank form scaffolding is NOT evidence. Unticked checkbox labels, printed lists of options with nothing selected, and empty template cells tell you nothing about this matter - ignore them.
+- NEVER guess from a person's name. In particular, never infer gender from a first name: a gender counts as established only where a document records it (for example ""Gender: Male"").
+- If the documents do not establish the answer, say so instead of guessing.
+
+If the documents do not establish which option is correct, choose unknown - that is a valid and expected answer for questions this matter's documents never address.
+
+ANSWER FORMAT - your final answer must be exactly these two lines:
+ANSWER: <one option_id from the list above, or the word unknown>
+VALUE: <the value for the chosen option if it requires one, in the required format; otherwise write n/a>",group::55e
+"MATTER ROLES (authoritative - use these to keep the parties straight):
+- The form being completed is: Initiating Application
+- Applicant 1 is Sarah Jane Mitchell, represented by lawyer Imogen Forms of the law firm Second Up Family Law.
+- Respondent 1 is Daniel Robert Mitchell, represented by lawyer Victoria Sue of the law firm Sue & Sue.
+- Child 1 is Olivia Grace Mitchell.
+- Child 2 is Liam Thomas Mitchell.
+
+THIS QUESTION IS ABOUT: Respondent 1 - Daniel Robert Mitchell.
+Do NOT use details belonging to Applicant 1 (Sarah Jane Mitchell); only Daniel Robert Mitchell's own details answer this.
+
+HOW TO READ THE DOCUMENTS FOR THIS QUESTION:
+The documents record a residential or last-known address for each party. A recorded Australian residential address establishes that the party is both present in and ordinarily resident in Australia - answer from that address. The form's own printed checkbox list (""I am present in Australia / I am ordinarily resident in Australia / I am an Australian citizen"") is blank scaffolding and is not evidence either way.
+
+FORM QUESTION: [Checkbox — Yes/No only] Daniel Robert Mitchell is currently present in Australia. If this is correct, return exactly ""yes""
+
+FIELD DETAILS: For Respondent 1 — Daniel Robert Mitchell. Respondent 1: Present in Australia
+
+FIELD TYPE: checkbox. Respond with EXACTLY one of: ""Yes"" or ""No"". Do NOT return any name, label, or other text — any value other than Yes/No will be discarded.
+
+EVIDENCE RULE:
+- Answer only from the matter documents in this corpus.
+- You may rely on what the documents establish directly (for example, a documented Australian residential address establishes that a person is present in and ordinarily resident in Australia).
+- Blank form scaffolding is NOT evidence. Unticked checkbox labels, printed lists of options with nothing selected, and empty template cells tell you nothing about this matter - ignore them.
+- NEVER guess from a person's name. In particular, never infer gender from a first name: a gender counts as established only where a document records it (for example ""Gender: Male"").
+- If the documents do not establish the answer, say so instead of guessing.
+
+ANSWER FORMAT: reply with exactly one word - Yes or No. If the documents do not establish it, reply No.",respondent_1_present_in_australia
+"MATTER ROLES (authoritative - use these to keep the parties straight):
+- The form being completed is: Initiating Application
+- Applicant 1 is Sarah Jane Mitchell, represented by lawyer Imogen Forms of the law firm Second Up Family Law.
+- Respondent 1 is Daniel Robert Mitchell, represented by lawyer Victoria Sue of the law firm Sue & Sue.
+- Child 1 is Olivia Grace Mitchell.
+- Child 2 is Liam Thomas Mitchell.
+
+THIS QUESTION IS ABOUT: Respondent 1 - Daniel Robert Mitchell.
+Do NOT use details belonging to Applicant 1 (Sarah Jane Mitchell); only Daniel Robert Mitchell's own details answer this.
+
+HOW TO READ THE DOCUMENTS FOR THIS QUESTION:
+The documents record a residential or last-known address for each party. A recorded Australian residential address establishes that the party is both present in and ordinarily resident in Australia - answer from that address. The form's own printed checkbox list (""I am present in Australia / I am ordinarily resident in Australia / I am an Australian citizen"") is blank scaffolding and is not evidence either way.
+
+FORM QUESTION: [Checkbox — Yes/No only] Daniel Robert Mitchell is ordinarily resident in Australia? If this is correct, return exactly ""yes""
+
+FIELD DETAILS: For Respondent 1 — Daniel Robert Mitchell. Respondent 1: Ordinarily resident in Australia
+
+FIELD TYPE: checkbox. Respond with EXACTLY one of: ""Yes"" or ""No"". Do NOT return any name, label, or other text — any value other than Yes/No will be discarded.
+
+EVIDENCE RULE:
+- Answer only from the matter documents in this corpus.
+- You may rely on what the documents establish directly (for example, a documented Australian residential address establishes that a person is present in and ordinarily resident in Australia).
+- Blank form scaffolding is NOT evidence. Unticked checkbox labels, printed lists of options with nothing selected, and empty template cells tell you nothing about this matter - ignore them.
+- NEVER guess from a person's name. In particular, never infer gender from a first name: a gender counts as established only where a document records it (for example ""Gender: Male"").
+- If the documents do not establish the answer, say so instead of guessing.
+
+ANSWER FORMAT: reply with exactly one word - Yes or No. If the documents do not establish it, reply No.",respondent_1_ordinarily_resident_in_australia
+"MATTER ROLES (authoritative - use these to keep the parties straight):
+- The form being completed is: Initiating Application
+- Applicant 1 is Sarah Jane Mitchell, represented by lawyer Imogen Forms of the law firm Second Up Family Law.
+- Respondent 1 is Daniel Robert Mitchell, represented by lawyer Victoria Sue of the law firm Sue & Sue.
+- Child 1 is Olivia Grace Mitchell.
+- Child 2 is Liam Thomas Mitchell.
+
+THIS QUESTION IS ABOUT: Respondent 1 - Daniel Robert Mitchell.
+Do NOT use details belonging to Applicant 1 (Sarah Jane Mitchell); only Daniel Robert Mitchell's own details answer this.
+
+FORM QUESTION: What is Daniel Robert Mitchell's email address?
+
+FIELD DETAILS: For Respondent 1 — Daniel Robert Mitchell. Respondent 1: Email address
+
+EVIDENCE RULE:
+- Answer only from the matter documents in this corpus.
+- You may rely on what the documents establish directly (for example, a documented Australian residential address establishes that a person is present in and ordinarily resident in Australia).
+- Blank form scaffolding is NOT evidence. Unticked checkbox labels, printed lists of options with nothing selected, and empty template cells tell you nothing about this matter - ignore them.
+- NEVER guess from a person's name. In particular, never infer gender from a first name: a gender counts as established only where a document records it (for example ""Gender: Male"").
+- If the documents do not establish the answer, say so instead of guessing.
+
+ANSWER FORMAT: reply with the requested value only, with no explanation. If the documents do not establish it, reply with exactly: unknown",respondent_1_email
+"MATTER ROLES (authoritative - use these to keep the parties straight):
+- The form being completed is: Initiating Application
+- Applicant 1 is Sarah Jane Mitchell, represented by lawyer Imogen Forms of the law firm Second Up Family Law.
+- Respondent 1 is Daniel Robert Mitchell, represented by lawyer Victoria Sue of the law firm Sue & Sue.
+- Child 1 is Olivia Grace Mitchell.
+- Child 2 is Liam Thomas Mitchell.
+
+THIS QUESTION IS ABOUT: Applicant 1 - Sarah Jane Mitchell.
+Do NOT use details belonging to Respondent 1 (Daniel Robert Mitchell); only Sarah Jane Mitchell's own details answer this.
+
+FORM QUESTION: What is the the applicants relationship to this initiating application? ""Party to a marriage"" Party to a de facto relationship"" ""Parent"" ""Grandparent"" ""Other"". State all that apply, separated by commas
+
+FIELD DETAILS: For Applicant 1 — Sarah Jane Mitchell. Applicant's relationship to application
+
+EVIDENCE RULE:
+- Answer only from the matter documents in this corpus.
+- You may rely on what the documents establish directly (for example, a documented Australian residential address establishes that a person is present in and ordinarily resident in Australia).
+- Blank form scaffolding is NOT evidence. Unticked checkbox labels, printed lists of options with nothing selected, and empty template cells tell you nothing about this matter - ignore them.
+- NEVER guess from a person's name. In particular, never infer gender from a first name: a gender counts as established only where a document records it (for example ""Gender: Male"").
+- If the documents do not establish the answer, say so instead of guessing.
+
+ANSWER FORMAT: reply with the requested value only, with no explanation. If the documents do not establish it, reply with exactly: unknown",custom_1776828542892
+"MATTER ROLES (authoritative - use these to keep the parties straight):
+- The form being completed is: Initiating Application
+- Applicant 1 is Sarah Jane Mitchell, represented by lawyer Imogen Forms of the law firm Second Up Family Law.
+- Respondent 1 is Daniel Robert Mitchell, represented by lawyer Victoria Sue of the law firm Sue & Sue.
+- Child 1 is Olivia Grace Mitchell.
+- Child 2 is Liam Thomas Mitchell.
+
+THIS QUESTION IS ABOUT: Applicant - Lawyer - Imogen Forms.
+
+PARTY DISAMBIGUATION - READ CAREFULLY:
+This question is about Second Up Family Law (the APPLICANT's law firm, lawyer Imogen Forms).
+The documents ALSO contain details for Sue & Sue (the RESPONDENT's law firm, lawyer Victoria Sue) - those details are NOT the answer.
+Where a document shows more than one firm, address, or lawyer, use only the one belonging to Second Up Family Law / Imogen Forms, and ignore anything attached to Sue & Sue / Victoria Sue.
+
+FORM QUESTION: What is Imogen Forms's lawyer's code?
+
+FIELD DETAILS: For Applicant - Lawyer — Imogen Forms. Lawyer's Code
+
+EVIDENCE RULE:
+- Answer only from the matter documents in this corpus.
+- You may rely on what the documents establish directly (for example, a documented Australian residential address establishes that a person is present in and ordinarily resident in Australia).
+- Blank form scaffolding is NOT evidence. Unticked checkbox labels, printed lists of options with nothing selected, and empty template cells tell you nothing about this matter - ignore them.
+- NEVER guess from a person's name. In particular, never infer gender from a first name: a gender counts as established only where a document records it (for example ""Gender: Male"").
+- If the documents do not establish the answer, say so instead of guessing.
+
+ANSWER FORMAT: reply with the requested value only, with no explanation. If the documents do not establish it, reply with exactly: unknown",lawyers_code
+"MATTER ROLES (authoritative - use these to keep the parties straight):
+- The form being completed is: Initiating Application
+- Applicant 1 is Sarah Jane Mitchell, represented by lawyer Imogen Forms of the law firm Second Up Family Law.
+- Respondent 1 is Daniel Robert Mitchell, represented by lawyer Victoria Sue of the law firm Sue & Sue.
+- Child 1 is Olivia Grace Mitchell.
+- Child 2 is Liam Thomas Mitchell.
+
+This question is about the application as a whole, not about one party.
+
+FORM QUESTION: [Checkbox — Yes/No only] The applicant is not seeking parenting orders or financial or property orders? If this correct, return Yes
+
+FIELD DETAILS: 1A Other (specify)
+
+FIELD TYPE: checkbox. Respond with EXACTLY one of: ""Yes"" or ""No"". Do NOT return any name, label, or other text — any value other than Yes/No will be discarded.
+
+EVIDENCE RULE:
+- Answer only from the matter documents in this corpus.
+- You may rely on what the documents establish directly (for example, a documented Australian residential address establishes that a person is present in and ordinarily resident in Australia).
+- Blank form scaffolding is NOT evidence. Unticked checkbox labels, printed lists of options with nothing selected, and empty template cells tell you nothing about this matter - ignore them.
+- NEVER guess from a person's name. In particular, never infer gender from a first name: a gender counts as established only where a document records it (for example ""Gender: Male"").
+- If the documents do not establish the answer, say so instead of guessing.
+
+ANSWER FORMAT: reply with exactly one word - Yes or No. If the documents do not establish it, reply No.",order_other
+"MATTER ROLES (authoritative - use these to keep the parties straight):
+- The form being completed is: Initiating Application
+- Applicant 1 is Sarah Jane Mitchell, represented by lawyer Imogen Forms of the law firm Second Up Family Law.
+- Respondent 1 is Daniel Robert Mitchell, represented by lawyer Victoria Sue of the law firm Sue & Sue.
+- Child 1 is Olivia Grace Mitchell.
+- Child 2 is Liam Thomas Mitchell.
+
+THIS QUESTION IS ABOUT: Applicant 1 - Sarah Jane Mitchell.
+Do NOT use details belonging to Respondent 1 (Daniel Robert Mitchell); only Sarah Jane Mitchell's own details answer this.
+
+FORM QUESTION: [Checkbox — Yes/No only] Sarah Jane Mitchell is related to this matter other than being a party to a marriage, a party to a defacto relationship, a parent or a grandparent. If this is correct, return exactly ""yes""
+
+FIELD DETAILS: For Applicant 1 — Sarah Jane Mitchell. Applicant 1: Other (specify)
+
+FIELD TYPE: checkbox. Respond with EXACTLY one of: ""Yes"" or ""No"". Do NOT return any name, label, or other text — any value other than Yes/No will be discarded.
+
+EVIDENCE RULE:
+- Answer only from the matter documents in this corpus.
+- You may rely on what the documents establish directly (for example, a documented Australian residential address establishes that a person is present in and ordinarily resident in Australia).
+- Blank form scaffolding is NOT evidence. Unticked checkbox labels, printed lists of options with nothing selected, and empty template cells tell you nothing about this matter - ignore them.
+- NEVER guess from a person's name. In particular, never infer gender from a first name: a gender counts as established only where a document records it (for example ""Gender: Male"").
+- If the documents do not establish the answer, say so instead of guessing.
+
+ANSWER FORMAT: reply with exactly one word - Yes or No. If the documents do not establish it, reply No.",applicant1_other_specify
+"MATTER ROLES (authoritative - use these to keep the parties straight):
+- The form being completed is: Initiating Application
+- Applicant 1 is Sarah Jane Mitchell, represented by lawyer Imogen Forms of the law firm Second Up Family Law.
+- Respondent 1 is Daniel Robert Mitchell, represented by lawyer Victoria Sue of the law firm Sue & Sue.
+- Child 1 is Olivia Grace Mitchell.
+- Child 2 is Liam Thomas Mitchell.
+
+THIS QUESTION IS ABOUT: Child 2 - Liam Thomas Mitchell.
+Do NOT use details belonging to the other child(ren) (Olivia Grace Mitchell); only Liam Thomas Mitchell's own details answer this.
+
+FORM QUESTION: What are the given names of Parent 2 of Liam Thomas Mitchell? Do not include family name
+
+FIELD DETAILS: For Child 2 — Liam Thomas Mitchell. Child 2: Parent 2 given names
+
+EVIDENCE RULE:
+- Answer only from the matter documents in this corpus.
+- You may rely on what the documents establish directly (for example, a documented Australian residential address establishes that a person is present in and ordinarily resident in Australia).
+- Blank form scaffolding is NOT evidence. Unticked checkbox labels, printed lists of options with nothing selected, and empty template cells tell you nothing about this matter - ignore them.
+- NEVER guess from a person's name. In particular, never infer gender from a first name: a gender counts as established only where a document records it (for example ""Gender: Male"").
+- If the documents do not establish the answer, say so instead of guessing.
+
+ANSWER FORMAT: reply with the requested value only, with no explanation. If the documents do not establish it, reply with exactly: unknown",child_2_parent_2_given_names
+"MATTER ROLES (authoritative - use these to keep the parties straight):
+- The form being completed is: Initiating Application
+- Applicant 1 is Sarah Jane Mitchell, represented by lawyer Imogen Forms of the law firm Second Up Family Law.
+- Respondent 1 is Daniel Robert Mitchell, represented by lawyer Victoria Sue of the law firm Sue & Sue.
+- Child 1 is Olivia Grace Mitchell.
+- Child 2 is Liam Thomas Mitchell.
+
+THIS QUESTION IS ABOUT: Applicant - Law Firm - Second Up Family Law.
+
+PARTY DISAMBIGUATION - READ CAREFULLY:
+This question is about Second Up Family Law (the APPLICANT's law firm, lawyer Imogen Forms).
+The documents ALSO contain details for Sue & Sue (the RESPONDENT's law firm, lawyer Victoria Sue) - those details are NOT the answer.
+Where a document shows more than one firm, address, or lawyer, use only the one belonging to Second Up Family Law / Imogen Forms, and ignore anything attached to Sue & Sue / Victoria Sue.
+
+FORM QUESTION: What is Second Up Family Law's address for service? Do not include state or postcode
+
+FIELD DETAILS: For Applicant - Law Firm — Second Up Family Law. Address for service in Australia
+
+EVIDENCE RULE:
+- Answer only from the matter documents in this corpus.
+- You may rely on what the documents establish directly (for example, a documented Australian residential address establishes that a person is present in and ordinarily resident in Australia).
+- Blank form scaffolding is NOT evidence. Unticked checkbox labels, printed lists of options with nothing selected, and empty template cells tell you nothing about this matter - ignore them.
+- NEVER guess from a person's name. In particular, never infer gender from a first name: a gender counts as established only where a document records it (for example ""Gender: Male"").
+- If the documents do not establish the answer, say so instead of guessing.
+
+ANSWER FORMAT: reply with the requested value only, with no explanation. If the documents do not establish it, reply with exactly: unknown",address_for_service_in_australia
+"MATTER ROLES (authoritative - use these to keep the parties straight):
+- The form being completed is: Initiating Application
+- Applicant 1 is Sarah Jane Mitchell, represented by lawyer Imogen Forms of the law firm Second Up Family Law.
+- Respondent 1 is Daniel Robert Mitchell, represented by lawyer Victoria Sue of the law firm Sue & Sue.
+- Child 1 is Olivia Grace Mitchell.
+- Child 2 is Liam Thomas Mitchell.
+
+THIS QUESTION IS ABOUT: Respondent 1 - Daniel Robert Mitchell.
+Do NOT use details belonging to Applicant 1 (Sarah Jane Mitchell); only Daniel Robert Mitchell's own details answer this.
+
+FORM QUESTION: What is Daniel Robert Mitchell's residential address including postcode?
+
+FIELD DETAILS: For Respondent 1 — Daniel Robert Mitchell. Respondent 1: Residential address line 1
+
+EVIDENCE RULE:
+- Answer only from the matter documents in this corpus.
+- You may rely on what the documents establish directly (for example, a documented Australian residential address establishes that a person is present in and ordinarily resident in Australia).
+- Blank form scaffolding is NOT evidence. Unticked checkbox labels, printed lists of options with nothing selected, and empty template cells tell you nothing about this matter - ignore them.
+- NEVER guess from a person's name. In particular, never infer gender from a first name: a gender counts as established only where a document records it (for example ""Gender: Male"").
+- If the documents do not establish the answer, say so instead of guessing.
+
+ANSWER FORMAT: reply with the requested value only, with no explanation. If the documents do not establish it, reply with exactly: unknown",respondent_1_residential_address_line1
+"MATTER ROLES (authoritative - use these to keep the parties straight):
+- The form being completed is: Initiating Application
+- Applicant 1 is Sarah Jane Mitchell, represented by lawyer Imogen Forms of the law firm Second Up Family Law.
+- Respondent 1 is Daniel Robert Mitchell, represented by lawyer Victoria Sue of the law firm Sue & Sue.
+- Child 1 is Olivia Grace Mitchell.
+- Child 2 is Liam Thomas Mitchell.
+
+THIS QUESTION IS ABOUT: Respondent 1 - Daniel Robert Mitchell.
+Do NOT use details belonging to Applicant 1 (Sarah Jane Mitchell); only Daniel Robert Mitchell's own details answer this.
+
+FORM QUESTION: What is the the respondents relationship to this initiating application? ""Party to a marriage"" Party to a de facto relationship"" ""Parent"" ""Grandparent"" ""Other"". State all that apply, separated by commas
+
+FIELD DETAILS: For Respondent 1 — Daniel Robert Mitchell. Respondent's relationship to application
+
+EVIDENCE RULE:
+- Answer only from the matter documents in this corpus.
+- You may rely on what the documents establish directly (for example, a documented Australian residential address establishes that a person is present in and ordinarily resident in Australia).
+- Blank form scaffolding is NOT evidence. Unticked checkbox labels, printed lists of options with nothing selected, and empty template cells tell you nothing about this matter - ignore them.
+- NEVER guess from a person's name. In particular, never infer gender from a first name: a gender counts as established only where a document records it (for example ""Gender: Male"").
+- If the documents do not establish the answer, say so instead of guessing.
+
+ANSWER FORMAT: reply with the requested value only, with no explanation. If the documents do not establish it, reply with exactly: unknown",custom_1776832899270
+"MATTER ROLES (authoritative - use these to keep the parties straight):
+- The form being completed is: Initiating Application
+- Applicant 1 is Sarah Jane Mitchell, represented by lawyer Imogen Forms of the law firm Second Up Family Law.
+- Respondent 1 is Daniel Robert Mitchell, represented by lawyer Victoria Sue of the law firm Sue & Sue.
+- Child 1 is Olivia Grace Mitchell.
+- Child 2 is Liam Thomas Mitchell.
+
+THIS QUESTION IS ABOUT: Child 1 - Olivia Grace Mitchell.
+Do NOT use details belonging to the other child(ren) (Liam Thomas Mitchell); only Olivia Grace Mitchell's own details answer this.
+
+FORM QUESTION: What is the date of birth of Olivia Grace Mitchell?
+
+FIELD DETAILS: For Child 1 — Olivia Grace Mitchell. Child 1: Date of birth
+
+FIELD TYPE: date. Respond in DD/MM/YYYY format only.
+
+EVIDENCE RULE:
+- Answer only from the matter documents in this corpus.
+- You may rely on what the documents establish directly (for example, a documented Australian residential address establishes that a person is present in and ordinarily resident in Australia).
+- Blank form scaffolding is NOT evidence. Unticked checkbox labels, printed lists of options with nothing selected, and empty template cells tell you nothing about this matter - ignore them.
+- NEVER guess from a person's name. In particular, never infer gender from a first name: a gender counts as established only where a document records it (for example ""Gender: Male"").
+- If the documents do not establish the answer, say so instead of guessing.
+
+ANSWER FORMAT: reply with the date in DD/MM/YYYY format and nothing else. If the documents do not establish it, reply with exactly: unknown",child_1_date_of_birth
+"MATTER ROLES (authoritative - use these to keep the parties straight):
+- The form being completed is: Initiating Application
+- Applicant 1 is Sarah Jane Mitchell, represented by lawyer Imogen Forms of the law firm Second Up Family Law.
+- Respondent 1 is Daniel Robert Mitchell, represented by lawyer Victoria Sue of the law firm Sue & Sue.
+- Child 1 is Olivia Grace Mitchell.
+- Child 2 is Liam Thomas Mitchell.
+
+THIS QUESTION IS ABOUT: Respondent 1 - Daniel Robert Mitchell.
+Do NOT use details belonging to Applicant 1 (Sarah Jane Mitchell); only Daniel Robert Mitchell's own details answer this.
+
+FORM QUESTION: [Checkbox — Yes/No only] Respondent 1 description other
+
+FIELD DETAILS: For Respondent 1 — Daniel Robert Mitchell. Respondent 1 description other
+
+FIELD TYPE: checkbox. Respond with EXACTLY one of: ""Yes"" or ""No"". Do NOT return any name, label, or other text — any value other than Yes/No will be discarded.
+
+EVIDENCE RULE:
+- Answer only from the matter documents in this corpus.
+- You may rely on what the documents establish directly (for example, a documented Australian residential address establishes that a person is present in and ordinarily resident in Australia).
+- Blank form scaffolding is NOT evidence. Unticked checkbox labels, printed lists of options with nothing selected, and empty template cells tell you nothing about this matter - ignore them.
+- NEVER guess from a person's name. In particular, never infer gender from a first name: a gender counts as established only where a document records it (for example ""Gender: Male"").
+- If the documents do not establish the answer, say so instead of guessing.
+
+ANSWER FORMAT: reply with exactly one word - Yes or No. If the documents do not establish it, reply No.",custom_1776665232297
+"MATTER ROLES (authoritative - use these to keep the parties straight):
+- The form being completed is: Initiating Application
+- Applicant 1 is Sarah Jane Mitchell, represented by lawyer Imogen Forms of the law firm Second Up Family Law.
+- Respondent 1 is Daniel Robert Mitchell, represented by lawyer Victoria Sue of the law firm Sue & Sue.
+- Child 1 is Olivia Grace Mitchell.
+- Child 2 is Liam Thomas Mitchell.
+
+THIS QUESTION IS ABOUT: Applicant 1 - Sarah Jane Mitchell.
+Do NOT use details belonging to Respondent 1 (Daniel Robert Mitchell); only Sarah Jane Mitchell's own details answer this.
+
+FORM QUESTION: What is Sarah Jane Mitchell's email address?
+
+FIELD DETAILS: For Applicant 1 — Sarah Jane Mitchell. Applicant 1: Email address
+
+EVIDENCE RULE:
+- Answer only from the matter documents in this corpus.
+- You may rely on what the documents establish directly (for example, a documented Australian residential address establishes that a person is present in and ordinarily resident in Australia).
+- Blank form scaffolding is NOT evidence. Unticked checkbox labels, printed lists of options with nothing selected, and empty template cells tell you nothing about this matter - ignore them.
+- NEVER guess from a person's name. In particular, never infer gender from a first name: a gender counts as established only where a document records it (for example ""Gender: Male"").
+- If the documents do not establish the answer, say so instead of guessing.
+
+ANSWER FORMAT: reply with the requested value only, with no explanation. If the documents do not establish it, reply with exactly: unknown",applicant1_email_address
+"MATTER ROLES (authoritative - use these to keep the parties straight):
+- The form being completed is: Initiating Application
+- Applicant 1 is Sarah Jane Mitchell, represented by lawyer Imogen Forms of the law firm Second Up Family Law.
+- Respondent 1 is Daniel Robert Mitchell, represented by lawyer Victoria Sue of the law firm Sue & Sue.
+- Child 1 is Olivia Grace Mitchell.
+- Child 2 is Liam Thomas Mitchell.
+
+THIS QUESTION IS ABOUT: Child 1 - Olivia Grace Mitchell.
+Do NOT use details belonging to the other child(ren) (Liam Thomas Mitchell); only Olivia Grace Mitchell's own details answer this.
+
+FORM QUESTION: What is the family name of Parent 2 of Olivia Grace Mitchell?
+
+FIELD DETAILS: For Child 1 — Olivia Grace Mitchell. Child 1: Parent 2 family name
+
+EVIDENCE RULE:
+- Answer only from the matter documents in this corpus.
+- You may rely on what the documents establish directly (for example, a documented Australian residential address establishes that a person is present in and ordinarily resident in Australia).
+- Blank form scaffolding is NOT evidence. Unticked checkbox labels, printed lists of options with nothing selected, and empty template cells tell you nothing about this matter - ignore them.
+- NEVER guess from a person's name. In particular, never infer gender from a first name: a gender counts as established only where a document records it (for example ""Gender: Male"").
+- If the documents do not establish the answer, say so instead of guessing.
+
+ANSWER FORMAT: reply with the requested value only, with no explanation. If the documents do not establish it, reply with exactly: unknown",child_1_parent_2_family_name
+"MATTER ROLES (authoritative - use these to keep the parties straight):
+- The form being completed is: Initiating Application
+- Applicant 1 is Sarah Jane Mitchell, represented by lawyer Imogen Forms of the law firm Second Up Family Law.
+- Respondent 1 is Daniel Robert Mitchell, represented by lawyer Victoria Sue of the law firm Sue & Sue.
+- Child 1 is Olivia Grace Mitchell.
+- Child 2 is Liam Thomas Mitchell.
+
+THIS QUESTION IS ABOUT: Applicant 1 - Sarah Jane Mitchell.
+Do NOT use details belonging to Respondent 1 (Daniel Robert Mitchell); only Sarah Jane Mitchell's own details answer this.
+
+FORM QUESTION: [Checkbox — Yes/No only] Sarah Jane Mitchell is an Australian citizen? If this is correct, return exactly ""yes""
+
+FIELD DETAILS: For Applicant 1 — Sarah Jane Mitchell. Applicant 1: An Australian citizen
+
+FIELD TYPE: checkbox. Respond with EXACTLY one of: ""Yes"" or ""No"". Do NOT return any name, label, or other text — any value other than Yes/No will be discarded.
+
+EVIDENCE RULE:
+- Answer only from the matter documents in this corpus.
+- You may rely on what the documents establish directly (for example, a documented Australian residential address establishes that a person is present in and ordinarily resident in Australia).
+- Blank form scaffolding is NOT evidence. Unticked checkbox labels, printed lists of options with nothing selected, and empty template cells tell you nothing about this matter - ignore them.
+- NEVER guess from a person's name. In particular, never infer gender from a first name: a gender counts as established only where a document records it (for example ""Gender: Male"").
+- If the documents do not establish the answer, say so instead of guessing.
+
+ANSWER FORMAT: reply with exactly one word - Yes or No. If the documents do not establish it, reply No.",applicant1_australian_citizen
+"MATTER ROLES (authoritative - use these to keep the parties straight):
+- The form being completed is: Initiating Application
+- Applicant 1 is Sarah Jane Mitchell, represented by lawyer Imogen Forms of the law firm Second Up Family Law.
+- Respondent 1 is Daniel Robert Mitchell, represented by lawyer Victoria Sue of the law firm Sue & Sue.
+- Child 1 is Olivia Grace Mitchell.
+- Child 2 is Liam Thomas Mitchell.
+
+THIS QUESTION IS ABOUT: Respondent 1 - Daniel Robert Mitchell.
+Do NOT use details belonging to Applicant 1 (Sarah Jane Mitchell); only Daniel Robert Mitchell's own details answer this.
+
+FORM QUESTION: What is Daniel Robert Mitchell's date of birth?
+
+FIELD DETAILS: For Respondent 1 — Daniel Robert Mitchell. Respondent 1: Date of birth
+
+FIELD TYPE: date. Respond in DD/MM/YYYY format only.
+
+EVIDENCE RULE:
+- Answer only from the matter documents in this corpus.
+- You may rely on what the documents establish directly (for example, a documented Australian residential address establishes that a person is present in and ordinarily resident in Australia).
+- Blank form scaffolding is NOT evidence. Unticked checkbox labels, printed lists of options with nothing selected, and empty template cells tell you nothing about this matter - ignore them.
+- NEVER guess from a person's name. In particular, never infer gender from a first name: a gender counts as established only where a document records it (for example ""Gender: Male"").
+- If the documents do not establish the answer, say so instead of guessing.
+
+ANSWER FORMAT: reply with the date in DD/MM/YYYY format and nothing else. If the documents do not establish it, reply with exactly: unknown",respondent_1_date_of_birth

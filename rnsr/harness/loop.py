@@ -9,16 +9,21 @@ of what the model does.
 from __future__ import annotations
 
 import asyncio
+import json
 import re
 import uuid
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 from rnsr.config import Settings
 from rnsr.env.sandbox import SandboxedRepl
 from rnsr.errors import SandboxError
 from rnsr.harness.budget import BudgetLedger
-from rnsr.harness.prompts.base import render_system, render_transcript
+from rnsr.harness.prompts.base import (
+    render_batch_task,
+    render_system,
+    render_transcript,
+)
 from rnsr.harness.recovery import recover_variable
 from rnsr.harness.trajectory import TrajectoryWriter
 from rnsr.llm.base import LLMClient
@@ -47,6 +52,54 @@ class QueryResult:
     trajectory_path: str
     iterations: int
     breached_cap: str | None = None
+
+
+@dataclass
+class BatchQueryResult:
+    """One batched loop's per-question answers.
+
+    answers[qid] is the stripped answer text ("NOT_FOUND" when the model
+    judged the corpus lacks it), or None when the loop never produced an
+    answer for that qid — callers should fall back to a solo run for those.
+    """
+
+    answers: dict[str, str | None]
+    result: QueryResult
+
+
+def scale_budgets(s: Settings, n_questions: int) -> Settings:
+    """Budget caps for an n-question batched loop.
+
+    Each additional question adds half of a single question's caps: shared
+    exploration amortizes the rest, and a full n× budget would let one
+    confused batch burn n questions' worth of spend.
+    """
+    if n_questions <= 1:
+        return s
+    factor = 1.0 + 0.5 * (n_questions - 1)
+    return replace(
+        s,
+        max_root_iters=round(s.max_root_iters * factor),
+        max_sub_calls=round(s.max_sub_calls * factor),
+        max_wall_s=s.max_wall_s * factor,
+        max_spend_usd=s.max_spend_usd * factor,
+    )
+
+
+def _coerce_batch(value: object) -> dict | None:
+    """Lenient parse of a batch-final value into a qid -> answer dict."""
+    if isinstance(value, dict):
+        return value
+    if isinstance(value, str):
+        start, end = value.find("{"), value.rfind("}")
+        if start != -1 and end > start:
+            try:
+                out = json.loads(value[start:end + 1])
+            except json.JSONDecodeError:
+                return None
+            if isinstance(out, dict):
+                return out
+    return None
 
 
 @dataclass
@@ -106,7 +159,8 @@ class RootRunner:
 
     async def run(self, question: str, env: EnvSpec, *,
                   run_dir: str | Path | None = None,
-                  query_id: str | None = None) -> QueryResult:
+                  query_id: str | None = None,
+                  batch_qids: list[str] | None = None) -> QueryResult:
         s = self.settings
         ledger = BudgetLedger.from_settings(s)
         query_id = query_id or uuid.uuid4().hex[:12]
@@ -138,7 +192,9 @@ class RootRunner:
                     return self._finish(result, "recovered" if result else "budget_exhausted",
                                         ledger, trajectory, turns, breached=cap)
 
-                prompt = render_transcript(question, turns)
+                final_hint = ("FINAL_BATCH({...}) with every question id"
+                              if batch_qids else "FINAL(...)/FINAL_VAR(...)")
+                prompt = render_transcript(question, turns, final_hint=final_hint)
                 resp = await self._root_complete(prompt, system, ledger, trajectory)
                 if resp is None:   # provider unreachable — salvage what exists
                     trajectory.event("budget_breached", cap="root_timeout",
@@ -187,15 +243,20 @@ class RootRunner:
                 if cell.final is not None:
                     if not completeness_checked:
                         completeness_checked = True
-                        gap = await self._completeness_gap(
-                            question, cell.final, ledger)
+                        if batch_qids:
+                            # structural, free: every qid answered?
+                            gap = self._batch_gap(cell.final, batch_qids)
+                        else:
+                            gap = await self._completeness_gap(
+                                question, cell.final, ledger)
                         if gap:
                             trajectory.event("completeness_pushback", gap=gap)
+                            fname = "FINAL_BATCH" if batch_qids else "FINAL"
                             turns.append((code, (
-                                "[harness] FINAL not accepted yet — the answer "
-                                f"seems incomplete: {gap} Address this and "
-                                "call FINAL again (or resubmit unchanged if "
-                                "you believe it is complete)."
+                                f"[harness] {fname} not accepted yet — the "
+                                f"answer seems incomplete: {gap} Address this "
+                                f"and call {fname} again (or resubmit "
+                                "unchanged if you believe it is complete)."
                             )))
                             continue
                     final = cell.final
@@ -244,6 +305,51 @@ class RootRunner:
         finally:
             await sandbox.close()
             trajectory.close()
+
+    async def run_batch(self, questions: list[tuple[str, str]], env: EnvSpec, *,
+                        run_dir: str | Path | None = None,
+                        query_id: str | None = None) -> BatchQueryResult:
+        """Answer several related questions in ONE loop over the corpus.
+
+        questions: (qid, question_text) pairs. Exploration is shared —
+        the root model answers all of them from one REPL session and
+        submits via FINAL_BATCH. Budgets scale sub-linearly with the
+        batch size (see scale_budgets). Questions the loop failed to
+        answer come back as None in BatchQueryResult.answers; callers
+        decide whether to retry those solo.
+        """
+        qids = [qid for qid, _ in questions]
+        runner = replace(self, settings=scale_budgets(self.settings,
+                                                      len(questions)))
+        result = await runner.run(render_batch_task(questions), env,
+                                  run_dir=run_dir, query_id=query_id,
+                                  batch_qids=qids)
+        parsed = _coerce_batch(result.answer) or {}
+        answers: dict[str, str | None] = {}
+        for qid in qids:
+            value = parsed.get(qid)
+            text = "" if value is None else str(value).strip()
+            answers[qid] = text or None
+        return BatchQueryResult(answers=answers, result=result)
+
+    @staticmethod
+    def _batch_gap(final: dict, qids: list[str]) -> str | None:
+        """Structural completeness for FINAL_BATCH: every qid answered.
+
+        No sub-LM involved — a missing id is objectively a gap. Returns the
+        gap description, or None to accept.
+        """
+        answers = _coerce_batch(final.get("value"))
+        if answers is None:
+            return ("the submitted value is not a dict of question id -> "
+                    "answer. Use FINAL_BATCH({...}) with every question id "
+                    "as a key.")
+        missing = [q for q in qids if not str(answers.get(q, "") or "").strip()]
+        if missing:
+            return (f"no answer for question id(s): {', '.join(missing)}. "
+                    'Every id must be present (use "NOT_FOUND" only when '
+                    "the corpus truly lacks the answer).")
+        return None
 
     async def _root_complete(self, prompt: str, system: str,
                              ledger: BudgetLedger, trajectory) -> object | None:

@@ -123,6 +123,27 @@ non-event. DocDB was perfect across both versions with every answer
 carrying verified quotes.
 
 
+**Batched answering** (many related questions over one corpus — the
+form-fill regime): `answer-csv` groups consecutive questions into shared
+RLM loops (`--batch-size`, default 8) submitting via `FINAL_BATCH`; one
+exploration of the corpus serves the whole group, and any question a
+batch fails to answer is retried in its own loop automatically. Measured
+on a real family-law matter (49 form fields, 11 documents, scored against
+golden answers):
+
+| Mode | Correct | Wall time | LLM spend |
+|---|---|---|---|
+| **Batched (8/loop)** | **39/49** | **7m 12s** | **$5.46** |
+| One loop per question | 30/49 | 26m 55s | $23.11 |
+
+3.7× faster and 4.2× cheaper — and *more accurate*, for a structural
+reason: forms carry mutually-exclusive field groups (radio buttons,
+checkbox families), and a solo loop seeing only its own field happily
+answers "yes" to every sibling option. A batched loop sees the whole
+group in one context and picks one. Budgets scale sub-linearly with
+batch size (each extra question adds half a single question's caps), so
+a confused batch cannot burn n questions' worth of spend.
+
 **Fix-and-confirm cycle** (post three-seed autopsy): the two DocDB SQL
 slips were converted into prompt disciplines (trust document units/headers;
 sum line items OR total rows, never both; reconcile computed aggregates
@@ -158,7 +179,7 @@ required. We measured accuracy parity there, and stuffing is cheaper.
 | Answers computed over sets (invoice totals, counts, chronologies) | 0/3 for every RAG flavor; silent arithmetic slip for the flat-string loop; SQL makes it exact |
 | Absence must be provable ("no such clause/guarantee") | Retrieval can't tell not-found from not-there; DocDB enumerates |
 | Superseded versions in the file (drafts, amendments) | RAG confidently returned pre-amendment terms; DocDB date-orders the file |
-| Working sessions: many questions per matter | Ingest + annotations amortize — second pass at half cost, median 1 model call |
+| Working sessions: many questions per matter | Ingest + annotations amortize — second pass at half cost, median 1 model call; batched loops answer 8 questions per exploration (3.7× faster, 4.2× cheaper, more accurate on form-field groups) |
 | Citations that survive scrutiny | Code-verified quotes with character offsets — unique to DocDB |
 
 One line: **read a document → context window; interrogate a matter → DocDB.**
@@ -167,7 +188,7 @@ One line: **read a document → context window; interrogate a matter → DocDB.*
 
 ```bash
 pip install -e .              # query-time core (a prebuilt corpus.db is enough)
-pip install -e ".[ingest]"    # + Docling parsing stack (heavy) for ingestion
+pip install -e ".[ingest]"    # + parsing stack (Docling for PDF, anydoc for office)
 pip install -e ".[eval,dev]"  # benchmarks + dev tooling
 ```
 
@@ -182,14 +203,25 @@ Set at least one provider key in `.env` (see `.env.example`):
 # re-extraction rung, prose cross-checks, and VLM transcription of scanned
 # pages (no OCR engine — pages without a text layer go through the vision
 # model, and the resulting tables face the same checksum validation).
-rnsr ingest report.pdf -o corpus.db --report report.json
+# Formats: PDF (Docling), Word/Excel/PowerPoint/OpenDocument/RTF/EPUB/CSV
+# (anydoc), and .md/.txt/.eml (built-in) — dispatched by extension.
+rnsr ingest report.pdf exhibits.docx ledger.xlsx -o corpus.db --report report.json
 
 # Query via the RLM loop (root model writes code against db/doc/manifest)
 rnsr query corpus.db "What was FY2023 segment revenue?"
 
+# Many questions over one corpus (CSV in, CSV out): ingest once (cached),
+# then answer in batched loops — consecutive questions share one
+# exploration via FINAL_BATCH; unanswered ones are retried solo.
+# Checkpointed: rerunning resumes instead of re-paying.
+rnsr answer-csv --corpus matter_dir/ --questions questions.csv --output out/
+#   --batch-size 8    questions per shared loop (1 = solo loops)
+#   --concurrency 4   loops in flight at once
+
 # Evaluation harness (§8): systems are flags over the same loop
 rnsr eval --benchmark financebench --system docdb
 rnsr eval --benchmark oolong --system rlm-classic     # Phase B acceptance
+rnsr eval --benchmark cuad --system docdb -c 4        # items in parallel
 rnsr gate                                              # go/no-go vs classic
 rnsr ablate corpus.db                                  # rung-4 quantization ablation
 ```
@@ -212,8 +244,8 @@ db.execute("""
 
 ```
                  ┌───────────────────────────────────────────┐
- PDF / DOCX ──▶  │ INGESTION: parse → tables → checksum-     │
-                 │ validate → FTS5 → manifest    (offline)   │
+ PDF / Office ─▶ │ INGESTION: parse → tables → checksum-     │
+ MD / TXT / EML  │ validate → FTS5 → manifest    (offline)   │
                  └────────────────────┬──────────────────────┘
                                       ▼
                           corpus.db  (one SQLite file)
@@ -235,7 +267,8 @@ db.execute("""
   becomes O(N) calls plus a self-join.
 - **Budgets** (§7): hard caps per query (20 iterations / 300 sub-calls /
   600 s / $2), damping against re-verification loops, variable-recovery
-  fallback, sandbox restart on runaway cells, root-call timeouts.
+  fallback, sandbox restart on runaway cells, root-call timeouts. Batched
+  loops scale every cap by 1 + 0.5·(n−1) for n questions.
 - **Sandbox**: subprocess with no network; model/embedding calls are RPC-
   brokered by the parent under a bounded-concurrency semaphore.
 
@@ -244,7 +277,7 @@ db.execute("""
 ```bash
 python3.14 -m venv .venv && source .venv/bin/activate
 pip install -e ".[ingest,eval,dev]"
-pytest            # 204 tests; LLM-free by default (live tests opt-in: -m live)
+pytest            # 268 tests; LLM-free by default (live tests opt-in: -m live)
 ruff check .
 ```
 

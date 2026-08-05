@@ -237,6 +237,81 @@ class TestBudgetWarning:
         assert "BUDGET LOW" not in root.calls[1]["prompt"]
 
 
+class TestBatchLoop:
+    async def test_batch_final_answers_all(self, tmp_path):
+        root = MockLLM().script(
+            "```python\nFINAL_BATCH({'q1': '3234', 'q2': 'NOT_FOUND'})\n```",
+        )
+        br = await make_runner(root).run_batch(
+            [("q1", "What was the 2023 total?"), ("q2", "Who is the CFO?")],
+            CLASSIC, run_dir=tmp_path)
+        assert br.result.status == "final"
+        assert br.answers == {"q1": "3234", "q2": "NOT_FOUND"}
+        # completeness is structural in batch mode — no sub-LM call
+        assert br.result.ledger["sub_calls"] == 0
+
+    async def test_missing_id_pushed_back_then_accepted(self, tmp_path):
+        root = MockLLM().script(
+            "```python\nFINAL_BATCH({'q1': 'yes'})\n```",
+            "```python\nFINAL_BATCH({'q1': 'yes', 'q2': 'no'})\n```",
+        )
+        br = await make_runner(root).run_batch(
+            [("q1", "a?"), ("q2", "b?")], CLASSIC, run_dir=tmp_path)
+        assert br.answers == {"q1": "yes", "q2": "no"}
+        pushback = root.calls[1]["prompt"]
+        assert "q2" in pushback and "FINAL_BATCH" in pushback
+
+    async def test_resubmitted_incomplete_batch_yields_none(self, tmp_path):
+        # model insists after one pushback -> accepted; missing qid comes
+        # back as None so the caller can retry it solo
+        root = MockLLM(default="```python\nFINAL_BATCH({'q1': 'yes'})\n```")
+        br = await make_runner(root).run_batch(
+            [("q1", "a?"), ("q2", "b?")], CLASSIC, run_dir=tmp_path)
+        assert br.answers["q1"] == "yes"
+        assert br.answers["q2"] is None
+
+    async def test_non_dict_final_pushed_back(self, tmp_path):
+        root = MockLLM().script(
+            "```python\nFINAL('just one answer')\n```",
+            "```python\nFINAL_BATCH({'q1': 'a', 'q2': 'b'})\n```",
+        )
+        br = await make_runner(root).run_batch(
+            [("q1", "a?"), ("q2", "b?")], CLASSIC, run_dir=tmp_path)
+        assert br.answers == {"q1": "a", "q2": "b"}
+        assert "not a dict" in root.calls[1]["prompt"]
+
+    async def test_task_prompt_lists_ids_and_batch_hint(self, tmp_path):
+        root = MockLLM().script(
+            "```python\nFINAL_BATCH({'qA': '1', 'qB': '2'})\n```")
+        await make_runner(root).run_batch(
+            [("qA", "first?"), ("qB", "second?")], CLASSIC, run_dir=tmp_path)
+        prompt = root.calls[0]["prompt"]
+        assert "[qA]" in prompt and "[qB]" in prompt
+        assert "FINAL_BATCH" in prompt
+
+
+class TestBatchHelpers:
+    def test_scale_budgets_half_per_extra_question(self):
+        from rnsr.harness.loop import scale_budgets
+
+        s = Settings()   # 20 iters / 300 sub / 600s / $2
+        scaled = scale_budgets(s, 8)   # factor 4.5
+        assert scaled.max_root_iters == 90
+        assert scaled.max_sub_calls == 1350
+        assert scaled.max_wall_s == 2700.0
+        assert scaled.max_spend_usd == 9.0
+        assert scale_budgets(s, 1) is s
+
+    def test_coerce_batch_parses_dict_and_json_string(self):
+        from rnsr.harness.loop import _coerce_batch
+
+        assert _coerce_batch({"a": 1}) == {"a": 1}
+        assert _coerce_batch('answers: {"a": "x"} done') == {"a": "x"}
+        assert _coerce_batch("no braces here") is None
+        assert _coerce_batch("{broken json") is None
+        assert _coerce_batch(42) is None
+
+
 def test_docdb_system_prompt_renders():
     # regression: stray {braces} in prompt text break .format at runtime
     from rnsr.harness.prompts.base import render_system

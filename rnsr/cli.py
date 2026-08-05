@@ -1,7 +1,7 @@
 """rnsr command-line interface.
 
 Commands land with their phases:
-    rnsr ingest   — Phase A: PDFs -> corpus.db + validation report
+    rnsr ingest   — Phase A: documents -> corpus.db + validation report
     rnsr query    — Phase B/C: run the RLM loop against a corpus
     rnsr eval     — §8 evaluation harness (benchmarks, baselines, gate)
     rnsr ablate   — Phase D: rung-4 quantization ablation
@@ -22,7 +22,9 @@ console = Console()
 @app.command()
 def ingest(
     sources: list[Path] = typer.Argument(..., exists=True, readable=True,
-                                         help="PDF files to ingest"),
+                                         help="Documents to ingest (PDF, Word, Excel, "
+                                              "PowerPoint, OpenDocument, RTF, EPUB, "
+                                              "CSV, Markdown, text, email)"),
     out: Path = typer.Option(Path("corpus.db"), "--out", "-o", help="Output artifact path"),
     report_path: Path | None = typer.Option(None, "--report", help="Write JSON report here"),
     llm: bool = typer.Option(False, "--llm/--no-llm",
@@ -160,6 +162,9 @@ def eval_cmd(
     dataset_id: str | None = typer.Option(None, "--dataset-id",
                                           help="HF dataset id override"),
     seed: int = typer.Option(5, "--seed", help="generator seed (matter benchmark)"),
+    concurrency: int = typer.Option(1, "--concurrency", "-c",
+                                    help="items answered in parallel "
+                                         "(wall-clock win, same LLM spend)"),
 ) -> None:
     """Run the evaluation harness (§8)."""
     import asyncio
@@ -209,7 +214,8 @@ def eval_cmd(
     runner = _make_runner(settings)
     out_dir = run_dir / f"{benchmark}-{system}"
     _, summary = asyncio.run(
-        run_eval(items, system, runner, run_dir=out_dir, limit=limit)
+        run_eval(items, system, runner, run_dir=out_dir, limit=limit,
+                 concurrency=concurrency)
     )
     console.print_json(json.dumps(summary))
     console.print(f"results in {out_dir}")
@@ -225,7 +231,15 @@ def answer_csv(
     question_col: str = typer.Option("ground_truth_question", "--question-col"),
     work_dir: Path = typer.Option(Path("runs/answer-csv"), "--work-dir",
                                   help="corpus.db cache + trajectories (outside corpus)"),
-    concurrency: int = typer.Option(3, "--concurrency"),
+    concurrency: int = typer.Option(4, "--concurrency",
+                                    help="concurrent RLM loops (batches count "
+                                         "as one loop each)"),
+    batch_size: int = typer.Option(8, "--batch-size",
+                                   help="questions answered per RLM loop; "
+                                        "consecutive questions share one "
+                                        "exploration of the corpus. 1 = one "
+                                        "loop per question (slower, original "
+                                        "behavior)"),
     not_found: str = typer.Option("Not found in matter corpus", "--not-found-phrase"),
     llm: bool = typer.Option(False, "--llm/--no-llm",
                              help="LLM-assisted ingest: VLM transcription of scanned "
@@ -241,6 +255,10 @@ def answer_csv(
     questions verbatim in input order, no empty answers. The corpus is never
     written to; all state lives under --work-dir. Answers checkpoint
     incrementally — rerunning resumes instead of re-paying.
+
+    With --batch-size > 1 (the default), consecutive questions are answered
+    in shared RLM loops via FINAL_BATCH; any question a batch fails to
+    answer is retried in its own loop before the CSV is written.
     """
     import asyncio
     import csv as _csv
@@ -261,29 +279,31 @@ def answer_csv(
     qs = [r[question_col] for r in rows]
     console.print(f"{len(qs)} questions over corpus {corpus_dir}")
 
-    # ingest once, cached by content (PDFs via docling)
-    pdfs = sorted(p for p in corpus_dir.rglob("*")
-                  if p.is_file() and p.suffix.lower() == ".pdf")
-    others = sorted(p for p in corpus_dir.rglob("*")
-                    if p.is_file() and p.suffix.lower() in
-                    (".txt", ".md", ".eml", ".csv"))
-    if not pdfs and not others:
+    # ingest once, cached by content (extension-dispatched parsers)
+    from rnsr.ingest.dispatch import is_ingestable
+
+    all_files = [p for p in corpus_dir.rglob("*")
+                 if p.is_file() and not p.name.startswith(".")]
+    files = sorted(p for p in all_files if is_ingestable(p))
+    if not files:
         raise typer.BadParameter(f"no ingestable files under {corpus_dir}")
-    console.print(f"ingesting {len(pdfs)} PDFs + {len(others)} text-like files "
-                  "(cached across runs)")
-    if others:
-        console.print("[yellow]note:[/yellow] text-like files present; "
-                      "current adapter ingests PDFs only — flag if these matter")
+    console.print(f"ingesting {len(files)} documents (cached across runs)")
+    n_unsupported = len(all_files) - len(files)
+    if n_unsupported:
+        exts = sorted({p.suffix.lower() or "(none)" for p in all_files
+                       if not is_ingestable(p)})
+        console.print(f"[yellow]note:[/yellow] {n_unsupported} file(s) with "
+                      f"unsupported extensions skipped: {', '.join(exts)}")
 
     from hashlib import sha256 as _sha256
 
     h = _sha256()
-    for s in pdfs:  # stat-identity: no byte reads over the corpus
+    for s in files:  # stat-identity: no byte reads over the corpus
         st = s.stat()
         h.update(f"{s}|{st.st_size}|{st.st_mtime_ns}".encode())
     cache_dir = work_dir / "corpora"
     corpus_path = cache_dir / f"corpus_{h.hexdigest()[:16]}.db"
-    if corpus_path.exists() and not _corpus_valid(corpus_path, len(pdfs)):
+    if corpus_path.exists() and not _corpus_valid(corpus_path, len(files)):
         corpus_path.unlink()
     if not corpus_path.exists() and fast_ingest:
         cache_dir.mkdir(parents=True, exist_ok=True)
@@ -296,7 +316,7 @@ def answer_csv(
             transcriber = make_page_transcriber(vis.client, vis.model)
         from rnsr.ingest.bulk import ingest_bulk
 
-        stats = ingest_bulk(pdfs, corpus_path, config=settings,
+        stats = ingest_bulk(files, corpus_path, config=settings,
                             transcriber=transcriber,
                             progress=lambda s: console.print(f"[dim]{s}[/dim]"))
         console.print(f"bulk ingest: {stats}")
@@ -324,7 +344,7 @@ def answer_csv(
             transcriber = make_page_transcriber(vis.client, vis.model)
         from rnsr.ingest.pipeline import ingest as _ingest
 
-        report = _ingest(pdfs, corpus_path, config=settings,
+        report = _ingest(files, corpus_path, config=settings,
                          prose_checker=prose_checker, vision=vision,
                          transcriber=transcriber)
         console.print(f"ingested: {report.n_chunks} chunks, validation pass rate "
@@ -371,7 +391,40 @@ def answer_csv(
             ckpt_f.flush()
             return i, a
 
+    async def answer_group(group: list[int]) -> None:
+        qid = {i: f"q{i:03d}" for i in group}
+        async with sem:
+            try:
+                br = await runner.run_batch(
+                    [(qid[i], qs[i]) for i in group], env,
+                    run_dir=work_dir / "trajectories",
+                    query_id=f"b{group[0]:03d}_{group[-1]:03d}")
+                got = br.answers
+            except Exception:
+                got = {}
+        for i in group:
+            text = got.get(qid[i])
+            if text is None:
+                continue    # unanswered — the solo pass below retries it
+            a = not_found if text.upper() == "NOT_FOUND" else text
+            done[i] = a
+            ckpt_f.write(_json.dumps({"i": i, "q": qs[i], "a": a}) + "\n")
+            ckpt_f.flush()
+
     async def main() -> list[str]:
+        if batch_size > 1:
+            pending = [i for i in range(len(qs)) if i not in done]
+            groups = [pending[j:j + batch_size]
+                      for j in range(0, len(pending), batch_size)]
+            if groups:
+                console.print(f"batched mode: {len(pending)} question(s) in "
+                              f"{len(groups)} shared loop(s) of up to "
+                              f"{batch_size}")
+                await asyncio.gather(*(answer_group(g) for g in groups))
+                missing = [i for i in range(len(qs)) if i not in done]
+                if missing:
+                    console.print(f"retrying {len(missing)} unanswered "
+                                  "question(s) in solo loops")
         results = await asyncio.gather(*(answer(i, q) for i, q in enumerate(qs)))
         return [a for _, a in sorted(results)]
 

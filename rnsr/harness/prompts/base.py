@@ -189,7 +189,8 @@ def render_system(mode: str, *, manifest: dict | None = None,
     return "\n".join(parts)
 
 
-def render_transcript(question: str, turns: list[tuple[str, str]]) -> str:
+def render_transcript(question: str, turns: list[tuple[str, str]], *,
+                      final_hint: str = "FINAL(...)/FINAL_VAR(...)") -> str:
     """Render the running conversation as a single prompt.
 
     turns: (code, observation) pairs from prior iterations.
@@ -200,6 +201,46 @@ def render_transcript(question: str, turns: list[tuple[str, str]]) -> str:
         parts.append(f"--- output [{i}] ---\n{observation}")
     parts.append(
         "Write the next python code cell (one fenced block). "
-        "Call FINAL(...)/FINAL_VAR(...) when done."
+        f"Call {final_hint} when done."
     )
     return "\n".join(parts)
+
+
+_BATCH_TASK = """\
+Answer EVERY one of the following {n} questions. They are all about the \
+same corpus and are usually related — share exploration between them (one \
+search or annotation pass can serve several questions), but ground each \
+answer in its own evidence.
+
+{questions}
+
+When (and only when) every question above has been resolved, submit ALL \
+answers in one call:
+
+    FINAL_BATCH(answers, quotes=...)
+
+where `answers` is a dict mapping EVERY question id above to its answer \
+string, e.g. FINAL_BATCH({{"q001": "Yes", "q002": "12 May 2024"}}). \
+`quotes` is an optional dict mapping a question id to 1-3 short verbatim \
+source quotes backing that answer — provide quotes for every answer that \
+rests on document text; they are verified against the source and \
+mismatches are rejected back to you.
+
+Each question's own formatting instructions take PRECEDENCE for its \
+answer value: if a question says how to answer when the information is \
+absent or not applicable (e.g. respond "No"), do exactly that. Use \
+"NOT_FOUND" as the answer ONLY when a question gives no such instruction \
+AND the corpus genuinely does not contain the answer — and only after \
+actually searching for that question. Answering many questions does not \
+lower the evidence bar for any one of them. Do NOT use FINAL or \
+FINAL_VAR for this task — only FINAL_BATCH, and only once, with every \
+question id present."""
+
+
+def render_batch_task(questions: list[tuple[str, str]]) -> str:
+    """Render a multi-question task block for one batched RLM loop.
+
+    questions: (qid, question_text) pairs.
+    """
+    blocks = "\n\n".join(f"[{qid}]\n{text}" for qid, text in questions)
+    return _BATCH_TASK.format(n=len(questions), questions=blocks)

@@ -113,11 +113,20 @@ class Child:
         def FINAL_VAR(value):  # noqa: N802
             raise _FinalAnswer(value, is_var=True)
 
+        def FINAL_BATCH(answers, quotes=None):  # noqa: N802
+            if not isinstance(answers, dict):
+                raise ValueError(
+                    "FINAL_BATCH(answers) takes a dict mapping question id -> "
+                    "answer, e.g. FINAL_BATCH({'q001': 'yes', 'q002': '42'})"
+                )
+            raise _FinalAnswer(dict(answers), is_var=True)
+
         self.namespace = {
             "llm_query": self._llm_query,
             "llm_map": self._llm_map,
             "FINAL": FINAL,
             "FINAL_VAR": FINAL_VAR,
+            "FINAL_BATCH": FINAL_BATCH,
         }
         if msg.get("mode") == "classic":
             self.namespace["context"] = msg.get("context", "")

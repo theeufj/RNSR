@@ -478,3 +478,79 @@ class TestAnswerCsvAdapter:
         assert rows[1][0] == "What is the secret number?"
         assert rows[2][0] == 'A question, with "quotes" and, commas?'  # verbatim incl. punctuation
         assert all(r[1].strip() for r in rows[1:])
+
+    def test_batched_answers_with_solo_fallback(self, tmp_path, monkeypatch):
+        """--batch-size groups questions into one loop; NOT_FOUND maps to the
+        phrase; unanswered questions are retried in solo loops."""
+        import csv
+
+        from typer.testing import CliRunner
+
+        import pytest as _pytest
+
+        _pytest.importorskip("docling")
+        from reportlab.lib.pagesizes import LETTER
+        from reportlab.lib.styles import getSampleStyleSheet
+        from reportlab.platypus import Paragraph, SimpleDocTemplate
+
+        import rnsr.cli as cli_mod
+        from rnsr.cli import app
+        from rnsr.harness.loop import BatchQueryResult
+
+        corpus = tmp_path / "corpus"
+        corpus.mkdir()
+        styles = getSampleStyleSheet()
+        SimpleDocTemplate(str(corpus / "doc.pdf"), pagesize=LETTER).build(
+            [Paragraph("The secret number is 7714.", styles["BodyText"])])
+
+        qs = ["What is the secret number?",
+              "What is the flaky one?",       # batch fails -> solo retry
+              "What is not in the corpus?"]   # batch says NOT_FOUND
+        questions = tmp_path / "q.csv"
+        with open(questions, "w", newline="") as f:
+            w = csv.writer(f)
+            w.writerow(["ground_truth_question"])
+            for q in qs:
+                w.writerow([q])
+
+        class FakeRunner:
+            def __init__(self):
+                self.batch_calls, self.solo_calls = [], []
+
+            async def run_batch(self, questions, env, run_dir=None, query_id=None):
+                self.batch_calls.append([qid for qid, _ in questions])
+                answers = {}
+                for qid, text in questions:
+                    if "secret" in text:
+                        answers[qid] = "7714"
+                    elif "flaky" in text:
+                        answers[qid] = None
+                    else:
+                        answers[qid] = "NOT_FOUND"
+                return BatchQueryResult(answers=answers, result=None)
+
+            async def run(self, q, env, run_dir=None, query_id=None):
+                self.solo_calls.append(q)
+
+                class R:
+                    answer = "solo answer"
+                    ledger = {"spend_usd": 0, "sub_calls": 0}
+                return R()
+
+        fake = FakeRunner()
+        monkeypatch.setattr(cli_mod, "_make_runner", lambda s: fake)
+
+        result = CliRunner().invoke(app, [
+            "answer-csv", "--corpus", str(corpus), "--questions", str(questions),
+            "--output", str(tmp_path / "out"), "--work-dir", str(tmp_path / "work"),
+            "--batch-size", "8"])
+        assert result.exit_code == 0, result.output
+
+        with open(tmp_path / "out" / "answers_chunk1.csv", newline="") as f:
+            rows = list(csv.reader(f))
+        answers = {r[0]: r[1] for r in rows[1:]}
+        assert answers[qs[0]] == "7714"
+        assert answers[qs[1]] == "solo answer"
+        assert answers[qs[2]] == "Not found in matter corpus"
+        assert fake.batch_calls == [["q000", "q001", "q002"]]
+        assert fake.solo_calls == [qs[1]]

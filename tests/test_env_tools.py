@@ -320,6 +320,48 @@ class TestVerifiedFinal:
             await repl.close()
 
 
+class TestBatchFinalVerified:
+    async def test_batch_with_fabricated_quote_rejected(self, corpus):
+        from rnsr.env.sandbox import SandboxedRepl
+
+        repl = SandboxedRepl()
+        await repl.start(mode="docdb", corpus_db=str(corpus))
+        try:
+            res = await repl.exec_cell(
+                "FINAL_BATCH({'q1': '3234'}, quotes={'q1': ['made up text']})")
+            assert not res.ok and res.final is None
+            assert "FINAL_BATCH rejected" in (res.error or "")
+        finally:
+            await repl.close()
+
+    async def test_batch_with_matching_quotes_accepted(self, corpus):
+        from rnsr.env.sandbox import SandboxedRepl
+
+        repl = SandboxedRepl()
+        await repl.start(mode="docdb", corpus_db=str(corpus))
+        try:
+            res = await repl.exec_cell(
+                "FINAL_BATCH({'q1': '3234', 'q2': 'NOT_FOUND'}, "
+                "quotes={'q1': ['Net revenue was $3,234 million']})")
+            assert res.final is not None
+            assert res.final["value"] == {"q1": "3234", "q2": "NOT_FOUND"}
+            assert res.final["verification"]["q1"]["passed"]
+        finally:
+            await repl.close()
+
+    async def test_batch_without_quotes_accepted(self, corpus):
+        from rnsr.env.sandbox import SandboxedRepl
+
+        repl = SandboxedRepl()
+        await repl.start(mode="docdb", corpus_db=str(corpus))
+        try:
+            res = await repl.exec_cell("FINAL_BATCH({'q1': 'Yes'})")
+            assert res.final is not None
+            assert res.final["value"] == {"q1": "Yes"}
+        finally:
+            await repl.close()
+
+
 class TestSchemaMap:
     """schema_map proposes column correspondences; never applies them (§9)."""
 

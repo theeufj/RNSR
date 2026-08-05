@@ -109,6 +109,41 @@ def build_namespace(corpus_db: str, child, init_msg: dict) -> dict:
             "verbatim, or reconsider the answer."
         )
 
+    def FINAL_BATCH(answers, quotes=None):  # noqa: N802
+        """Batched FINAL: one dict of question_id -> answer for a multi-
+        question task. Quotes are optional per field ({qid: ["...", ...]});
+        provided quotes are verified like FINAL's, and failures reject the
+        whole batch back to the loop (same 3-strike anti-spiral as FINAL).
+        """
+        from rnsr.env.sandbox_child import _FinalAnswer
+
+        if not isinstance(answers, dict):
+            raise ValueError(
+                "FINAL_BATCH(answers) takes a dict mapping question id -> "
+                "answer, e.g. FINAL_BATCH({'q001': 'yes', 'q002': '42'})"
+            )
+        reports: dict = {}
+        failed: dict = {}
+        for qid, qs in (quotes or {}).items():
+            if not qs:
+                continue
+            report = verifier.verify(str(answers.get(qid, "")), list(qs))
+            reports[qid] = report
+            bad = [q["quote"] for q in report["quotes"] if not q["matched"]]
+            if bad:
+                failed[qid] = bad
+        if not failed:
+            raise _FinalAnswer(dict(answers), is_var=True,
+                               verification=reports or None)
+        rejections["n"] += 1
+        if rejections["n"] >= 3:   # stop the spiral; record the failures
+            raise _FinalAnswer(dict(answers), is_var=True, verification=reports)
+        raise ValueError(
+            "FINAL_BATCH rejected — quotes do not match the source text "
+            f"(after normalization) for: {failed}. Copy the document text "
+            "verbatim for those fields, or reconsider their answers."
+        )
+
     return {
         "db": conn,
         "doc": doc,
@@ -118,4 +153,5 @@ def build_namespace(corpus_db: str, child, init_msg: dict) -> dict:
         "verify": verifier.verify,
         "schema_map": schema_map,
         "FINAL": FINAL,  # overrides the unverified classic-mode FINAL
+        "FINAL_BATCH": FINAL_BATCH,  # ditto, with per-field quote checks
     }

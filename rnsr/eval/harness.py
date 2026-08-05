@@ -8,6 +8,7 @@ by content) before querying.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import time
 from hashlib import sha256
@@ -253,6 +254,7 @@ async def run_eval(
     run_dir: str | Path,
     limit: int | None = None,
     judge: bool = True,
+    concurrency: int = 1,
 ) -> tuple[list[EvalResult], dict]:
     """Run a benchmark; writes results.jsonl + summary.json under run_dir.
 
@@ -264,7 +266,11 @@ async def run_eval(
 
     Resumable: existing results.jsonl rows are kept and their qids skipped.
     A per-item failure (unparseable filing, ingest crash) records an
-    'error' result instead of killing the run."""
+    'error' result instead of killing the run.
+
+    concurrency > 1 answers items in parallel (wall-clock win, identical
+    LLM spend); corpus ingest stays serialized so concurrent items never
+    double-ingest the same sources."""
     run_dir = Path(run_dir)
     run_dir.mkdir(parents=True, exist_ok=True)
     cache_dir = run_dir / "corpora"
@@ -284,58 +290,77 @@ async def run_eval(
             "".join(json.dumps(r.to_dict()) + "\n" for r in results))
     done = {r.qid for r in results}
 
-    with open(results_path, "a") as out:
-        for item in items[: limit or len(items)]:
-            if item.qid in done:
-                continue
-            t0 = time.monotonic()
-            try:
-                if system in ("bm25-rag", "vector-rag", "rerank-rag", "graph-rag"):
-                    corpus_path = (
-                        _corpus_for(item.sources, cache_dir, settings)
+    ingest_lock = asyncio.Lock()   # heavy + content-cached: build once
+    write_lock = asyncio.Lock()
+    sem = asyncio.Semaphore(max(1, concurrency))
+
+    async def process(item: EvalItem) -> EvalResult:
+        t0 = time.monotonic()
+        try:
+            if system in ("bm25-rag", "vector-rag", "rerank-rag", "graph-rag"):
+                async with ingest_lock:
+                    corpus_path = await asyncio.to_thread(
+                        lambda: _corpus_for(item.sources, cache_dir, settings)
                         if item.sources
-                        else _text_corpus_for(item.context or "", cache_dir, settings)
-                    )
-                    qr = await _rag_answer(item, system, corpus_path, runner)
-                else:
-                    env = _env_for(item, system, cache_dir, settings)
-                    qr = await runner.run(item.question, env,
-                                          run_dir=run_dir / "trajectories",
-                                          query_id=item.qid)
-                predicted = None if qr.answer is None else str(qr.answer)
-                status = qr.status
-                ledger = qr.ledger
-                iterations = qr.iterations
-                trajectory_path = qr.trajectory_path
-            except Exception as e:   # e.g. Docling ConversionError on one filing
-                predicted, status = None, "error"
-                ledger = {"spend_usd": 0.0, "sub_calls": 0}
-                iterations, trajectory_path = 0, None
-                (run_dir / "errors.log").open("a").write(
-                    f"{item.qid}: {type(e).__name__}: {e}\n")
-            correct, scored_by = score_answer(predicted, item.gold), "string"
-            if judge and not correct and predicted is not None:
-                verdict = await judge_answer(runner.sub_client, runner.sub_model,
-                                             item.question, predicted, item.gold)
-                if verdict is not None:
-                    correct, scored_by = verdict, "judge"
-            result = EvalResult(
-                qid=item.qid,
-                task_class=item.task_class,
-                predicted=predicted,
-                gold=item.gold,
-                correct=correct,
-                scored_by=scored_by,
-                status=status,
-                latency_s=round(time.monotonic() - t0, 3),
-                cost_usd=ledger["spend_usd"],
-                sub_calls=ledger["sub_calls"],
-                iterations=iterations,
-                trajectory_path=trajectory_path,
-            )
-            results.append(result)
-            out.write(json.dumps(result.to_dict()) + "\n")
-            out.flush()
+                        else _text_corpus_for(item.context or "", cache_dir,
+                                              settings))
+                qr = await _rag_answer(item, system, corpus_path, runner)
+            else:
+                async with ingest_lock:
+                    env = await asyncio.to_thread(
+                        _env_for, item, system, cache_dir, settings)
+                qr = await runner.run(item.question, env,
+                                      run_dir=run_dir / "trajectories",
+                                      query_id=item.qid)
+            predicted = None if qr.answer is None else str(qr.answer)
+            status = qr.status
+            ledger = qr.ledger
+            iterations = qr.iterations
+            trajectory_path = qr.trajectory_path
+        except Exception as e:   # e.g. Docling ConversionError on one filing
+            predicted, status = None, "error"
+            ledger = {"spend_usd": 0.0, "sub_calls": 0}
+            iterations, trajectory_path = 0, None
+            (run_dir / "errors.log").open("a").write(
+                f"{item.qid}: {type(e).__name__}: {e}\n")
+        correct, scored_by = score_answer(predicted, item.gold), "string"
+        if judge and not correct and predicted is not None:
+            verdict = await judge_answer(runner.sub_client, runner.sub_model,
+                                         item.question, predicted, item.gold)
+            if verdict is not None:
+                correct, scored_by = verdict, "judge"
+        return EvalResult(
+            qid=item.qid,
+            task_class=item.task_class,
+            predicted=predicted,
+            gold=item.gold,
+            correct=correct,
+            scored_by=scored_by,
+            status=status,
+            latency_s=round(time.monotonic() - t0, 3),
+            cost_usd=ledger["spend_usd"],
+            sub_calls=ledger["sub_calls"],
+            iterations=iterations,
+            trajectory_path=trajectory_path,
+        )
+
+    with open(results_path, "a") as out:
+
+        async def run_one(item: EvalItem) -> None:
+            async with sem:
+                result = await process(item)
+            async with write_lock:
+                results.append(result)
+                out.write(json.dumps(result.to_dict()) + "\n")
+                out.flush()
+
+        todo = [item for item in items[: limit or len(items)]
+                if item.qid not in done]
+        if concurrency > 1:
+            await asyncio.gather(*(run_one(item) for item in todo))
+        else:
+            for item in todo:
+                await run_one(item)
 
     summary = summarize(results)
     (run_dir / "summary.json").write_text(json.dumps(summary, indent=2))

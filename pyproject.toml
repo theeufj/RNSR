@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "rnsr"
-version = "1.0.0a0"
+version = "1.0.0a1"
 description = "DocDB-RLM: a typed-environment recursive language model system for deep document retrieval"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -51,6 +51,10 @@ rnsr = "rnsr.cli:app"
 
 [tool.hatch.build.targets.wheel]
 packages = ["rnsr"]
+
+[tool.hatch.build.targets.sdist]
+exclude = ["testMatter/", "runs/", "terminals/", ".claude/", ".cursor/",
+           "Research/"]
 
 [tool.ruff]
 line-length = 100

@@ -484,9 +484,8 @@ class TestAnswerCsvAdapter:
         phrase; unanswered questions are retried in solo loops."""
         import csv
 
-        from typer.testing import CliRunner
-
         import pytest as _pytest
+        from typer.testing import CliRunner
 
         _pytest.importorskip("docling")
         from reportlab.lib.pagesizes import LETTER

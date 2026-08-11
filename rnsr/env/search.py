@@ -10,6 +10,7 @@ text — hits carry provenance back to doc/char offsets (§1.4).
 
 from __future__ import annotations
 
+import contextlib
 import json
 import re
 import sqlite3
@@ -17,7 +18,7 @@ from dataclasses import dataclass
 
 _TOKEN = re.compile(r"[A-Za-z][A-Za-z0-9_-]{2,}")
 _NUMBER = re.compile(r"-?\d[\d,]*(?:\.\d+)?")
-_STOP = frozenset("the and for was were with what which how many much does did".split())
+_STOP = frozenset(["the", "and", "for", "was", "were", "with", "what", "which", "how", "many", "much", "does", "did"])
 
 
 def _terms(query: str) -> list[str]:
@@ -67,11 +68,10 @@ class Ladder:
         return hits
 
     def _log(self, rung: int, query: str, n_hits: int) -> None:
-        try:
+        # logging must never break a search
+        with contextlib.suppress(Exception):
             self.rpc({"op": "log", "event": "search_rung", "rung": rung,
                       "query": query[:200], "hits": n_hits})
-        except Exception:
-            pass  # logging must never break a search
 
     # --- rung 0: manifest-guided SQL ----------------------------------------
 

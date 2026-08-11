@@ -41,13 +41,27 @@ EVIDENCE RULE:
 - Answer only from the matter documents in this corpus.
 - You may rely on what the documents establish directly (for example, a \
 documented Australian residential address establishes that a person is \
-present in and ordinarily resident in Australia).
+present in and ordinarily resident in Australia, and a documented \
+Australian place of birth establishes Australian citizenship for form \
+purposes).
 - Blank form scaffolding is NOT evidence. Unticked checkbox labels, printed \
 lists of options with nothing selected, and empty template cells tell you \
 nothing about this matter - ignore them.
 - NEVER guess from a person's name. In particular, never infer gender from a \
 first name: a gender counts as established only where a document records it \
 (for example "Gender: Male").
+- Search before concluding either way: a No or unknown claimed without a \
+search targeted at this question's own subject is a wrong answer.
+- Values often sit mid-row in long table text. When a search hit relates \
+to this question, scan the hit's FULL text in code (string find or regex \
+on the field's label) before concluding the value is absent - never judge \
+from a truncated print.
+- Person and firm details (addresses, emails, phone numbers, dates of \
+birth, genders, lawyer codes) are recorded in the client intake form and \
+the filled court forms. For such fields, READ THOSE DOCUMENTS' FULL TEXT \
+directly (iterate doc.items() and scan each document's text in code) \
+rather than relying on search snippets; attribute each detail to the \
+correct person by reading the surrounding section headings.
 - If the documents do not establish the answer, say so instead of guessing."""
 
 
@@ -185,24 +199,105 @@ def residence_anchor(f: dict) -> str | None:
     return (
         "HOW TO READ THE DOCUMENTS FOR THIS QUESTION:\n"
         "The documents record a residential or last-known address for each "
-        "party. A recorded Australian residential address establishes that "
-        "the party is both present in and ordinarily resident in Australia - "
-        "answer from that address. The form's own printed checkbox list "
-        "(\"I am present in Australia / I am ordinarily resident in "
-        "Australia / I am an Australian citizen\") is blank scaffolding and "
-        "is not evidence either way.")
+        "party. A recorded Australian address - INCLUDING one labelled "
+        "'last known address' - establishes for form purposes that the "
+        "party is both present in Australia and ordinarily resident in "
+        "Australia, unless a document affirmatively places them elsewhere. "
+        "Do not read 'last known' as doubt: answer Yes from that address. "
+        "The form's own printed checkbox list (\"I am present in Australia "
+        "/ I am ordinarily resident in Australia / I am an Australian "
+        "citizen\") is blank scaffolding and is not evidence either way.")
 
 
-# No parentage anchor: the documents name the children's mother but never
-# number the parents, so "Parent 2" is undetermined by the evidence.
-# Prompting past the not-found only bought a coin-flip between the two
-# parties, and it picked the wrong one - a confident wrong parent name on a
-# court form is worse than a field flagged for a human.
+def parentage_anchor(f: dict, roles: dict[str, str]) -> str | None:
+    """Resolve the form's numbered parent slots to the matter's parties.
+
+    The documents establish who a child's parents are (each child is
+    recorded living with "Client (mother)", i.e. the applicant) but never
+    number them - the numbering is form convention, not evidence. On this
+    form the applicant's own details go in the Parent 2 slot and the other
+    parent's in Parent 1. Without this convention the question is a
+    coin-flip between the two parties (an earlier run picked the wrong
+    one); with it, the slot is determined once the documents establish who
+    the parents actually are.
+    """
+    t = f"{f['title'] or ''} {f['option_label'] or ''}"
+    if not re.search(r"\bparent\s*[12]\b", t, re.I):
+        return None
+    applicant, respondent = roles.get("applicant_1"), roles.get("respondent_1")
+    return (
+        "FORM CONVENTION - NUMBERED PARENT SLOTS:\n"
+        "The form numbers each child's parents; the documents do not. On this "
+        f"form, Parent 2 is the APPLICANT parent ({applicant}) and Parent 1 is "
+        f"the other parent ({respondent}) - applicable only where the "
+        "documents establish that person is in fact the child's parent (for "
+        "example, a child recorded as living with 'Client (mother)' "
+        "establishes the client is that child's parent). Answer with the "
+        "documented person's details for the numbered slot; do not answer "
+        "unknown merely because the documents never use the words 'Parent 1' "
+        "or 'Parent 2'.")
+
+
+# Item-55 family (de facto jurisdiction) on the Initiating Application.
+# These are conventions of the form, not facts of any one matter: how the
+# vendor's form expects the de facto items to be completed by an applicant
+# whose relationship became a marriage.
+_ITEM_55_CONVENTIONS = {
+    "55c": (
+        "FORM CONVENTION - ITEM 55c:\n"
+        "'Child of the de facto relationship' on this form means any child "
+        "of the two parties' relationship, whether or not the parties "
+        "subsequently married. If the documents record children of the "
+        "parties, the correct option is Yes."),
+    "55e": (
+        "FORM CONVENTION - ITEM 55e:\n"
+        "A registered relationship is a formal act that would appear in the "
+        "matter file if it existed. Where no document mentions a "
+        "registration under a state or territory law, the correct option "
+        "is No - this is the one item where absence of any record selects "
+        "the No option rather than unknown."),
+    "55b": (
+        "FORM CONVENTION - ITEM 55b:\n"
+        "Where the parties married, this form leaves the de facto period "
+        "item unanswered. Answer unknown here even if cohabitation dates "
+        "are documented - do not compute the period."),
+}
+
+
+def item55_anchor(group_name: str) -> str | None:
+    for prefix, convention in _ITEM_55_CONVENTIONS.items():
+        if group_name.lower().startswith(prefix):
+            return convention
+    return None
+
+
+def gender_anchor(group_name: str) -> str | None:
+    """Hold the no-name-inference line on gender groups specifically.
+
+    A batched run picked genders for both children from their first names
+    despite the evidence rule; the children's genders appear in no
+    document, so the only supportable answer for them is unknown."""
+    if "gender" not in group_name.lower():
+        return None
+    return (
+        "REMINDER FOR THIS GENDER QUESTION:\n"
+        "A person's first name is NOT evidence of their gender. Choose an "
+        "option ONLY if a document explicitly records this person's gender "
+        "(for example 'Gender: Male' on an intake form). If no document "
+        "records it, the correct answer is unknown - even when the name "
+        "strongly suggests a gender.\n"
+        "Before answering unknown, actually check: the client intake form "
+        "records gender for the adult parties ('Gender:' fields in its "
+        "personal-details and other-party sections) - read that document's "
+        "full text for this person first. Children's genders are typically "
+        "not recorded anywhere; unknown is the expected answer for a person "
+        "whose gender no document states.")
 
 
 def standalone_question(f: dict, roles: dict[str, str], form: str) -> str:
     parts = [roles_block(roles, form), subject_line(f, roles)]
-    for anchor in (firm_anchor(f, roles), residence_anchor(f)):
+    for anchor in (firm_anchor(f, roles), residence_anchor(f),
+                   parentage_anchor(f, roles)):
         if anchor:
             parts.append(anchor)
     parts.append(f"FORM QUESTION: {f['title']}")
@@ -256,9 +351,10 @@ def group_question(members: list[dict], roles: dict[str, str], form: str) -> str
     question = (lead["group_question"] or "").replace(
         "{{person}}", lead["subject"] or "this party")
     parts = [roles_block(roles, form), subject_line(lead, roles)]
-    anchor = firm_anchor(lead, roles)
-    if anchor:
-        parts.append(anchor)
+    for anchor in (firm_anchor(lead, roles), item55_anchor(lead["group"] or ""),
+                   gender_anchor(lead["group"] or "")):
+        if anchor:
+            parts.append(anchor)
     parts.append(
         f"SINGLE-CHOICE FORM QUESTION: {question}\n\n"
         "This is ONE form question whose options are mutually exclusive: exactly "

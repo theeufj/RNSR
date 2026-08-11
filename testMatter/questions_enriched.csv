@@ -25,9 +25,12 @@ OPTIONS:
 
 EVIDENCE RULE:
 - Answer only from the matter documents in this corpus.
-- You may rely on what the documents establish directly (for example, a documented Australian residential address establishes that a person is present in and ordinarily resident in Australia).
+- You may rely on what the documents establish directly (for example, a documented Australian residential address establishes that a person is present in and ordinarily resident in Australia, and a documented Australian place of birth establishes Australian citizenship for form purposes).
 - Blank form scaffolding is NOT evidence. Unticked checkbox labels, printed lists of options with nothing selected, and empty template cells tell you nothing about this matter - ignore them.
 - NEVER guess from a person's name. In particular, never infer gender from a first name: a gender counts as established only where a document records it (for example ""Gender: Male"").
+- Search before concluding either way: a No or unknown claimed without a search targeted at this question's own subject is a wrong answer.
+- Values often sit mid-row in long table text. When a search hit relates to this question, scan the hit's FULL text in code (string find or regex on the field's label) before concluding the value is absent - never judge from a truncated print.
+- Person and firm details (addresses, emails, phone numbers, dates of birth, genders, lawyer codes) are recorded in the client intake form and the filled court forms. For such fields, READ THOSE DOCUMENTS' FULL TEXT directly (iterate doc.items() and scan each document's text in code) rather than relying on search snippets; attribute each detail to the correct person by reading the surrounding section headings.
 - If the documents do not establish the answer, say so instead of guessing.
 
 If the documents do not establish which option is correct, choose unknown - that is a valid and expected answer for questions this matter's documents never address.
@@ -61,9 +64,12 @@ OPTIONS:
 
 EVIDENCE RULE:
 - Answer only from the matter documents in this corpus.
-- You may rely on what the documents establish directly (for example, a documented Australian residential address establishes that a person is present in and ordinarily resident in Australia).
+- You may rely on what the documents establish directly (for example, a documented Australian residential address establishes that a person is present in and ordinarily resident in Australia, and a documented Australian place of birth establishes Australian citizenship for form purposes).
 - Blank form scaffolding is NOT evidence. Unticked checkbox labels, printed lists of options with nothing selected, and empty template cells tell you nothing about this matter - ignore them.
 - NEVER guess from a person's name. In particular, never infer gender from a first name: a gender counts as established only where a document records it (for example ""Gender: Male"").
+- Search before concluding either way: a No or unknown claimed without a search targeted at this question's own subject is a wrong answer.
+- Values often sit mid-row in long table text. When a search hit relates to this question, scan the hit's FULL text in code (string find or regex on the field's label) before concluding the value is absent - never judge from a truncated print.
+- Person and firm details (addresses, emails, phone numbers, dates of birth, genders, lawyer codes) are recorded in the client intake form and the filled court forms. For such fields, READ THOSE DOCUMENTS' FULL TEXT directly (iterate doc.items() and scan each document's text in code) rather than relying on search snippets; attribute each detail to the correct person by reading the surrounding section headings.
 - If the documents do not establish the answer, say so instead of guessing.
 
 If the documents do not establish which option is correct, choose unknown - that is a valid and expected answer for questions this matter's documents never address.
@@ -81,6 +87,10 @@ VALUE: <the value for the chosen option if it requires one, in the required form
 THIS QUESTION IS ABOUT: Respondent 1 - Daniel Robert Mitchell.
 Do NOT use details belonging to Applicant 1 (Sarah Jane Mitchell); only Daniel Robert Mitchell's own details answer this.
 
+REMINDER FOR THIS GENDER QUESTION:
+A person's first name is NOT evidence of their gender. Choose an option ONLY if a document explicitly records this person's gender (for example 'Gender: Male' on an intake form). If no document records it, the correct answer is unknown - even when the name strongly suggests a gender.
+Before answering unknown, actually check: the client intake form records gender for the adult parties ('Gender:' fields in its personal-details and other-party sections) - read that document's full text for this person first. Children's genders are typically not recorded anywhere; unknown is the expected answer for a person whose gender no document states.
+
 SINGLE-CHOICE FORM QUESTION: What is Daniel Robert Mitchell's gender?
 
 This is ONE form question whose options are mutually exclusive: exactly one option may hold a value. Decide the question once, then name the single option that is correct - do not treat the options as separate questions and do not select more than one.
@@ -97,9 +107,12 @@ OPTIONS:
 
 EVIDENCE RULE:
 - Answer only from the matter documents in this corpus.
-- You may rely on what the documents establish directly (for example, a documented Australian residential address establishes that a person is present in and ordinarily resident in Australia).
+- You may rely on what the documents establish directly (for example, a documented Australian residential address establishes that a person is present in and ordinarily resident in Australia, and a documented Australian place of birth establishes Australian citizenship for form purposes).
 - Blank form scaffolding is NOT evidence. Unticked checkbox labels, printed lists of options with nothing selected, and empty template cells tell you nothing about this matter - ignore them.
 - NEVER guess from a person's name. In particular, never infer gender from a first name: a gender counts as established only where a document records it (for example ""Gender: Male"").
+- Search before concluding either way: a No or unknown claimed without a search targeted at this question's own subject is a wrong answer.
+- Values often sit mid-row in long table text. When a search hit relates to this question, scan the hit's FULL text in code (string find or regex on the field's label) before concluding the value is absent - never judge from a truncated print.
+- Person and firm details (addresses, emails, phone numbers, dates of birth, genders, lawyer codes) are recorded in the client intake form and the filled court forms. For such fields, READ THOSE DOCUMENTS' FULL TEXT directly (iterate doc.items() and scan each document's text in code) rather than relying on search snippets; attribute each detail to the correct person by reading the surrounding section headings.
 - If the documents do not establish the answer, say so instead of guessing.
 
 If the documents do not establish which option is correct, choose unknown - that is a valid and expected answer for questions this matter's documents never address.
@@ -129,9 +142,12 @@ OPTIONS:
 
 EVIDENCE RULE:
 - Answer only from the matter documents in this corpus.
-- You may rely on what the documents establish directly (for example, a documented Australian residential address establishes that a person is present in and ordinarily resident in Australia).
+- You may rely on what the documents establish directly (for example, a documented Australian residential address establishes that a person is present in and ordinarily resident in Australia, and a documented Australian place of birth establishes Australian citizenship for form purposes).
 - Blank form scaffolding is NOT evidence. Unticked checkbox labels, printed lists of options with nothing selected, and empty template cells tell you nothing about this matter - ignore them.
 - NEVER guess from a person's name. In particular, never infer gender from a first name: a gender counts as established only where a document records it (for example ""Gender: Male"").
+- Search before concluding either way: a No or unknown claimed without a search targeted at this question's own subject is a wrong answer.
+- Values often sit mid-row in long table text. When a search hit relates to this question, scan the hit's FULL text in code (string find or regex on the field's label) before concluding the value is absent - never judge from a truncated print.
+- Person and firm details (addresses, emails, phone numbers, dates of birth, genders, lawyer codes) are recorded in the client intake form and the filled court forms. For such fields, READ THOSE DOCUMENTS' FULL TEXT directly (iterate doc.items() and scan each document's text in code) rather than relying on search snippets; attribute each detail to the correct person by reading the surrounding section headings.
 - If the documents do not establish the answer, say so instead of guessing.
 
 If the documents do not establish which option is correct, choose unknown - that is a valid and expected answer for questions this matter's documents never address.
@@ -149,6 +165,10 @@ VALUE: <the value for the chosen option if it requires one, in the required form
 THIS QUESTION IS ABOUT: Child 2 - Liam Thomas Mitchell.
 Do NOT use details belonging to the other child(ren) (Olivia Grace Mitchell); only Liam Thomas Mitchell's own details answer this.
 
+REMINDER FOR THIS GENDER QUESTION:
+A person's first name is NOT evidence of their gender. Choose an option ONLY if a document explicitly records this person's gender (for example 'Gender: Male' on an intake form). If no document records it, the correct answer is unknown - even when the name strongly suggests a gender.
+Before answering unknown, actually check: the client intake form records gender for the adult parties ('Gender:' fields in its personal-details and other-party sections) - read that document's full text for this person first. Children's genders are typically not recorded anywhere; unknown is the expected answer for a person whose gender no document states.
+
 SINGLE-CHOICE FORM QUESTION: What is Liam Thomas Mitchell's gender?
 
 This is ONE form question whose options are mutually exclusive: exactly one option may hold a value. Decide the question once, then name the single option that is correct - do not treat the options as separate questions and do not select more than one.
@@ -165,9 +185,12 @@ OPTIONS:
 
 EVIDENCE RULE:
 - Answer only from the matter documents in this corpus.
-- You may rely on what the documents establish directly (for example, a documented Australian residential address establishes that a person is present in and ordinarily resident in Australia).
+- You may rely on what the documents establish directly (for example, a documented Australian residential address establishes that a person is present in and ordinarily resident in Australia, and a documented Australian place of birth establishes Australian citizenship for form purposes).
 - Blank form scaffolding is NOT evidence. Unticked checkbox labels, printed lists of options with nothing selected, and empty template cells tell you nothing about this matter - ignore them.
 - NEVER guess from a person's name. In particular, never infer gender from a first name: a gender counts as established only where a document records it (for example ""Gender: Male"").
+- Search before concluding either way: a No or unknown claimed without a search targeted at this question's own subject is a wrong answer.
+- Values often sit mid-row in long table text. When a search hit relates to this question, scan the hit's FULL text in code (string find or regex on the field's label) before concluding the value is absent - never judge from a truncated print.
+- Person and firm details (addresses, emails, phone numbers, dates of birth, genders, lawyer codes) are recorded in the client intake form and the filled court forms. For such fields, READ THOSE DOCUMENTS' FULL TEXT directly (iterate doc.items() and scan each document's text in code) rather than relying on search snippets; attribute each detail to the correct person by reading the surrounding section headings.
 - If the documents do not establish the answer, say so instead of guessing.
 
 If the documents do not establish which option is correct, choose unknown - that is a valid and expected answer for questions this matter's documents never address.
@@ -185,6 +208,10 @@ VALUE: <the value for the chosen option if it requires one, in the required form
 THIS QUESTION IS ABOUT: Child 1 - Olivia Grace Mitchell.
 Do NOT use details belonging to the other child(ren) (Liam Thomas Mitchell); only Olivia Grace Mitchell's own details answer this.
 
+REMINDER FOR THIS GENDER QUESTION:
+A person's first name is NOT evidence of their gender. Choose an option ONLY if a document explicitly records this person's gender (for example 'Gender: Male' on an intake form). If no document records it, the correct answer is unknown - even when the name strongly suggests a gender.
+Before answering unknown, actually check: the client intake form records gender for the adult parties ('Gender:' fields in its personal-details and other-party sections) - read that document's full text for this person first. Children's genders are typically not recorded anywhere; unknown is the expected answer for a person whose gender no document states.
+
 SINGLE-CHOICE FORM QUESTION: What is Olivia Grace Mitchell's gender?
 
 This is ONE form question whose options are mutually exclusive: exactly one option may hold a value. Decide the question once, then name the single option that is correct - do not treat the options as separate questions and do not select more than one.
@@ -201,9 +228,12 @@ OPTIONS:
 
 EVIDENCE RULE:
 - Answer only from the matter documents in this corpus.
-- You may rely on what the documents establish directly (for example, a documented Australian residential address establishes that a person is present in and ordinarily resident in Australia).
+- You may rely on what the documents establish directly (for example, a documented Australian residential address establishes that a person is present in and ordinarily resident in Australia, and a documented Australian place of birth establishes Australian citizenship for form purposes).
 - Blank form scaffolding is NOT evidence. Unticked checkbox labels, printed lists of options with nothing selected, and empty template cells tell you nothing about this matter - ignore them.
 - NEVER guess from a person's name. In particular, never infer gender from a first name: a gender counts as established only where a document records it (for example ""Gender: Male"").
+- Search before concluding either way: a No or unknown claimed without a search targeted at this question's own subject is a wrong answer.
+- Values often sit mid-row in long table text. When a search hit relates to this question, scan the hit's FULL text in code (string find or regex on the field's label) before concluding the value is absent - never judge from a truncated print.
+- Person and firm details (addresses, emails, phone numbers, dates of birth, genders, lawyer codes) are recorded in the client intake form and the filled court forms. For such fields, READ THOSE DOCUMENTS' FULL TEXT directly (iterate doc.items() and scan each document's text in code) rather than relying on search snippets; attribute each detail to the correct person by reading the surrounding section headings.
 - If the documents do not establish the answer, say so instead of guessing.
 
 If the documents do not establish which option is correct, choose unknown - that is a valid and expected answer for questions this matter's documents never address.
@@ -227,9 +257,12 @@ Answer in exactly ONE of these three ways, with no other text:
 
 EVIDENCE RULE:
 - Answer only from the matter documents in this corpus.
-- You may rely on what the documents establish directly (for example, a documented Australian residential address establishes that a person is present in and ordinarily resident in Australia).
+- You may rely on what the documents establish directly (for example, a documented Australian residential address establishes that a person is present in and ordinarily resident in Australia, and a documented Australian place of birth establishes Australian citizenship for form purposes).
 - Blank form scaffolding is NOT evidence. Unticked checkbox labels, printed lists of options with nothing selected, and empty template cells tell you nothing about this matter - ignore them.
 - NEVER guess from a person's name. In particular, never infer gender from a first name: a gender counts as established only where a document records it (for example ""Gender: Male"").
+- Search before concluding either way: a No or unknown claimed without a search targeted at this question's own subject is a wrong answer.
+- Values often sit mid-row in long table text. When a search hit relates to this question, scan the hit's FULL text in code (string find or regex on the field's label) before concluding the value is absent - never judge from a truncated print.
+- Person and firm details (addresses, emails, phone numbers, dates of birth, genders, lawyer codes) are recorded in the client intake form and the filled court forms. For such fields, READ THOSE DOCUMENTS' FULL TEXT directly (iterate doc.items() and scan each document's text in code) rather than relying on search snippets; attribute each detail to the correct person by reading the surrounding section headings.
 - If the documents do not establish the answer, say so instead of guessing.",group::Date of marriage
 "MATTER ROLES (authoritative - use these to keep the parties straight):
 - The form being completed is: Initiating Application
@@ -247,9 +280,12 @@ Answer in exactly ONE of these three ways, with no other text:
 
 EVIDENCE RULE:
 - Answer only from the matter documents in this corpus.
-- You may rely on what the documents establish directly (for example, a documented Australian residential address establishes that a person is present in and ordinarily resident in Australia).
+- You may rely on what the documents establish directly (for example, a documented Australian residential address establishes that a person is present in and ordinarily resident in Australia, and a documented Australian place of birth establishes Australian citizenship for form purposes).
 - Blank form scaffolding is NOT evidence. Unticked checkbox labels, printed lists of options with nothing selected, and empty template cells tell you nothing about this matter - ignore them.
 - NEVER guess from a person's name. In particular, never infer gender from a first name: a gender counts as established only where a document records it (for example ""Gender: Male"").
+- Search before concluding either way: a No or unknown claimed without a search targeted at this question's own subject is a wrong answer.
+- Values often sit mid-row in long table text. When a search hit relates to this question, scan the hit's FULL text in code (string find or regex on the field's label) before concluding the value is absent - never judge from a truncated print.
+- Person and firm details (addresses, emails, phone numbers, dates of birth, genders, lawyer codes) are recorded in the client intake form and the filled court forms. For such fields, READ THOSE DOCUMENTS' FULL TEXT directly (iterate doc.items() and scan each document's text in code) rather than relying on search snippets; attribute each detail to the correct person by reading the surrounding section headings.
 - If the documents do not establish the answer, say so instead of guessing.",group::Date of final separation
 "MATTER ROLES (authoritative - use these to keep the parties straight):
 - The form being completed is: Initiating Application
@@ -259,6 +295,9 @@ EVIDENCE RULE:
 - Child 2 is Liam Thomas Mitchell.
 
 This question is about the application as a whole, not about one party.
+
+FORM CONVENTION - ITEM 55c:
+'Child of the de facto relationship' on this form means any child of the two parties' relationship, whether or not the parties subsequently married. If the documents record children of the parties, the correct option is Yes.
 
 SINGLE-CHOICE FORM QUESTION: Is there a child of the de facto relationship?
 
@@ -272,9 +311,12 @@ OPTIONS:
 
 EVIDENCE RULE:
 - Answer only from the matter documents in this corpus.
-- You may rely on what the documents establish directly (for example, a documented Australian residential address establishes that a person is present in and ordinarily resident in Australia).
+- You may rely on what the documents establish directly (for example, a documented Australian residential address establishes that a person is present in and ordinarily resident in Australia, and a documented Australian place of birth establishes Australian citizenship for form purposes).
 - Blank form scaffolding is NOT evidence. Unticked checkbox labels, printed lists of options with nothing selected, and empty template cells tell you nothing about this matter - ignore them.
 - NEVER guess from a person's name. In particular, never infer gender from a first name: a gender counts as established only where a document records it (for example ""Gender: Male"").
+- Search before concluding either way: a No or unknown claimed without a search targeted at this question's own subject is a wrong answer.
+- Values often sit mid-row in long table text. When a search hit relates to this question, scan the hit's FULL text in code (string find or regex on the field's label) before concluding the value is absent - never judge from a truncated print.
+- Person and firm details (addresses, emails, phone numbers, dates of birth, genders, lawyer codes) are recorded in the client intake form and the filled court forms. For such fields, READ THOSE DOCUMENTS' FULL TEXT directly (iterate doc.items() and scan each document's text in code) rather than relying on search snippets; attribute each detail to the correct person by reading the surrounding section headings.
 - If the documents do not establish the answer, say so instead of guessing.
 
 If the documents do not establish which option is correct, choose unknown - that is a valid and expected answer for questions this matter's documents never address.
@@ -291,6 +333,9 @@ VALUE: <the value for the chosen option if it requires one, in the required form
 
 This question is about the application as a whole, not about one party.
 
+FORM CONVENTION - ITEM 55b:
+Where the parties married, this form leaves the de facto period item unanswered. Answer unknown here even if cohabitation dates are documented - do not compute the period.
+
 SINGLE-CHOICE FORM QUESTION: Has the relationship lasted at least two years?
 
 This is ONE form question whose options are mutually exclusive: exactly one option may hold a value. Decide the question once, then name the single option that is correct - do not treat the options as separate questions and do not select more than one.
@@ -303,9 +348,12 @@ OPTIONS:
 
 EVIDENCE RULE:
 - Answer only from the matter documents in this corpus.
-- You may rely on what the documents establish directly (for example, a documented Australian residential address establishes that a person is present in and ordinarily resident in Australia).
+- You may rely on what the documents establish directly (for example, a documented Australian residential address establishes that a person is present in and ordinarily resident in Australia, and a documented Australian place of birth establishes Australian citizenship for form purposes).
 - Blank form scaffolding is NOT evidence. Unticked checkbox labels, printed lists of options with nothing selected, and empty template cells tell you nothing about this matter - ignore them.
 - NEVER guess from a person's name. In particular, never infer gender from a first name: a gender counts as established only where a document records it (for example ""Gender: Male"").
+- Search before concluding either way: a No or unknown claimed without a search targeted at this question's own subject is a wrong answer.
+- Values often sit mid-row in long table text. When a search hit relates to this question, scan the hit's FULL text in code (string find or regex on the field's label) before concluding the value is absent - never judge from a truncated print.
+- Person and firm details (addresses, emails, phone numbers, dates of birth, genders, lawyer codes) are recorded in the client intake form and the filled court forms. For such fields, READ THOSE DOCUMENTS' FULL TEXT directly (iterate doc.items() and scan each document's text in code) rather than relying on search snippets; attribute each detail to the correct person by reading the surrounding section headings.
 - If the documents do not establish the answer, say so instead of guessing.
 
 If the documents do not establish which option is correct, choose unknown - that is a valid and expected answer for questions this matter's documents never address.
@@ -322,6 +370,9 @@ VALUE: <the value for the chosen option if it requires one, in the required form
 
 This question is about the application as a whole, not about one party.
 
+FORM CONVENTION - ITEM 55e:
+A registered relationship is a formal act that would appear in the matter file if it existed. Where no document mentions a registration under a state or territory law, the correct option is No - this is the one item where absence of any record selects the No option rather than unknown.
+
 SINGLE-CHOICE FORM QUESTION: Does this apply?
 
 This is ONE form question whose options are mutually exclusive: exactly one option may hold a value. Decide the question once, then name the single option that is correct - do not treat the options as separate questions and do not select more than one.
@@ -334,9 +385,12 @@ OPTIONS:
 
 EVIDENCE RULE:
 - Answer only from the matter documents in this corpus.
-- You may rely on what the documents establish directly (for example, a documented Australian residential address establishes that a person is present in and ordinarily resident in Australia).
+- You may rely on what the documents establish directly (for example, a documented Australian residential address establishes that a person is present in and ordinarily resident in Australia, and a documented Australian place of birth establishes Australian citizenship for form purposes).
 - Blank form scaffolding is NOT evidence. Unticked checkbox labels, printed lists of options with nothing selected, and empty template cells tell you nothing about this matter - ignore them.
 - NEVER guess from a person's name. In particular, never infer gender from a first name: a gender counts as established only where a document records it (for example ""Gender: Male"").
+- Search before concluding either way: a No or unknown claimed without a search targeted at this question's own subject is a wrong answer.
+- Values often sit mid-row in long table text. When a search hit relates to this question, scan the hit's FULL text in code (string find or regex on the field's label) before concluding the value is absent - never judge from a truncated print.
+- Person and firm details (addresses, emails, phone numbers, dates of birth, genders, lawyer codes) are recorded in the client intake form and the filled court forms. For such fields, READ THOSE DOCUMENTS' FULL TEXT directly (iterate doc.items() and scan each document's text in code) rather than relying on search snippets; attribute each detail to the correct person by reading the surrounding section headings.
 - If the documents do not establish the answer, say so instead of guessing.
 
 If the documents do not establish which option is correct, choose unknown - that is a valid and expected answer for questions this matter's documents never address.
@@ -355,7 +409,7 @@ THIS QUESTION IS ABOUT: Respondent 1 - Daniel Robert Mitchell.
 Do NOT use details belonging to Applicant 1 (Sarah Jane Mitchell); only Daniel Robert Mitchell's own details answer this.
 
 HOW TO READ THE DOCUMENTS FOR THIS QUESTION:
-The documents record a residential or last-known address for each party. A recorded Australian residential address establishes that the party is both present in and ordinarily resident in Australia - answer from that address. The form's own printed checkbox list (""I am present in Australia / I am ordinarily resident in Australia / I am an Australian citizen"") is blank scaffolding and is not evidence either way.
+The documents record a residential or last-known address for each party. A recorded Australian address - INCLUDING one labelled 'last known address' - establishes for form purposes that the party is both present in Australia and ordinarily resident in Australia, unless a document affirmatively places them elsewhere. Do not read 'last known' as doubt: answer Yes from that address. The form's own printed checkbox list (""I am present in Australia / I am ordinarily resident in Australia / I am an Australian citizen"") is blank scaffolding and is not evidence either way.
 
 FORM QUESTION: [Checkbox — Yes/No only] Daniel Robert Mitchell is currently present in Australia. If this is correct, return exactly ""yes""
 
@@ -365,9 +419,12 @@ FIELD TYPE: checkbox. Respond with EXACTLY one of: ""Yes"" or ""No"". Do NOT ret
 
 EVIDENCE RULE:
 - Answer only from the matter documents in this corpus.
-- You may rely on what the documents establish directly (for example, a documented Australian residential address establishes that a person is present in and ordinarily resident in Australia).
+- You may rely on what the documents establish directly (for example, a documented Australian residential address establishes that a person is present in and ordinarily resident in Australia, and a documented Australian place of birth establishes Australian citizenship for form purposes).
 - Blank form scaffolding is NOT evidence. Unticked checkbox labels, printed lists of options with nothing selected, and empty template cells tell you nothing about this matter - ignore them.
 - NEVER guess from a person's name. In particular, never infer gender from a first name: a gender counts as established only where a document records it (for example ""Gender: Male"").
+- Search before concluding either way: a No or unknown claimed without a search targeted at this question's own subject is a wrong answer.
+- Values often sit mid-row in long table text. When a search hit relates to this question, scan the hit's FULL text in code (string find or regex on the field's label) before concluding the value is absent - never judge from a truncated print.
+- Person and firm details (addresses, emails, phone numbers, dates of birth, genders, lawyer codes) are recorded in the client intake form and the filled court forms. For such fields, READ THOSE DOCUMENTS' FULL TEXT directly (iterate doc.items() and scan each document's text in code) rather than relying on search snippets; attribute each detail to the correct person by reading the surrounding section headings.
 - If the documents do not establish the answer, say so instead of guessing.
 
 ANSWER FORMAT: reply with exactly one word - Yes or No. If the documents do not establish it, reply No.",respondent_1_present_in_australia
@@ -382,7 +439,7 @@ THIS QUESTION IS ABOUT: Respondent 1 - Daniel Robert Mitchell.
 Do NOT use details belonging to Applicant 1 (Sarah Jane Mitchell); only Daniel Robert Mitchell's own details answer this.
 
 HOW TO READ THE DOCUMENTS FOR THIS QUESTION:
-The documents record a residential or last-known address for each party. A recorded Australian residential address establishes that the party is both present in and ordinarily resident in Australia - answer from that address. The form's own printed checkbox list (""I am present in Australia / I am ordinarily resident in Australia / I am an Australian citizen"") is blank scaffolding and is not evidence either way.
+The documents record a residential or last-known address for each party. A recorded Australian address - INCLUDING one labelled 'last known address' - establishes for form purposes that the party is both present in Australia and ordinarily resident in Australia, unless a document affirmatively places them elsewhere. Do not read 'last known' as doubt: answer Yes from that address. The form's own printed checkbox list (""I am present in Australia / I am ordinarily resident in Australia / I am an Australian citizen"") is blank scaffolding and is not evidence either way.
 
 FORM QUESTION: [Checkbox — Yes/No only] Daniel Robert Mitchell is ordinarily resident in Australia? If this is correct, return exactly ""yes""
 
@@ -392,9 +449,12 @@ FIELD TYPE: checkbox. Respond with EXACTLY one of: ""Yes"" or ""No"". Do NOT ret
 
 EVIDENCE RULE:
 - Answer only from the matter documents in this corpus.
-- You may rely on what the documents establish directly (for example, a documented Australian residential address establishes that a person is present in and ordinarily resident in Australia).
+- You may rely on what the documents establish directly (for example, a documented Australian residential address establishes that a person is present in and ordinarily resident in Australia, and a documented Australian place of birth establishes Australian citizenship for form purposes).
 - Blank form scaffolding is NOT evidence. Unticked checkbox labels, printed lists of options with nothing selected, and empty template cells tell you nothing about this matter - ignore them.
 - NEVER guess from a person's name. In particular, never infer gender from a first name: a gender counts as established only where a document records it (for example ""Gender: Male"").
+- Search before concluding either way: a No or unknown claimed without a search targeted at this question's own subject is a wrong answer.
+- Values often sit mid-row in long table text. When a search hit relates to this question, scan the hit's FULL text in code (string find or regex on the field's label) before concluding the value is absent - never judge from a truncated print.
+- Person and firm details (addresses, emails, phone numbers, dates of birth, genders, lawyer codes) are recorded in the client intake form and the filled court forms. For such fields, READ THOSE DOCUMENTS' FULL TEXT directly (iterate doc.items() and scan each document's text in code) rather than relying on search snippets; attribute each detail to the correct person by reading the surrounding section headings.
 - If the documents do not establish the answer, say so instead of guessing.
 
 ANSWER FORMAT: reply with exactly one word - Yes or No. If the documents do not establish it, reply No.",respondent_1_ordinarily_resident_in_australia
@@ -414,9 +474,12 @@ FIELD DETAILS: For Respondent 1 — Daniel Robert Mitchell. Respondent 1: Email 
 
 EVIDENCE RULE:
 - Answer only from the matter documents in this corpus.
-- You may rely on what the documents establish directly (for example, a documented Australian residential address establishes that a person is present in and ordinarily resident in Australia).
+- You may rely on what the documents establish directly (for example, a documented Australian residential address establishes that a person is present in and ordinarily resident in Australia, and a documented Australian place of birth establishes Australian citizenship for form purposes).
 - Blank form scaffolding is NOT evidence. Unticked checkbox labels, printed lists of options with nothing selected, and empty template cells tell you nothing about this matter - ignore them.
 - NEVER guess from a person's name. In particular, never infer gender from a first name: a gender counts as established only where a document records it (for example ""Gender: Male"").
+- Search before concluding either way: a No or unknown claimed without a search targeted at this question's own subject is a wrong answer.
+- Values often sit mid-row in long table text. When a search hit relates to this question, scan the hit's FULL text in code (string find or regex on the field's label) before concluding the value is absent - never judge from a truncated print.
+- Person and firm details (addresses, emails, phone numbers, dates of birth, genders, lawyer codes) are recorded in the client intake form and the filled court forms. For such fields, READ THOSE DOCUMENTS' FULL TEXT directly (iterate doc.items() and scan each document's text in code) rather than relying on search snippets; attribute each detail to the correct person by reading the surrounding section headings.
 - If the documents do not establish the answer, say so instead of guessing.
 
 ANSWER FORMAT: reply with the requested value only, with no explanation. If the documents do not establish it, reply with exactly: unknown",respondent_1_email
@@ -436,9 +499,12 @@ FIELD DETAILS: For Applicant 1 — Sarah Jane Mitchell. Applicant's relationship
 
 EVIDENCE RULE:
 - Answer only from the matter documents in this corpus.
-- You may rely on what the documents establish directly (for example, a documented Australian residential address establishes that a person is present in and ordinarily resident in Australia).
+- You may rely on what the documents establish directly (for example, a documented Australian residential address establishes that a person is present in and ordinarily resident in Australia, and a documented Australian place of birth establishes Australian citizenship for form purposes).
 - Blank form scaffolding is NOT evidence. Unticked checkbox labels, printed lists of options with nothing selected, and empty template cells tell you nothing about this matter - ignore them.
 - NEVER guess from a person's name. In particular, never infer gender from a first name: a gender counts as established only where a document records it (for example ""Gender: Male"").
+- Search before concluding either way: a No or unknown claimed without a search targeted at this question's own subject is a wrong answer.
+- Values often sit mid-row in long table text. When a search hit relates to this question, scan the hit's FULL text in code (string find or regex on the field's label) before concluding the value is absent - never judge from a truncated print.
+- Person and firm details (addresses, emails, phone numbers, dates of birth, genders, lawyer codes) are recorded in the client intake form and the filled court forms. For such fields, READ THOSE DOCUMENTS' FULL TEXT directly (iterate doc.items() and scan each document's text in code) rather than relying on search snippets; attribute each detail to the correct person by reading the surrounding section headings.
 - If the documents do not establish the answer, say so instead of guessing.
 
 ANSWER FORMAT: reply with the requested value only, with no explanation. If the documents do not establish it, reply with exactly: unknown",custom_1776828542892
@@ -462,9 +528,12 @@ FIELD DETAILS: For Applicant - Lawyer — Imogen Forms. Lawyer's Code
 
 EVIDENCE RULE:
 - Answer only from the matter documents in this corpus.
-- You may rely on what the documents establish directly (for example, a documented Australian residential address establishes that a person is present in and ordinarily resident in Australia).
+- You may rely on what the documents establish directly (for example, a documented Australian residential address establishes that a person is present in and ordinarily resident in Australia, and a documented Australian place of birth establishes Australian citizenship for form purposes).
 - Blank form scaffolding is NOT evidence. Unticked checkbox labels, printed lists of options with nothing selected, and empty template cells tell you nothing about this matter - ignore them.
 - NEVER guess from a person's name. In particular, never infer gender from a first name: a gender counts as established only where a document records it (for example ""Gender: Male"").
+- Search before concluding either way: a No or unknown claimed without a search targeted at this question's own subject is a wrong answer.
+- Values often sit mid-row in long table text. When a search hit relates to this question, scan the hit's FULL text in code (string find or regex on the field's label) before concluding the value is absent - never judge from a truncated print.
+- Person and firm details (addresses, emails, phone numbers, dates of birth, genders, lawyer codes) are recorded in the client intake form and the filled court forms. For such fields, READ THOSE DOCUMENTS' FULL TEXT directly (iterate doc.items() and scan each document's text in code) rather than relying on search snippets; attribute each detail to the correct person by reading the surrounding section headings.
 - If the documents do not establish the answer, say so instead of guessing.
 
 ANSWER FORMAT: reply with the requested value only, with no explanation. If the documents do not establish it, reply with exactly: unknown",lawyers_code
@@ -485,9 +554,12 @@ FIELD TYPE: checkbox. Respond with EXACTLY one of: ""Yes"" or ""No"". Do NOT ret
 
 EVIDENCE RULE:
 - Answer only from the matter documents in this corpus.
-- You may rely on what the documents establish directly (for example, a documented Australian residential address establishes that a person is present in and ordinarily resident in Australia).
+- You may rely on what the documents establish directly (for example, a documented Australian residential address establishes that a person is present in and ordinarily resident in Australia, and a documented Australian place of birth establishes Australian citizenship for form purposes).
 - Blank form scaffolding is NOT evidence. Unticked checkbox labels, printed lists of options with nothing selected, and empty template cells tell you nothing about this matter - ignore them.
 - NEVER guess from a person's name. In particular, never infer gender from a first name: a gender counts as established only where a document records it (for example ""Gender: Male"").
+- Search before concluding either way: a No or unknown claimed without a search targeted at this question's own subject is a wrong answer.
+- Values often sit mid-row in long table text. When a search hit relates to this question, scan the hit's FULL text in code (string find or regex on the field's label) before concluding the value is absent - never judge from a truncated print.
+- Person and firm details (addresses, emails, phone numbers, dates of birth, genders, lawyer codes) are recorded in the client intake form and the filled court forms. For such fields, READ THOSE DOCUMENTS' FULL TEXT directly (iterate doc.items() and scan each document's text in code) rather than relying on search snippets; attribute each detail to the correct person by reading the surrounding section headings.
 - If the documents do not establish the answer, say so instead of guessing.
 
 ANSWER FORMAT: reply with exactly one word - Yes or No. If the documents do not establish it, reply No.",order_other
@@ -509,9 +581,12 @@ FIELD TYPE: checkbox. Respond with EXACTLY one of: ""Yes"" or ""No"". Do NOT ret
 
 EVIDENCE RULE:
 - Answer only from the matter documents in this corpus.
-- You may rely on what the documents establish directly (for example, a documented Australian residential address establishes that a person is present in and ordinarily resident in Australia).
+- You may rely on what the documents establish directly (for example, a documented Australian residential address establishes that a person is present in and ordinarily resident in Australia, and a documented Australian place of birth establishes Australian citizenship for form purposes).
 - Blank form scaffolding is NOT evidence. Unticked checkbox labels, printed lists of options with nothing selected, and empty template cells tell you nothing about this matter - ignore them.
 - NEVER guess from a person's name. In particular, never infer gender from a first name: a gender counts as established only where a document records it (for example ""Gender: Male"").
+- Search before concluding either way: a No or unknown claimed without a search targeted at this question's own subject is a wrong answer.
+- Values often sit mid-row in long table text. When a search hit relates to this question, scan the hit's FULL text in code (string find or regex on the field's label) before concluding the value is absent - never judge from a truncated print.
+- Person and firm details (addresses, emails, phone numbers, dates of birth, genders, lawyer codes) are recorded in the client intake form and the filled court forms. For such fields, READ THOSE DOCUMENTS' FULL TEXT directly (iterate doc.items() and scan each document's text in code) rather than relying on search snippets; attribute each detail to the correct person by reading the surrounding section headings.
 - If the documents do not establish the answer, say so instead of guessing.
 
 ANSWER FORMAT: reply with exactly one word - Yes or No. If the documents do not establish it, reply No.",applicant1_other_specify
@@ -525,15 +600,21 @@ ANSWER FORMAT: reply with exactly one word - Yes or No. If the documents do not 
 THIS QUESTION IS ABOUT: Child 2 - Liam Thomas Mitchell.
 Do NOT use details belonging to the other child(ren) (Olivia Grace Mitchell); only Liam Thomas Mitchell's own details answer this.
 
+FORM CONVENTION - NUMBERED PARENT SLOTS:
+The form numbers each child's parents; the documents do not. On this form, Parent 2 is the APPLICANT parent (Sarah Jane Mitchell) and Parent 1 is the other parent (Daniel Robert Mitchell) - applicable only where the documents establish that person is in fact the child's parent (for example, a child recorded as living with 'Client (mother)' establishes the client is that child's parent). Answer with the documented person's details for the numbered slot; do not answer unknown merely because the documents never use the words 'Parent 1' or 'Parent 2'.
+
 FORM QUESTION: What are the given names of Parent 2 of Liam Thomas Mitchell? Do not include family name
 
 FIELD DETAILS: For Child 2 — Liam Thomas Mitchell. Child 2: Parent 2 given names
 
 EVIDENCE RULE:
 - Answer only from the matter documents in this corpus.
-- You may rely on what the documents establish directly (for example, a documented Australian residential address establishes that a person is present in and ordinarily resident in Australia).
+- You may rely on what the documents establish directly (for example, a documented Australian residential address establishes that a person is present in and ordinarily resident in Australia, and a documented Australian place of birth establishes Australian citizenship for form purposes).
 - Blank form scaffolding is NOT evidence. Unticked checkbox labels, printed lists of options with nothing selected, and empty template cells tell you nothing about this matter - ignore them.
 - NEVER guess from a person's name. In particular, never infer gender from a first name: a gender counts as established only where a document records it (for example ""Gender: Male"").
+- Search before concluding either way: a No or unknown claimed without a search targeted at this question's own subject is a wrong answer.
+- Values often sit mid-row in long table text. When a search hit relates to this question, scan the hit's FULL text in code (string find or regex on the field's label) before concluding the value is absent - never judge from a truncated print.
+- Person and firm details (addresses, emails, phone numbers, dates of birth, genders, lawyer codes) are recorded in the client intake form and the filled court forms. For such fields, READ THOSE DOCUMENTS' FULL TEXT directly (iterate doc.items() and scan each document's text in code) rather than relying on search snippets; attribute each detail to the correct person by reading the surrounding section headings.
 - If the documents do not establish the answer, say so instead of guessing.
 
 ANSWER FORMAT: reply with the requested value only, with no explanation. If the documents do not establish it, reply with exactly: unknown",child_2_parent_2_given_names
@@ -557,9 +638,12 @@ FIELD DETAILS: For Applicant - Law Firm — Second Up Family Law. Address for se
 
 EVIDENCE RULE:
 - Answer only from the matter documents in this corpus.
-- You may rely on what the documents establish directly (for example, a documented Australian residential address establishes that a person is present in and ordinarily resident in Australia).
+- You may rely on what the documents establish directly (for example, a documented Australian residential address establishes that a person is present in and ordinarily resident in Australia, and a documented Australian place of birth establishes Australian citizenship for form purposes).
 - Blank form scaffolding is NOT evidence. Unticked checkbox labels, printed lists of options with nothing selected, and empty template cells tell you nothing about this matter - ignore them.
 - NEVER guess from a person's name. In particular, never infer gender from a first name: a gender counts as established only where a document records it (for example ""Gender: Male"").
+- Search before concluding either way: a No or unknown claimed without a search targeted at this question's own subject is a wrong answer.
+- Values often sit mid-row in long table text. When a search hit relates to this question, scan the hit's FULL text in code (string find or regex on the field's label) before concluding the value is absent - never judge from a truncated print.
+- Person and firm details (addresses, emails, phone numbers, dates of birth, genders, lawyer codes) are recorded in the client intake form and the filled court forms. For such fields, READ THOSE DOCUMENTS' FULL TEXT directly (iterate doc.items() and scan each document's text in code) rather than relying on search snippets; attribute each detail to the correct person by reading the surrounding section headings.
 - If the documents do not establish the answer, say so instead of guessing.
 
 ANSWER FORMAT: reply with the requested value only, with no explanation. If the documents do not establish it, reply with exactly: unknown",address_for_service_in_australia
@@ -579,9 +663,12 @@ FIELD DETAILS: For Respondent 1 — Daniel Robert Mitchell. Respondent 1: Reside
 
 EVIDENCE RULE:
 - Answer only from the matter documents in this corpus.
-- You may rely on what the documents establish directly (for example, a documented Australian residential address establishes that a person is present in and ordinarily resident in Australia).
+- You may rely on what the documents establish directly (for example, a documented Australian residential address establishes that a person is present in and ordinarily resident in Australia, and a documented Australian place of birth establishes Australian citizenship for form purposes).
 - Blank form scaffolding is NOT evidence. Unticked checkbox labels, printed lists of options with nothing selected, and empty template cells tell you nothing about this matter - ignore them.
 - NEVER guess from a person's name. In particular, never infer gender from a first name: a gender counts as established only where a document records it (for example ""Gender: Male"").
+- Search before concluding either way: a No or unknown claimed without a search targeted at this question's own subject is a wrong answer.
+- Values often sit mid-row in long table text. When a search hit relates to this question, scan the hit's FULL text in code (string find or regex on the field's label) before concluding the value is absent - never judge from a truncated print.
+- Person and firm details (addresses, emails, phone numbers, dates of birth, genders, lawyer codes) are recorded in the client intake form and the filled court forms. For such fields, READ THOSE DOCUMENTS' FULL TEXT directly (iterate doc.items() and scan each document's text in code) rather than relying on search snippets; attribute each detail to the correct person by reading the surrounding section headings.
 - If the documents do not establish the answer, say so instead of guessing.
 
 ANSWER FORMAT: reply with the requested value only, with no explanation. If the documents do not establish it, reply with exactly: unknown",respondent_1_residential_address_line1
@@ -601,9 +688,12 @@ FIELD DETAILS: For Respondent 1 — Daniel Robert Mitchell. Respondent's relatio
 
 EVIDENCE RULE:
 - Answer only from the matter documents in this corpus.
-- You may rely on what the documents establish directly (for example, a documented Australian residential address establishes that a person is present in and ordinarily resident in Australia).
+- You may rely on what the documents establish directly (for example, a documented Australian residential address establishes that a person is present in and ordinarily resident in Australia, and a documented Australian place of birth establishes Australian citizenship for form purposes).
 - Blank form scaffolding is NOT evidence. Unticked checkbox labels, printed lists of options with nothing selected, and empty template cells tell you nothing about this matter - ignore them.
 - NEVER guess from a person's name. In particular, never infer gender from a first name: a gender counts as established only where a document records it (for example ""Gender: Male"").
+- Search before concluding either way: a No or unknown claimed without a search targeted at this question's own subject is a wrong answer.
+- Values often sit mid-row in long table text. When a search hit relates to this question, scan the hit's FULL text in code (string find or regex on the field's label) before concluding the value is absent - never judge from a truncated print.
+- Person and firm details (addresses, emails, phone numbers, dates of birth, genders, lawyer codes) are recorded in the client intake form and the filled court forms. For such fields, READ THOSE DOCUMENTS' FULL TEXT directly (iterate doc.items() and scan each document's text in code) rather than relying on search snippets; attribute each detail to the correct person by reading the surrounding section headings.
 - If the documents do not establish the answer, say so instead of guessing.
 
 ANSWER FORMAT: reply with the requested value only, with no explanation. If the documents do not establish it, reply with exactly: unknown",custom_1776832899270
@@ -625,9 +715,12 @@ FIELD TYPE: date. Respond in DD/MM/YYYY format only.
 
 EVIDENCE RULE:
 - Answer only from the matter documents in this corpus.
-- You may rely on what the documents establish directly (for example, a documented Australian residential address establishes that a person is present in and ordinarily resident in Australia).
+- You may rely on what the documents establish directly (for example, a documented Australian residential address establishes that a person is present in and ordinarily resident in Australia, and a documented Australian place of birth establishes Australian citizenship for form purposes).
 - Blank form scaffolding is NOT evidence. Unticked checkbox labels, printed lists of options with nothing selected, and empty template cells tell you nothing about this matter - ignore them.
 - NEVER guess from a person's name. In particular, never infer gender from a first name: a gender counts as established only where a document records it (for example ""Gender: Male"").
+- Search before concluding either way: a No or unknown claimed without a search targeted at this question's own subject is a wrong answer.
+- Values often sit mid-row in long table text. When a search hit relates to this question, scan the hit's FULL text in code (string find or regex on the field's label) before concluding the value is absent - never judge from a truncated print.
+- Person and firm details (addresses, emails, phone numbers, dates of birth, genders, lawyer codes) are recorded in the client intake form and the filled court forms. For such fields, READ THOSE DOCUMENTS' FULL TEXT directly (iterate doc.items() and scan each document's text in code) rather than relying on search snippets; attribute each detail to the correct person by reading the surrounding section headings.
 - If the documents do not establish the answer, say so instead of guessing.
 
 ANSWER FORMAT: reply with the date in DD/MM/YYYY format and nothing else. If the documents do not establish it, reply with exactly: unknown",child_1_date_of_birth
@@ -649,9 +742,12 @@ FIELD TYPE: checkbox. Respond with EXACTLY one of: ""Yes"" or ""No"". Do NOT ret
 
 EVIDENCE RULE:
 - Answer only from the matter documents in this corpus.
-- You may rely on what the documents establish directly (for example, a documented Australian residential address establishes that a person is present in and ordinarily resident in Australia).
+- You may rely on what the documents establish directly (for example, a documented Australian residential address establishes that a person is present in and ordinarily resident in Australia, and a documented Australian place of birth establishes Australian citizenship for form purposes).
 - Blank form scaffolding is NOT evidence. Unticked checkbox labels, printed lists of options with nothing selected, and empty template cells tell you nothing about this matter - ignore them.
 - NEVER guess from a person's name. In particular, never infer gender from a first name: a gender counts as established only where a document records it (for example ""Gender: Male"").
+- Search before concluding either way: a No or unknown claimed without a search targeted at this question's own subject is a wrong answer.
+- Values often sit mid-row in long table text. When a search hit relates to this question, scan the hit's FULL text in code (string find or regex on the field's label) before concluding the value is absent - never judge from a truncated print.
+- Person and firm details (addresses, emails, phone numbers, dates of birth, genders, lawyer codes) are recorded in the client intake form and the filled court forms. For such fields, READ THOSE DOCUMENTS' FULL TEXT directly (iterate doc.items() and scan each document's text in code) rather than relying on search snippets; attribute each detail to the correct person by reading the surrounding section headings.
 - If the documents do not establish the answer, say so instead of guessing.
 
 ANSWER FORMAT: reply with exactly one word - Yes or No. If the documents do not establish it, reply No.",custom_1776665232297
@@ -671,9 +767,12 @@ FIELD DETAILS: For Applicant 1 — Sarah Jane Mitchell. Applicant 1: Email addre
 
 EVIDENCE RULE:
 - Answer only from the matter documents in this corpus.
-- You may rely on what the documents establish directly (for example, a documented Australian residential address establishes that a person is present in and ordinarily resident in Australia).
+- You may rely on what the documents establish directly (for example, a documented Australian residential address establishes that a person is present in and ordinarily resident in Australia, and a documented Australian place of birth establishes Australian citizenship for form purposes).
 - Blank form scaffolding is NOT evidence. Unticked checkbox labels, printed lists of options with nothing selected, and empty template cells tell you nothing about this matter - ignore them.
 - NEVER guess from a person's name. In particular, never infer gender from a first name: a gender counts as established only where a document records it (for example ""Gender: Male"").
+- Search before concluding either way: a No or unknown claimed without a search targeted at this question's own subject is a wrong answer.
+- Values often sit mid-row in long table text. When a search hit relates to this question, scan the hit's FULL text in code (string find or regex on the field's label) before concluding the value is absent - never judge from a truncated print.
+- Person and firm details (addresses, emails, phone numbers, dates of birth, genders, lawyer codes) are recorded in the client intake form and the filled court forms. For such fields, READ THOSE DOCUMENTS' FULL TEXT directly (iterate doc.items() and scan each document's text in code) rather than relying on search snippets; attribute each detail to the correct person by reading the surrounding section headings.
 - If the documents do not establish the answer, say so instead of guessing.
 
 ANSWER FORMAT: reply with the requested value only, with no explanation. If the documents do not establish it, reply with exactly: unknown",applicant1_email_address
@@ -687,15 +786,21 @@ ANSWER FORMAT: reply with the requested value only, with no explanation. If the 
 THIS QUESTION IS ABOUT: Child 1 - Olivia Grace Mitchell.
 Do NOT use details belonging to the other child(ren) (Liam Thomas Mitchell); only Olivia Grace Mitchell's own details answer this.
 
+FORM CONVENTION - NUMBERED PARENT SLOTS:
+The form numbers each child's parents; the documents do not. On this form, Parent 2 is the APPLICANT parent (Sarah Jane Mitchell) and Parent 1 is the other parent (Daniel Robert Mitchell) - applicable only where the documents establish that person is in fact the child's parent (for example, a child recorded as living with 'Client (mother)' establishes the client is that child's parent). Answer with the documented person's details for the numbered slot; do not answer unknown merely because the documents never use the words 'Parent 1' or 'Parent 2'.
+
 FORM QUESTION: What is the family name of Parent 2 of Olivia Grace Mitchell?
 
 FIELD DETAILS: For Child 1 — Olivia Grace Mitchell. Child 1: Parent 2 family name
 
 EVIDENCE RULE:
 - Answer only from the matter documents in this corpus.
-- You may rely on what the documents establish directly (for example, a documented Australian residential address establishes that a person is present in and ordinarily resident in Australia).
+- You may rely on what the documents establish directly (for example, a documented Australian residential address establishes that a person is present in and ordinarily resident in Australia, and a documented Australian place of birth establishes Australian citizenship for form purposes).
 - Blank form scaffolding is NOT evidence. Unticked checkbox labels, printed lists of options with nothing selected, and empty template cells tell you nothing about this matter - ignore them.
 - NEVER guess from a person's name. In particular, never infer gender from a first name: a gender counts as established only where a document records it (for example ""Gender: Male"").
+- Search before concluding either way: a No or unknown claimed without a search targeted at this question's own subject is a wrong answer.
+- Values often sit mid-row in long table text. When a search hit relates to this question, scan the hit's FULL text in code (string find or regex on the field's label) before concluding the value is absent - never judge from a truncated print.
+- Person and firm details (addresses, emails, phone numbers, dates of birth, genders, lawyer codes) are recorded in the client intake form and the filled court forms. For such fields, READ THOSE DOCUMENTS' FULL TEXT directly (iterate doc.items() and scan each document's text in code) rather than relying on search snippets; attribute each detail to the correct person by reading the surrounding section headings.
 - If the documents do not establish the answer, say so instead of guessing.
 
 ANSWER FORMAT: reply with the requested value only, with no explanation. If the documents do not establish it, reply with exactly: unknown",child_1_parent_2_family_name
@@ -717,9 +822,12 @@ FIELD TYPE: checkbox. Respond with EXACTLY one of: ""Yes"" or ""No"". Do NOT ret
 
 EVIDENCE RULE:
 - Answer only from the matter documents in this corpus.
-- You may rely on what the documents establish directly (for example, a documented Australian residential address establishes that a person is present in and ordinarily resident in Australia).
+- You may rely on what the documents establish directly (for example, a documented Australian residential address establishes that a person is present in and ordinarily resident in Australia, and a documented Australian place of birth establishes Australian citizenship for form purposes).
 - Blank form scaffolding is NOT evidence. Unticked checkbox labels, printed lists of options with nothing selected, and empty template cells tell you nothing about this matter - ignore them.
 - NEVER guess from a person's name. In particular, never infer gender from a first name: a gender counts as established only where a document records it (for example ""Gender: Male"").
+- Search before concluding either way: a No or unknown claimed without a search targeted at this question's own subject is a wrong answer.
+- Values often sit mid-row in long table text. When a search hit relates to this question, scan the hit's FULL text in code (string find or regex on the field's label) before concluding the value is absent - never judge from a truncated print.
+- Person and firm details (addresses, emails, phone numbers, dates of birth, genders, lawyer codes) are recorded in the client intake form and the filled court forms. For such fields, READ THOSE DOCUMENTS' FULL TEXT directly (iterate doc.items() and scan each document's text in code) rather than relying on search snippets; attribute each detail to the correct person by reading the surrounding section headings.
 - If the documents do not establish the answer, say so instead of guessing.
 
 ANSWER FORMAT: reply with exactly one word - Yes or No. If the documents do not establish it, reply No.",applicant1_australian_citizen
@@ -741,9 +849,12 @@ FIELD TYPE: date. Respond in DD/MM/YYYY format only.
 
 EVIDENCE RULE:
 - Answer only from the matter documents in this corpus.
-- You may rely on what the documents establish directly (for example, a documented Australian residential address establishes that a person is present in and ordinarily resident in Australia).
+- You may rely on what the documents establish directly (for example, a documented Australian residential address establishes that a person is present in and ordinarily resident in Australia, and a documented Australian place of birth establishes Australian citizenship for form purposes).
 - Blank form scaffolding is NOT evidence. Unticked checkbox labels, printed lists of options with nothing selected, and empty template cells tell you nothing about this matter - ignore them.
 - NEVER guess from a person's name. In particular, never infer gender from a first name: a gender counts as established only where a document records it (for example ""Gender: Male"").
+- Search before concluding either way: a No or unknown claimed without a search targeted at this question's own subject is a wrong answer.
+- Values often sit mid-row in long table text. When a search hit relates to this question, scan the hit's FULL text in code (string find or regex on the field's label) before concluding the value is absent - never judge from a truncated print.
+- Person and firm details (addresses, emails, phone numbers, dates of birth, genders, lawyer codes) are recorded in the client intake form and the filled court forms. For such fields, READ THOSE DOCUMENTS' FULL TEXT directly (iterate doc.items() and scan each document's text in code) rather than relying on search snippets; attribute each detail to the correct person by reading the surrounding section headings.
 - If the documents do not establish the answer, say so instead of guessing.
 
 ANSWER FORMAT: reply with the date in DD/MM/YYYY format and nothing else. If the documents do not establish it, reply with exactly: unknown",respondent_1_date_of_birth

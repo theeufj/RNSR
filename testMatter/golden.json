@@ -201,9 +201,8 @@
       "id": "custom_1776587212064",
       "title": "[Radio button — exact option only] Is Olivia Grace Mitchell a female?  answer exactly \"yes\" or \"no\" in lowercase",
       "notes": "For Child 1 — Olivia Grace Mitchell. Child 1 - Female\n\nFIELD TYPE: radio button. Respond with the exact option text shown on the form, or \"No\" if not applicable. Do not return free-form text.\n\nMUTUALLY EXCLUSIVE GROUP \"Child 1: gender\" (What is {{person}}'s gender?): this field and [\"Child 1: Gender - M (male)\"; \"Child 1: Gender - Choose not to answer\"; \"Child 1: Gender - X (indeterminate/intersex/unspecified)\"] are alternative answers to the same question — EXACTLY ONE of them may have a value. Select this option ONLY if the matter documents affirmatively indicate it is the correct answer for the group; if a sibling field holds the real value, answer \"No\".",
-      "golden": [
-        "yes"
-      ],
+      "golden": [],
+      "golden_amended": "vendor capture had [\"yes\"] with references: [] — no document records either child's gender (verified against every doc), and the vendor left child 2's gender blank despite an equally suggestive name; name-inferred gender contradicts the evidence rule, so the gold is corrected to blank. Revert to [\"yes\"] for vendor-exact scoring.",
       "source_documents": []
     },
     {

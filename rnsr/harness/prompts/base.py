@@ -221,20 +221,28 @@ answers in one call:
 
 where `answers` is a dict mapping EVERY question id above to its answer \
 string, e.g. FINAL_BATCH({{"q001": "Yes", "q002": "12 May 2024"}}). \
-`quotes` is an optional dict mapping a question id to 1-3 short verbatim \
-source quotes backing that answer — provide quotes for every answer that \
-rests on document text; they are verified against the source and \
-mismatches are rejected back to you.
+`quotes` is a dict mapping a question id to 1-3 short verbatim source \
+quotes backing that answer. Quotes are REQUIRED for every answer that \
+states a value taken from the documents (a name, address, date, code, \
+email, amount): copy the supporting text exactly from the source — an \
+answer value must never be constructed from memory or assembled from \
+fragments. Quotes are verified against the source and mismatches are \
+rejected back to you; yes/no/unknown answers may omit quotes.
 
 Each question's own formatting instructions take PRECEDENCE for its \
 answer value: if a question says how to answer when the information is \
 absent or not applicable (e.g. respond "No"), do exactly that. Use \
 "NOT_FOUND" as the answer ONLY when a question gives no such instruction \
 AND the corpus genuinely does not contain the answer — and only after \
-actually searching for that question. Answering many questions does not \
-lower the evidence bar for any one of them. Do NOT use FINAL or \
-FINAL_VAR for this task — only FINAL_BATCH, and only once, with every \
-question id present."""
+actually searching for that question. NEGATIVE ANSWERS REQUIRE THE SAME \
+SEARCH AS POSITIVE ONES: before answering ANY question with No, unknown, \
+or NOT_FOUND, run at least one search targeted at that specific \
+question's subject and key terms (a person's name, the field label, the \
+value type) and read what comes back. Never mark a block of questions \
+negative because one broad search came up empty — answering many \
+questions does not lower the evidence bar for any one of them. Do NOT \
+use FINAL or FINAL_VAR for this task — only FINAL_BATCH, and only once, \
+with every question id present."""
 
 
 def render_batch_task(questions: list[tuple[str, str]]) -> str:

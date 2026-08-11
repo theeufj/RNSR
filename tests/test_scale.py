@@ -13,6 +13,9 @@ from rnsr.harness.prompts.base import compact_manifest
 def many_pdfs(tmp_path_factory):
     """Twelve small PDFs with known distinct content."""
     reportlab = pytest.importorskip("reportlab")  # noqa: F841
+    # consuming tests parse via the pdfium fast tier, which lives in the
+    # [ingest] extra that CI does not install
+    pytest.importorskip("pypdfium2")
     from reportlab.lib.pagesizes import LETTER
     from reportlab.lib.styles import getSampleStyleSheet
     from reportlab.platypus import Paragraph, SimpleDocTemplate

@@ -3,9 +3,24 @@
 from __future__ import annotations
 
 import base64
+import re
 
 from rnsr.llm.base import LLMResponse
 from rnsr.llm.cost import make_usage
+
+# Reasoning families (o-series, gpt-5.x) reject sampling parameters: any
+# temperature other than the default 1 fails with 400 unsupported_value,
+# and seed is likewise unsupported. Verified against the API 2026-08.
+_NO_SAMPLING = re.compile(r"^(gpt-5|o1|o3|o4)")
+
+
+def _sampling_kwargs(model: str, temperature: float, seed: int | None) -> dict:
+    if _NO_SAMPLING.match(model):
+        return {}
+    kwargs: dict = {"temperature": temperature}
+    if seed is not None:
+        kwargs["seed"] = seed
+    return kwargs
 
 
 class OpenAIClient:
@@ -26,8 +41,7 @@ class OpenAIClient:
             model=model,
             messages=messages,
             max_completion_tokens=max_tokens,
-            temperature=temperature,
-            seed=seed,
+            **_sampling_kwargs(model, temperature, seed),
         )
         usage = resp.usage
         return LLMResponse(

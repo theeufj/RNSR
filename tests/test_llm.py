@@ -103,6 +103,57 @@ class TestCost:
         assert abs(total.cost_usd - 0.3) < 1e-9
 
 
+class TestOpenAIClient:
+    @staticmethod
+    def _fake_create(captured: dict):
+        async def create(**kwargs):
+            captured.clear()
+            captured.update(kwargs)
+
+            class Usage:
+                prompt_tokens = 1
+                completion_tokens = 1
+
+            class Message:
+                content = "ok"
+
+            class Choice:
+                message = Message()
+
+            class Resp:
+                usage = Usage()
+                choices = [Choice()]
+            return Resp()
+        return create
+
+    async def test_reasoning_models_omit_sampling_params(self, monkeypatch):
+        # gpt-5.x rejects temperature != 1 with 400 unsupported_value; the
+        # client must not send temperature/seed at all (seen live: every
+        # OpenAI root call failed until these were stripped)
+        from rnsr.llm.openai_client import OpenAIClient
+
+        client = OpenAIClient(api_key="sk-test")
+        captured: dict = {}
+        monkeypatch.setattr(client._client.chat.completions, "create",
+                            self._fake_create(captured))
+        await client.complete("hi", model="gpt-5.6-terra",
+                              temperature=0.0, seed=42)
+        assert "temperature" not in captured
+        assert "seed" not in captured
+        assert captured["max_completion_tokens"] == 4096
+
+    async def test_non_reasoning_models_keep_sampling_params(self, monkeypatch):
+        from rnsr.llm.openai_client import OpenAIClient
+
+        client = OpenAIClient(api_key="sk-test")
+        captured: dict = {}
+        monkeypatch.setattr(client._client.chat.completions, "create",
+                            self._fake_create(captured))
+        await client.complete("hi", model="gpt-4.1", temperature=0.0, seed=42)
+        assert captured["temperature"] == 0.0
+        assert captured["seed"] == 42
+
+
 class TestMock:
     async def test_queue_then_rules_then_default(self):
         mock = MockLLM(default="D").script("Q1").rule("hello", "R")

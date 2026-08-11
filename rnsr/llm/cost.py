@@ -10,8 +10,11 @@ from __future__ import annotations
 from rnsr.llm.base import Usage
 
 PRICES_PER_MTOK: dict[str, tuple[float, float]] = {
-    # OpenAI
-    "gpt-5.2": (1.25, 10.0),
+    # OpenAI (GPT-5.6 rates as of 2026-07-30 cut; sol unchanged since GA)
+    "gpt-5.6-sol": (5.0, 30.0),
+    "gpt-5.6-terra": (2.0, 12.0),
+    "gpt-5.6-luna": (0.20, 1.20),
+    "gpt-5.2": (1.25, 10.0),          # deprecated; kept for old trajectories
     "gpt-5.2-pro": (15.0, 120.0),
     "gpt-5-mini": (0.25, 2.0),
     "text-embedding-3-small": (0.02, 0.0),

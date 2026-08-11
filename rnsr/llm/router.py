@@ -16,10 +16,13 @@ from rnsr.llm.base import LLMClient
 
 DEFAULT_MODELS: dict[str, dict[str, str]] = {
     "openai": {
-        "root": "gpt-5.2",
-        "sub": "gpt-5-mini",
+        # GPT-5.6 tiers (GA 2026-07): terra ~ sonnet-class balance for the
+        # root loop, luna for cheap batched sub calls. gpt-5.2/gpt-5-mini
+        # are deprecated API-side.
+        "root": "gpt-5.6-terra",
+        "sub": "gpt-5.6-luna",
         "embed": "text-embedding-3-small",
-        "vision": "gpt-5-mini",
+        "vision": "gpt-5.6-luna",
     },
     "anthropic": {
         "root": "claude-sonnet-4-5",

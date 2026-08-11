@@ -30,7 +30,7 @@ EVIDENCE RULE:
 - NEVER guess from a person's name. In particular, never infer gender from a first name: a gender counts as established only where a document records it (for example ""Gender: Male"").
 - Search before concluding either way: a No or unknown claimed without a search targeted at this question's own subject is a wrong answer.
 - Values often sit mid-row in long table text. When a search hit relates to this question, scan the hit's FULL text in code (string find or regex on the field's label) before concluding the value is absent - never judge from a truncated print.
-- Person and firm details (addresses, emails, phone numbers, dates of birth, genders, lawyer codes) are recorded in the client intake form and the filled court forms. For such fields, READ THOSE DOCUMENTS' FULL TEXT directly (iterate doc.items() and scan each document's text in code) rather than relying on search snippets; attribute each detail to the correct person by reading the surrounding section headings.
+- Person and firm details (addresses, emails, phone numbers, dates and places of birth, genders, lawyer codes) are recorded in the client intake form, the filled court forms, and the marriage certificate. For such fields, READ THOSE DOCUMENTS' FULL TEXT directly (iterate doc.items() and scan each document's text in code) rather than relying on search snippets; attribute each detail to the correct person by reading the surrounding section headings.
 - If the documents do not establish the answer, say so instead of guessing.
 
 If the documents do not establish which option is correct, choose unknown - that is a valid and expected answer for questions this matter's documents never address.
@@ -69,7 +69,7 @@ EVIDENCE RULE:
 - NEVER guess from a person's name. In particular, never infer gender from a first name: a gender counts as established only where a document records it (for example ""Gender: Male"").
 - Search before concluding either way: a No or unknown claimed without a search targeted at this question's own subject is a wrong answer.
 - Values often sit mid-row in long table text. When a search hit relates to this question, scan the hit's FULL text in code (string find or regex on the field's label) before concluding the value is absent - never judge from a truncated print.
-- Person and firm details (addresses, emails, phone numbers, dates of birth, genders, lawyer codes) are recorded in the client intake form and the filled court forms. For such fields, READ THOSE DOCUMENTS' FULL TEXT directly (iterate doc.items() and scan each document's text in code) rather than relying on search snippets; attribute each detail to the correct person by reading the surrounding section headings.
+- Person and firm details (addresses, emails, phone numbers, dates and places of birth, genders, lawyer codes) are recorded in the client intake form, the filled court forms, and the marriage certificate. For such fields, READ THOSE DOCUMENTS' FULL TEXT directly (iterate doc.items() and scan each document's text in code) rather than relying on search snippets; attribute each detail to the correct person by reading the surrounding section headings.
 - If the documents do not establish the answer, say so instead of guessing.
 
 If the documents do not establish which option is correct, choose unknown - that is a valid and expected answer for questions this matter's documents never address.
@@ -112,7 +112,7 @@ EVIDENCE RULE:
 - NEVER guess from a person's name. In particular, never infer gender from a first name: a gender counts as established only where a document records it (for example ""Gender: Male"").
 - Search before concluding either way: a No or unknown claimed without a search targeted at this question's own subject is a wrong answer.
 - Values often sit mid-row in long table text. When a search hit relates to this question, scan the hit's FULL text in code (string find or regex on the field's label) before concluding the value is absent - never judge from a truncated print.
-- Person and firm details (addresses, emails, phone numbers, dates of birth, genders, lawyer codes) are recorded in the client intake form and the filled court forms. For such fields, READ THOSE DOCUMENTS' FULL TEXT directly (iterate doc.items() and scan each document's text in code) rather than relying on search snippets; attribute each detail to the correct person by reading the surrounding section headings.
+- Person and firm details (addresses, emails, phone numbers, dates and places of birth, genders, lawyer codes) are recorded in the client intake form, the filled court forms, and the marriage certificate. For such fields, READ THOSE DOCUMENTS' FULL TEXT directly (iterate doc.items() and scan each document's text in code) rather than relying on search snippets; attribute each detail to the correct person by reading the surrounding section headings.
 - If the documents do not establish the answer, say so instead of guessing.
 
 If the documents do not establish which option is correct, choose unknown - that is a valid and expected answer for questions this matter's documents never address.
@@ -147,7 +147,7 @@ EVIDENCE RULE:
 - NEVER guess from a person's name. In particular, never infer gender from a first name: a gender counts as established only where a document records it (for example ""Gender: Male"").
 - Search before concluding either way: a No or unknown claimed without a search targeted at this question's own subject is a wrong answer.
 - Values often sit mid-row in long table text. When a search hit relates to this question, scan the hit's FULL text in code (string find or regex on the field's label) before concluding the value is absent - never judge from a truncated print.
-- Person and firm details (addresses, emails, phone numbers, dates of birth, genders, lawyer codes) are recorded in the client intake form and the filled court forms. For such fields, READ THOSE DOCUMENTS' FULL TEXT directly (iterate doc.items() and scan each document's text in code) rather than relying on search snippets; attribute each detail to the correct person by reading the surrounding section headings.
+- Person and firm details (addresses, emails, phone numbers, dates and places of birth, genders, lawyer codes) are recorded in the client intake form, the filled court forms, and the marriage certificate. For such fields, READ THOSE DOCUMENTS' FULL TEXT directly (iterate doc.items() and scan each document's text in code) rather than relying on search snippets; attribute each detail to the correct person by reading the surrounding section headings.
 - If the documents do not establish the answer, say so instead of guessing.
 
 If the documents do not establish which option is correct, choose unknown - that is a valid and expected answer for questions this matter's documents never address.
@@ -190,7 +190,7 @@ EVIDENCE RULE:
 - NEVER guess from a person's name. In particular, never infer gender from a first name: a gender counts as established only where a document records it (for example ""Gender: Male"").
 - Search before concluding either way: a No or unknown claimed without a search targeted at this question's own subject is a wrong answer.
 - Values often sit mid-row in long table text. When a search hit relates to this question, scan the hit's FULL text in code (string find or regex on the field's label) before concluding the value is absent - never judge from a truncated print.
-- Person and firm details (addresses, emails, phone numbers, dates of birth, genders, lawyer codes) are recorded in the client intake form and the filled court forms. For such fields, READ THOSE DOCUMENTS' FULL TEXT directly (iterate doc.items() and scan each document's text in code) rather than relying on search snippets; attribute each detail to the correct person by reading the surrounding section headings.
+- Person and firm details (addresses, emails, phone numbers, dates and places of birth, genders, lawyer codes) are recorded in the client intake form, the filled court forms, and the marriage certificate. For such fields, READ THOSE DOCUMENTS' FULL TEXT directly (iterate doc.items() and scan each document's text in code) rather than relying on search snippets; attribute each detail to the correct person by reading the surrounding section headings.
 - If the documents do not establish the answer, say so instead of guessing.
 
 If the documents do not establish which option is correct, choose unknown - that is a valid and expected answer for questions this matter's documents never address.
@@ -233,7 +233,7 @@ EVIDENCE RULE:
 - NEVER guess from a person's name. In particular, never infer gender from a first name: a gender counts as established only where a document records it (for example ""Gender: Male"").
 - Search before concluding either way: a No or unknown claimed without a search targeted at this question's own subject is a wrong answer.
 - Values often sit mid-row in long table text. When a search hit relates to this question, scan the hit's FULL text in code (string find or regex on the field's label) before concluding the value is absent - never judge from a truncated print.
-- Person and firm details (addresses, emails, phone numbers, dates of birth, genders, lawyer codes) are recorded in the client intake form and the filled court forms. For such fields, READ THOSE DOCUMENTS' FULL TEXT directly (iterate doc.items() and scan each document's text in code) rather than relying on search snippets; attribute each detail to the correct person by reading the surrounding section headings.
+- Person and firm details (addresses, emails, phone numbers, dates and places of birth, genders, lawyer codes) are recorded in the client intake form, the filled court forms, and the marriage certificate. For such fields, READ THOSE DOCUMENTS' FULL TEXT directly (iterate doc.items() and scan each document's text in code) rather than relying on search snippets; attribute each detail to the correct person by reading the surrounding section headings.
 - If the documents do not establish the answer, say so instead of guessing.
 
 If the documents do not establish which option is correct, choose unknown - that is a valid and expected answer for questions this matter's documents never address.
@@ -262,7 +262,7 @@ EVIDENCE RULE:
 - NEVER guess from a person's name. In particular, never infer gender from a first name: a gender counts as established only where a document records it (for example ""Gender: Male"").
 - Search before concluding either way: a No or unknown claimed without a search targeted at this question's own subject is a wrong answer.
 - Values often sit mid-row in long table text. When a search hit relates to this question, scan the hit's FULL text in code (string find or regex on the field's label) before concluding the value is absent - never judge from a truncated print.
-- Person and firm details (addresses, emails, phone numbers, dates of birth, genders, lawyer codes) are recorded in the client intake form and the filled court forms. For such fields, READ THOSE DOCUMENTS' FULL TEXT directly (iterate doc.items() and scan each document's text in code) rather than relying on search snippets; attribute each detail to the correct person by reading the surrounding section headings.
+- Person and firm details (addresses, emails, phone numbers, dates and places of birth, genders, lawyer codes) are recorded in the client intake form, the filled court forms, and the marriage certificate. For such fields, READ THOSE DOCUMENTS' FULL TEXT directly (iterate doc.items() and scan each document's text in code) rather than relying on search snippets; attribute each detail to the correct person by reading the surrounding section headings.
 - If the documents do not establish the answer, say so instead of guessing.",group::Date of marriage
 "MATTER ROLES (authoritative - use these to keep the parties straight):
 - The form being completed is: Initiating Application
@@ -285,7 +285,7 @@ EVIDENCE RULE:
 - NEVER guess from a person's name. In particular, never infer gender from a first name: a gender counts as established only where a document records it (for example ""Gender: Male"").
 - Search before concluding either way: a No or unknown claimed without a search targeted at this question's own subject is a wrong answer.
 - Values often sit mid-row in long table text. When a search hit relates to this question, scan the hit's FULL text in code (string find or regex on the field's label) before concluding the value is absent - never judge from a truncated print.
-- Person and firm details (addresses, emails, phone numbers, dates of birth, genders, lawyer codes) are recorded in the client intake form and the filled court forms. For such fields, READ THOSE DOCUMENTS' FULL TEXT directly (iterate doc.items() and scan each document's text in code) rather than relying on search snippets; attribute each detail to the correct person by reading the surrounding section headings.
+- Person and firm details (addresses, emails, phone numbers, dates and places of birth, genders, lawyer codes) are recorded in the client intake form, the filled court forms, and the marriage certificate. For such fields, READ THOSE DOCUMENTS' FULL TEXT directly (iterate doc.items() and scan each document's text in code) rather than relying on search snippets; attribute each detail to the correct person by reading the surrounding section headings.
 - If the documents do not establish the answer, say so instead of guessing.",group::Date of final separation
 "MATTER ROLES (authoritative - use these to keep the parties straight):
 - The form being completed is: Initiating Application
@@ -316,7 +316,7 @@ EVIDENCE RULE:
 - NEVER guess from a person's name. In particular, never infer gender from a first name: a gender counts as established only where a document records it (for example ""Gender: Male"").
 - Search before concluding either way: a No or unknown claimed without a search targeted at this question's own subject is a wrong answer.
 - Values often sit mid-row in long table text. When a search hit relates to this question, scan the hit's FULL text in code (string find or regex on the field's label) before concluding the value is absent - never judge from a truncated print.
-- Person and firm details (addresses, emails, phone numbers, dates of birth, genders, lawyer codes) are recorded in the client intake form and the filled court forms. For such fields, READ THOSE DOCUMENTS' FULL TEXT directly (iterate doc.items() and scan each document's text in code) rather than relying on search snippets; attribute each detail to the correct person by reading the surrounding section headings.
+- Person and firm details (addresses, emails, phone numbers, dates and places of birth, genders, lawyer codes) are recorded in the client intake form, the filled court forms, and the marriage certificate. For such fields, READ THOSE DOCUMENTS' FULL TEXT directly (iterate doc.items() and scan each document's text in code) rather than relying on search snippets; attribute each detail to the correct person by reading the surrounding section headings.
 - If the documents do not establish the answer, say so instead of guessing.
 
 If the documents do not establish which option is correct, choose unknown - that is a valid and expected answer for questions this matter's documents never address.
@@ -353,7 +353,7 @@ EVIDENCE RULE:
 - NEVER guess from a person's name. In particular, never infer gender from a first name: a gender counts as established only where a document records it (for example ""Gender: Male"").
 - Search before concluding either way: a No or unknown claimed without a search targeted at this question's own subject is a wrong answer.
 - Values often sit mid-row in long table text. When a search hit relates to this question, scan the hit's FULL text in code (string find or regex on the field's label) before concluding the value is absent - never judge from a truncated print.
-- Person and firm details (addresses, emails, phone numbers, dates of birth, genders, lawyer codes) are recorded in the client intake form and the filled court forms. For such fields, READ THOSE DOCUMENTS' FULL TEXT directly (iterate doc.items() and scan each document's text in code) rather than relying on search snippets; attribute each detail to the correct person by reading the surrounding section headings.
+- Person and firm details (addresses, emails, phone numbers, dates and places of birth, genders, lawyer codes) are recorded in the client intake form, the filled court forms, and the marriage certificate. For such fields, READ THOSE DOCUMENTS' FULL TEXT directly (iterate doc.items() and scan each document's text in code) rather than relying on search snippets; attribute each detail to the correct person by reading the surrounding section headings.
 - If the documents do not establish the answer, say so instead of guessing.
 
 If the documents do not establish which option is correct, choose unknown - that is a valid and expected answer for questions this matter's documents never address.
@@ -390,7 +390,7 @@ EVIDENCE RULE:
 - NEVER guess from a person's name. In particular, never infer gender from a first name: a gender counts as established only where a document records it (for example ""Gender: Male"").
 - Search before concluding either way: a No or unknown claimed without a search targeted at this question's own subject is a wrong answer.
 - Values often sit mid-row in long table text. When a search hit relates to this question, scan the hit's FULL text in code (string find or regex on the field's label) before concluding the value is absent - never judge from a truncated print.
-- Person and firm details (addresses, emails, phone numbers, dates of birth, genders, lawyer codes) are recorded in the client intake form and the filled court forms. For such fields, READ THOSE DOCUMENTS' FULL TEXT directly (iterate doc.items() and scan each document's text in code) rather than relying on search snippets; attribute each detail to the correct person by reading the surrounding section headings.
+- Person and firm details (addresses, emails, phone numbers, dates and places of birth, genders, lawyer codes) are recorded in the client intake form, the filled court forms, and the marriage certificate. For such fields, READ THOSE DOCUMENTS' FULL TEXT directly (iterate doc.items() and scan each document's text in code) rather than relying on search snippets; attribute each detail to the correct person by reading the surrounding section headings.
 - If the documents do not establish the answer, say so instead of guessing.
 
 If the documents do not establish which option is correct, choose unknown - that is a valid and expected answer for questions this matter's documents never address.
@@ -424,7 +424,7 @@ EVIDENCE RULE:
 - NEVER guess from a person's name. In particular, never infer gender from a first name: a gender counts as established only where a document records it (for example ""Gender: Male"").
 - Search before concluding either way: a No or unknown claimed without a search targeted at this question's own subject is a wrong answer.
 - Values often sit mid-row in long table text. When a search hit relates to this question, scan the hit's FULL text in code (string find or regex on the field's label) before concluding the value is absent - never judge from a truncated print.
-- Person and firm details (addresses, emails, phone numbers, dates of birth, genders, lawyer codes) are recorded in the client intake form and the filled court forms. For such fields, READ THOSE DOCUMENTS' FULL TEXT directly (iterate doc.items() and scan each document's text in code) rather than relying on search snippets; attribute each detail to the correct person by reading the surrounding section headings.
+- Person and firm details (addresses, emails, phone numbers, dates and places of birth, genders, lawyer codes) are recorded in the client intake form, the filled court forms, and the marriage certificate. For such fields, READ THOSE DOCUMENTS' FULL TEXT directly (iterate doc.items() and scan each document's text in code) rather than relying on search snippets; attribute each detail to the correct person by reading the surrounding section headings.
 - If the documents do not establish the answer, say so instead of guessing.
 
 ANSWER FORMAT: reply with exactly one word - Yes or No. If the documents do not establish it, reply No.",respondent_1_present_in_australia
@@ -454,7 +454,7 @@ EVIDENCE RULE:
 - NEVER guess from a person's name. In particular, never infer gender from a first name: a gender counts as established only where a document records it (for example ""Gender: Male"").
 - Search before concluding either way: a No or unknown claimed without a search targeted at this question's own subject is a wrong answer.
 - Values often sit mid-row in long table text. When a search hit relates to this question, scan the hit's FULL text in code (string find or regex on the field's label) before concluding the value is absent - never judge from a truncated print.
-- Person and firm details (addresses, emails, phone numbers, dates of birth, genders, lawyer codes) are recorded in the client intake form and the filled court forms. For such fields, READ THOSE DOCUMENTS' FULL TEXT directly (iterate doc.items() and scan each document's text in code) rather than relying on search snippets; attribute each detail to the correct person by reading the surrounding section headings.
+- Person and firm details (addresses, emails, phone numbers, dates and places of birth, genders, lawyer codes) are recorded in the client intake form, the filled court forms, and the marriage certificate. For such fields, READ THOSE DOCUMENTS' FULL TEXT directly (iterate doc.items() and scan each document's text in code) rather than relying on search snippets; attribute each detail to the correct person by reading the surrounding section headings.
 - If the documents do not establish the answer, say so instead of guessing.
 
 ANSWER FORMAT: reply with exactly one word - Yes or No. If the documents do not establish it, reply No.",respondent_1_ordinarily_resident_in_australia
@@ -479,7 +479,7 @@ EVIDENCE RULE:
 - NEVER guess from a person's name. In particular, never infer gender from a first name: a gender counts as established only where a document records it (for example ""Gender: Male"").
 - Search before concluding either way: a No or unknown claimed without a search targeted at this question's own subject is a wrong answer.
 - Values often sit mid-row in long table text. When a search hit relates to this question, scan the hit's FULL text in code (string find or regex on the field's label) before concluding the value is absent - never judge from a truncated print.
-- Person and firm details (addresses, emails, phone numbers, dates of birth, genders, lawyer codes) are recorded in the client intake form and the filled court forms. For such fields, READ THOSE DOCUMENTS' FULL TEXT directly (iterate doc.items() and scan each document's text in code) rather than relying on search snippets; attribute each detail to the correct person by reading the surrounding section headings.
+- Person and firm details (addresses, emails, phone numbers, dates and places of birth, genders, lawyer codes) are recorded in the client intake form, the filled court forms, and the marriage certificate. For such fields, READ THOSE DOCUMENTS' FULL TEXT directly (iterate doc.items() and scan each document's text in code) rather than relying on search snippets; attribute each detail to the correct person by reading the surrounding section headings.
 - If the documents do not establish the answer, say so instead of guessing.
 
 ANSWER FORMAT: reply with the requested value only, with no explanation. If the documents do not establish it, reply with exactly: unknown",respondent_1_email
@@ -504,7 +504,7 @@ EVIDENCE RULE:
 - NEVER guess from a person's name. In particular, never infer gender from a first name: a gender counts as established only where a document records it (for example ""Gender: Male"").
 - Search before concluding either way: a No or unknown claimed without a search targeted at this question's own subject is a wrong answer.
 - Values often sit mid-row in long table text. When a search hit relates to this question, scan the hit's FULL text in code (string find or regex on the field's label) before concluding the value is absent - never judge from a truncated print.
-- Person and firm details (addresses, emails, phone numbers, dates of birth, genders, lawyer codes) are recorded in the client intake form and the filled court forms. For such fields, READ THOSE DOCUMENTS' FULL TEXT directly (iterate doc.items() and scan each document's text in code) rather than relying on search snippets; attribute each detail to the correct person by reading the surrounding section headings.
+- Person and firm details (addresses, emails, phone numbers, dates and places of birth, genders, lawyer codes) are recorded in the client intake form, the filled court forms, and the marriage certificate. For such fields, READ THOSE DOCUMENTS' FULL TEXT directly (iterate doc.items() and scan each document's text in code) rather than relying on search snippets; attribute each detail to the correct person by reading the surrounding section headings.
 - If the documents do not establish the answer, say so instead of guessing.
 
 ANSWER FORMAT: reply with the requested value only, with no explanation. If the documents do not establish it, reply with exactly: unknown",custom_1776828542892
@@ -533,7 +533,7 @@ EVIDENCE RULE:
 - NEVER guess from a person's name. In particular, never infer gender from a first name: a gender counts as established only where a document records it (for example ""Gender: Male"").
 - Search before concluding either way: a No or unknown claimed without a search targeted at this question's own subject is a wrong answer.
 - Values often sit mid-row in long table text. When a search hit relates to this question, scan the hit's FULL text in code (string find or regex on the field's label) before concluding the value is absent - never judge from a truncated print.
-- Person and firm details (addresses, emails, phone numbers, dates of birth, genders, lawyer codes) are recorded in the client intake form and the filled court forms. For such fields, READ THOSE DOCUMENTS' FULL TEXT directly (iterate doc.items() and scan each document's text in code) rather than relying on search snippets; attribute each detail to the correct person by reading the surrounding section headings.
+- Person and firm details (addresses, emails, phone numbers, dates and places of birth, genders, lawyer codes) are recorded in the client intake form, the filled court forms, and the marriage certificate. For such fields, READ THOSE DOCUMENTS' FULL TEXT directly (iterate doc.items() and scan each document's text in code) rather than relying on search snippets; attribute each detail to the correct person by reading the surrounding section headings.
 - If the documents do not establish the answer, say so instead of guessing.
 
 ANSWER FORMAT: reply with the requested value only, with no explanation. If the documents do not establish it, reply with exactly: unknown",lawyers_code
@@ -559,7 +559,7 @@ EVIDENCE RULE:
 - NEVER guess from a person's name. In particular, never infer gender from a first name: a gender counts as established only where a document records it (for example ""Gender: Male"").
 - Search before concluding either way: a No or unknown claimed without a search targeted at this question's own subject is a wrong answer.
 - Values often sit mid-row in long table text. When a search hit relates to this question, scan the hit's FULL text in code (string find or regex on the field's label) before concluding the value is absent - never judge from a truncated print.
-- Person and firm details (addresses, emails, phone numbers, dates of birth, genders, lawyer codes) are recorded in the client intake form and the filled court forms. For such fields, READ THOSE DOCUMENTS' FULL TEXT directly (iterate doc.items() and scan each document's text in code) rather than relying on search snippets; attribute each detail to the correct person by reading the surrounding section headings.
+- Person and firm details (addresses, emails, phone numbers, dates and places of birth, genders, lawyer codes) are recorded in the client intake form, the filled court forms, and the marriage certificate. For such fields, READ THOSE DOCUMENTS' FULL TEXT directly (iterate doc.items() and scan each document's text in code) rather than relying on search snippets; attribute each detail to the correct person by reading the surrounding section headings.
 - If the documents do not establish the answer, say so instead of guessing.
 
 ANSWER FORMAT: reply with exactly one word - Yes or No. If the documents do not establish it, reply No.",order_other
@@ -586,7 +586,7 @@ EVIDENCE RULE:
 - NEVER guess from a person's name. In particular, never infer gender from a first name: a gender counts as established only where a document records it (for example ""Gender: Male"").
 - Search before concluding either way: a No or unknown claimed without a search targeted at this question's own subject is a wrong answer.
 - Values often sit mid-row in long table text. When a search hit relates to this question, scan the hit's FULL text in code (string find or regex on the field's label) before concluding the value is absent - never judge from a truncated print.
-- Person and firm details (addresses, emails, phone numbers, dates of birth, genders, lawyer codes) are recorded in the client intake form and the filled court forms. For such fields, READ THOSE DOCUMENTS' FULL TEXT directly (iterate doc.items() and scan each document's text in code) rather than relying on search snippets; attribute each detail to the correct person by reading the surrounding section headings.
+- Person and firm details (addresses, emails, phone numbers, dates and places of birth, genders, lawyer codes) are recorded in the client intake form, the filled court forms, and the marriage certificate. For such fields, READ THOSE DOCUMENTS' FULL TEXT directly (iterate doc.items() and scan each document's text in code) rather than relying on search snippets; attribute each detail to the correct person by reading the surrounding section headings.
 - If the documents do not establish the answer, say so instead of guessing.
 
 ANSWER FORMAT: reply with exactly one word - Yes or No. If the documents do not establish it, reply No.",applicant1_other_specify
@@ -614,7 +614,7 @@ EVIDENCE RULE:
 - NEVER guess from a person's name. In particular, never infer gender from a first name: a gender counts as established only where a document records it (for example ""Gender: Male"").
 - Search before concluding either way: a No or unknown claimed without a search targeted at this question's own subject is a wrong answer.
 - Values often sit mid-row in long table text. When a search hit relates to this question, scan the hit's FULL text in code (string find or regex on the field's label) before concluding the value is absent - never judge from a truncated print.
-- Person and firm details (addresses, emails, phone numbers, dates of birth, genders, lawyer codes) are recorded in the client intake form and the filled court forms. For such fields, READ THOSE DOCUMENTS' FULL TEXT directly (iterate doc.items() and scan each document's text in code) rather than relying on search snippets; attribute each detail to the correct person by reading the surrounding section headings.
+- Person and firm details (addresses, emails, phone numbers, dates and places of birth, genders, lawyer codes) are recorded in the client intake form, the filled court forms, and the marriage certificate. For such fields, READ THOSE DOCUMENTS' FULL TEXT directly (iterate doc.items() and scan each document's text in code) rather than relying on search snippets; attribute each detail to the correct person by reading the surrounding section headings.
 - If the documents do not establish the answer, say so instead of guessing.
 
 ANSWER FORMAT: reply with the requested value only, with no explanation. If the documents do not establish it, reply with exactly: unknown",child_2_parent_2_given_names
@@ -643,7 +643,7 @@ EVIDENCE RULE:
 - NEVER guess from a person's name. In particular, never infer gender from a first name: a gender counts as established only where a document records it (for example ""Gender: Male"").
 - Search before concluding either way: a No or unknown claimed without a search targeted at this question's own subject is a wrong answer.
 - Values often sit mid-row in long table text. When a search hit relates to this question, scan the hit's FULL text in code (string find or regex on the field's label) before concluding the value is absent - never judge from a truncated print.
-- Person and firm details (addresses, emails, phone numbers, dates of birth, genders, lawyer codes) are recorded in the client intake form and the filled court forms. For such fields, READ THOSE DOCUMENTS' FULL TEXT directly (iterate doc.items() and scan each document's text in code) rather than relying on search snippets; attribute each detail to the correct person by reading the surrounding section headings.
+- Person and firm details (addresses, emails, phone numbers, dates and places of birth, genders, lawyer codes) are recorded in the client intake form, the filled court forms, and the marriage certificate. For such fields, READ THOSE DOCUMENTS' FULL TEXT directly (iterate doc.items() and scan each document's text in code) rather than relying on search snippets; attribute each detail to the correct person by reading the surrounding section headings.
 - If the documents do not establish the answer, say so instead of guessing.
 
 ANSWER FORMAT: reply with the requested value only, with no explanation. If the documents do not establish it, reply with exactly: unknown",address_for_service_in_australia
@@ -668,7 +668,7 @@ EVIDENCE RULE:
 - NEVER guess from a person's name. In particular, never infer gender from a first name: a gender counts as established only where a document records it (for example ""Gender: Male"").
 - Search before concluding either way: a No or unknown claimed without a search targeted at this question's own subject is a wrong answer.
 - Values often sit mid-row in long table text. When a search hit relates to this question, scan the hit's FULL text in code (string find or regex on the field's label) before concluding the value is absent - never judge from a truncated print.
-- Person and firm details (addresses, emails, phone numbers, dates of birth, genders, lawyer codes) are recorded in the client intake form and the filled court forms. For such fields, READ THOSE DOCUMENTS' FULL TEXT directly (iterate doc.items() and scan each document's text in code) rather than relying on search snippets; attribute each detail to the correct person by reading the surrounding section headings.
+- Person and firm details (addresses, emails, phone numbers, dates and places of birth, genders, lawyer codes) are recorded in the client intake form, the filled court forms, and the marriage certificate. For such fields, READ THOSE DOCUMENTS' FULL TEXT directly (iterate doc.items() and scan each document's text in code) rather than relying on search snippets; attribute each detail to the correct person by reading the surrounding section headings.
 - If the documents do not establish the answer, say so instead of guessing.
 
 ANSWER FORMAT: reply with the requested value only, with no explanation. If the documents do not establish it, reply with exactly: unknown",respondent_1_residential_address_line1
@@ -693,7 +693,7 @@ EVIDENCE RULE:
 - NEVER guess from a person's name. In particular, never infer gender from a first name: a gender counts as established only where a document records it (for example ""Gender: Male"").
 - Search before concluding either way: a No or unknown claimed without a search targeted at this question's own subject is a wrong answer.
 - Values often sit mid-row in long table text. When a search hit relates to this question, scan the hit's FULL text in code (string find or regex on the field's label) before concluding the value is absent - never judge from a truncated print.
-- Person and firm details (addresses, emails, phone numbers, dates of birth, genders, lawyer codes) are recorded in the client intake form and the filled court forms. For such fields, READ THOSE DOCUMENTS' FULL TEXT directly (iterate doc.items() and scan each document's text in code) rather than relying on search snippets; attribute each detail to the correct person by reading the surrounding section headings.
+- Person and firm details (addresses, emails, phone numbers, dates and places of birth, genders, lawyer codes) are recorded in the client intake form, the filled court forms, and the marriage certificate. For such fields, READ THOSE DOCUMENTS' FULL TEXT directly (iterate doc.items() and scan each document's text in code) rather than relying on search snippets; attribute each detail to the correct person by reading the surrounding section headings.
 - If the documents do not establish the answer, say so instead of guessing.
 
 ANSWER FORMAT: reply with the requested value only, with no explanation. If the documents do not establish it, reply with exactly: unknown",custom_1776832899270
@@ -720,7 +720,7 @@ EVIDENCE RULE:
 - NEVER guess from a person's name. In particular, never infer gender from a first name: a gender counts as established only where a document records it (for example ""Gender: Male"").
 - Search before concluding either way: a No or unknown claimed without a search targeted at this question's own subject is a wrong answer.
 - Values often sit mid-row in long table text. When a search hit relates to this question, scan the hit's FULL text in code (string find or regex on the field's label) before concluding the value is absent - never judge from a truncated print.
-- Person and firm details (addresses, emails, phone numbers, dates of birth, genders, lawyer codes) are recorded in the client intake form and the filled court forms. For such fields, READ THOSE DOCUMENTS' FULL TEXT directly (iterate doc.items() and scan each document's text in code) rather than relying on search snippets; attribute each detail to the correct person by reading the surrounding section headings.
+- Person and firm details (addresses, emails, phone numbers, dates and places of birth, genders, lawyer codes) are recorded in the client intake form, the filled court forms, and the marriage certificate. For such fields, READ THOSE DOCUMENTS' FULL TEXT directly (iterate doc.items() and scan each document's text in code) rather than relying on search snippets; attribute each detail to the correct person by reading the surrounding section headings.
 - If the documents do not establish the answer, say so instead of guessing.
 
 ANSWER FORMAT: reply with the date in DD/MM/YYYY format and nothing else. If the documents do not establish it, reply with exactly: unknown",child_1_date_of_birth
@@ -747,7 +747,7 @@ EVIDENCE RULE:
 - NEVER guess from a person's name. In particular, never infer gender from a first name: a gender counts as established only where a document records it (for example ""Gender: Male"").
 - Search before concluding either way: a No or unknown claimed without a search targeted at this question's own subject is a wrong answer.
 - Values often sit mid-row in long table text. When a search hit relates to this question, scan the hit's FULL text in code (string find or regex on the field's label) before concluding the value is absent - never judge from a truncated print.
-- Person and firm details (addresses, emails, phone numbers, dates of birth, genders, lawyer codes) are recorded in the client intake form and the filled court forms. For such fields, READ THOSE DOCUMENTS' FULL TEXT directly (iterate doc.items() and scan each document's text in code) rather than relying on search snippets; attribute each detail to the correct person by reading the surrounding section headings.
+- Person and firm details (addresses, emails, phone numbers, dates and places of birth, genders, lawyer codes) are recorded in the client intake form, the filled court forms, and the marriage certificate. For such fields, READ THOSE DOCUMENTS' FULL TEXT directly (iterate doc.items() and scan each document's text in code) rather than relying on search snippets; attribute each detail to the correct person by reading the surrounding section headings.
 - If the documents do not establish the answer, say so instead of guessing.
 
 ANSWER FORMAT: reply with exactly one word - Yes or No. If the documents do not establish it, reply No.",custom_1776665232297
@@ -772,7 +772,7 @@ EVIDENCE RULE:
 - NEVER guess from a person's name. In particular, never infer gender from a first name: a gender counts as established only where a document records it (for example ""Gender: Male"").
 - Search before concluding either way: a No or unknown claimed without a search targeted at this question's own subject is a wrong answer.
 - Values often sit mid-row in long table text. When a search hit relates to this question, scan the hit's FULL text in code (string find or regex on the field's label) before concluding the value is absent - never judge from a truncated print.
-- Person and firm details (addresses, emails, phone numbers, dates of birth, genders, lawyer codes) are recorded in the client intake form and the filled court forms. For such fields, READ THOSE DOCUMENTS' FULL TEXT directly (iterate doc.items() and scan each document's text in code) rather than relying on search snippets; attribute each detail to the correct person by reading the surrounding section headings.
+- Person and firm details (addresses, emails, phone numbers, dates and places of birth, genders, lawyer codes) are recorded in the client intake form, the filled court forms, and the marriage certificate. For such fields, READ THOSE DOCUMENTS' FULL TEXT directly (iterate doc.items() and scan each document's text in code) rather than relying on search snippets; attribute each detail to the correct person by reading the surrounding section headings.
 - If the documents do not establish the answer, say so instead of guessing.
 
 ANSWER FORMAT: reply with the requested value only, with no explanation. If the documents do not establish it, reply with exactly: unknown",applicant1_email_address
@@ -800,7 +800,7 @@ EVIDENCE RULE:
 - NEVER guess from a person's name. In particular, never infer gender from a first name: a gender counts as established only where a document records it (for example ""Gender: Male"").
 - Search before concluding either way: a No or unknown claimed without a search targeted at this question's own subject is a wrong answer.
 - Values often sit mid-row in long table text. When a search hit relates to this question, scan the hit's FULL text in code (string find or regex on the field's label) before concluding the value is absent - never judge from a truncated print.
-- Person and firm details (addresses, emails, phone numbers, dates of birth, genders, lawyer codes) are recorded in the client intake form and the filled court forms. For such fields, READ THOSE DOCUMENTS' FULL TEXT directly (iterate doc.items() and scan each document's text in code) rather than relying on search snippets; attribute each detail to the correct person by reading the surrounding section headings.
+- Person and firm details (addresses, emails, phone numbers, dates and places of birth, genders, lawyer codes) are recorded in the client intake form, the filled court forms, and the marriage certificate. For such fields, READ THOSE DOCUMENTS' FULL TEXT directly (iterate doc.items() and scan each document's text in code) rather than relying on search snippets; attribute each detail to the correct person by reading the surrounding section headings.
 - If the documents do not establish the answer, say so instead of guessing.
 
 ANSWER FORMAT: reply with the requested value only, with no explanation. If the documents do not establish it, reply with exactly: unknown",child_1_parent_2_family_name
@@ -827,7 +827,7 @@ EVIDENCE RULE:
 - NEVER guess from a person's name. In particular, never infer gender from a first name: a gender counts as established only where a document records it (for example ""Gender: Male"").
 - Search before concluding either way: a No or unknown claimed without a search targeted at this question's own subject is a wrong answer.
 - Values often sit mid-row in long table text. When a search hit relates to this question, scan the hit's FULL text in code (string find or regex on the field's label) before concluding the value is absent - never judge from a truncated print.
-- Person and firm details (addresses, emails, phone numbers, dates of birth, genders, lawyer codes) are recorded in the client intake form and the filled court forms. For such fields, READ THOSE DOCUMENTS' FULL TEXT directly (iterate doc.items() and scan each document's text in code) rather than relying on search snippets; attribute each detail to the correct person by reading the surrounding section headings.
+- Person and firm details (addresses, emails, phone numbers, dates and places of birth, genders, lawyer codes) are recorded in the client intake form, the filled court forms, and the marriage certificate. For such fields, READ THOSE DOCUMENTS' FULL TEXT directly (iterate doc.items() and scan each document's text in code) rather than relying on search snippets; attribute each detail to the correct person by reading the surrounding section headings.
 - If the documents do not establish the answer, say so instead of guessing.
 
 ANSWER FORMAT: reply with exactly one word - Yes or No. If the documents do not establish it, reply No.",applicant1_australian_citizen
@@ -854,7 +854,7 @@ EVIDENCE RULE:
 - NEVER guess from a person's name. In particular, never infer gender from a first name: a gender counts as established only where a document records it (for example ""Gender: Male"").
 - Search before concluding either way: a No or unknown claimed without a search targeted at this question's own subject is a wrong answer.
 - Values often sit mid-row in long table text. When a search hit relates to this question, scan the hit's FULL text in code (string find or regex on the field's label) before concluding the value is absent - never judge from a truncated print.
-- Person and firm details (addresses, emails, phone numbers, dates of birth, genders, lawyer codes) are recorded in the client intake form and the filled court forms. For such fields, READ THOSE DOCUMENTS' FULL TEXT directly (iterate doc.items() and scan each document's text in code) rather than relying on search snippets; attribute each detail to the correct person by reading the surrounding section headings.
+- Person and firm details (addresses, emails, phone numbers, dates and places of birth, genders, lawyer codes) are recorded in the client intake form, the filled court forms, and the marriage certificate. For such fields, READ THOSE DOCUMENTS' FULL TEXT directly (iterate doc.items() and scan each document's text in code) rather than relying on search snippets; attribute each detail to the correct person by reading the surrounding section headings.
 - If the documents do not establish the answer, say so instead of guessing.
 
 ANSWER FORMAT: reply with the date in DD/MM/YYYY format and nothing else. If the documents do not establish it, reply with exactly: unknown",respondent_1_date_of_birth

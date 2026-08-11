@@ -56,12 +56,13 @@ search targeted at this question's own subject is a wrong answer.
 to this question, scan the hit's FULL text in code (string find or regex \
 on the field's label) before concluding the value is absent - never judge \
 from a truncated print.
-- Person and firm details (addresses, emails, phone numbers, dates of \
-birth, genders, lawyer codes) are recorded in the client intake form and \
-the filled court forms. For such fields, READ THOSE DOCUMENTS' FULL TEXT \
-directly (iterate doc.items() and scan each document's text in code) \
-rather than relying on search snippets; attribute each detail to the \
-correct person by reading the surrounding section headings.
+- Person and firm details (addresses, emails, phone numbers, dates and \
+places of birth, genders, lawyer codes) are recorded in the client intake \
+form, the filled court forms, and the marriage certificate. For such \
+fields, READ THOSE DOCUMENTS' FULL TEXT directly (iterate doc.items() and \
+scan each document's text in code) rather than relying on search \
+snippets; attribute each detail to the correct person by reading the \
+surrounding section headings.
 - If the documents do not establish the answer, say so instead of guessing."""
 
 

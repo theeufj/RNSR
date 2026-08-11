@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "rnsr"
-version = "1.0.0a2"
+version = "1.0.0a3"
 description = "DocDB-RLM: a typed-environment recursive language model system for deep document retrieval"
 readme = "README.md"
 requires-python = ">=3.11"

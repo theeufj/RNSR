@@ -1,0 +1,854 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>How RNSR DocDB Works — A Plain-English Guide</title>
+<style>
+  :root {
+    --ink: #1a2332;
+    --muted: #5a6a80;
+    --accent: #1f6feb;
+    --accent-soft: #e8f0fe;
+    --green: #1a7f37;
+    --green-soft: #e6f4ea;
+    --amber: #9a6700;
+    --amber-soft: #fff8e1;
+    --red: #b42318;
+    --red-soft: #fdecea;
+    --card: #ffffff;
+    --bg: #f6f8fa;
+    --border: #d8dee6;
+    --code-bg: #f0f3f7;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    color: var(--ink);
+    background: var(--bg);
+    line-height: 1.65;
+    font-size: 16px;
+  }
+  header {
+    background: linear-gradient(135deg, #0d1b3e 0%, #1f3a6e 60%, #1f6feb 100%);
+    color: #fff;
+    padding: 56px 24px 48px;
+    text-align: center;
+  }
+  header h1 { margin: 0 0 12px; font-size: 2.2rem; letter-spacing: -0.5px; }
+  header p { margin: 0 auto; max-width: 720px; font-size: 1.1rem; opacity: 0.92; }
+  main { max-width: 960px; margin: 0 auto; padding: 32px 24px 80px; }
+  nav.toc {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 20px 28px;
+    margin-bottom: 40px;
+  }
+  nav.toc h2 { margin: 0 0 10px; font-size: 1rem; text-transform: uppercase; letter-spacing: 1px; color: var(--muted); }
+  nav.toc ol { margin: 0; padding-left: 22px; columns: 2; column-gap: 40px; }
+  nav.toc li { margin: 4px 0; }
+  nav.toc a { color: var(--accent); text-decoration: none; }
+  nav.toc a:hover { text-decoration: underline; }
+  section { margin-bottom: 56px; }
+  h2 {
+    font-size: 1.6rem;
+    margin: 0 0 16px;
+    padding-bottom: 8px;
+    border-bottom: 2px solid var(--accent-soft);
+    letter-spacing: -0.3px;
+  }
+  h3 { font-size: 1.15rem; margin: 28px 0 10px; }
+  p { margin: 0 0 14px; }
+  code {
+    background: var(--code-bg);
+    border-radius: 4px;
+    padding: 1px 6px;
+    font-family: "SF Mono", ui-monospace, Menlo, Consolas, monospace;
+    font-size: 0.88em;
+  }
+  pre {
+    background: #0d1b2e;
+    color: #d8e4f5;
+    border-radius: 10px;
+    padding: 18px 22px;
+    overflow-x: auto;
+    font-size: 0.85rem;
+    line-height: 1.55;
+  }
+  pre code { background: none; color: inherit; padding: 0; }
+  .figure {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 24px;
+    margin: 24px 0;
+    overflow-x: auto;
+  }
+  .figure svg { display: block; margin: 0 auto; max-width: 100%; height: auto; }
+  .figure figcaption {
+    text-align: center;
+    color: var(--muted);
+    font-size: 0.88rem;
+    margin-top: 14px;
+    font-style: italic;
+  }
+  .callout {
+    border-left: 4px solid var(--accent);
+    background: var(--accent-soft);
+    border-radius: 0 10px 10px 0;
+    padding: 14px 20px;
+    margin: 18px 0;
+  }
+  .callout.green { border-color: var(--green); background: var(--green-soft); }
+  .callout.amber { border-color: var(--amber); background: var(--amber-soft); }
+  .callout strong:first-child { display: block; margin-bottom: 4px; }
+  table.info {
+    border-collapse: collapse;
+    width: 100%;
+    margin: 18px 0;
+    font-size: 0.93rem;
+    background: var(--card);
+    border-radius: 10px;
+    overflow: hidden;
+    border: 1px solid var(--border);
+  }
+  table.info th, table.info td { padding: 10px 14px; border-bottom: 1px solid var(--border); text-align: left; vertical-align: top; }
+  table.info th { background: #eef2f8; font-weight: 600; }
+  table.info tr:last-child td { border-bottom: none; }
+  .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+  @media (max-width: 720px) { .two-col { grid-template-columns: 1fr; } nav.toc ol { columns: 1; } }
+  footer { text-align: center; color: var(--muted); font-size: 0.85rem; padding: 24px; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>How RNSR DocDB Works</h1>
+  <p>A plain-English guide to the system that turns a pile of documents into a
+  database an AI can interrogate — with exact numbers, verified quotes, and a
+  full audit trail.</p>
+</header>
+
+<main>
+
+<nav class="toc">
+  <h2>Contents</h2>
+  <ol>
+    <li><a href="#what">What DocDB is, in one paragraph</a></li>
+    <li><a href="#problem">The problem it solves</a></li>
+    <li><a href="#big-picture">The big picture: two phases</a></li>
+    <li><a href="#ingestion">Phase 1 — Ingestion</a></li>
+    <li><a href="#corpus-db">Inside corpus.db</a></li>
+    <li><a href="#query">Phase 2 — Answering a question</a></li>
+    <li><a href="#ladder">The search ladder</a></li>
+    <li><a href="#annotate">Semantic annotation</a></li>
+    <li><a href="#verify">Verified quotes</a></li>
+    <li><a href="#budgets">Budgets and safety rails</a></li>
+    <li><a href="#amortize">Why it gets cheaper over time</a></li>
+    <li><a href="#when">When to use it (and when not to)</a></li>
+  </ol>
+</nav>
+
+<!-- ============================================================ -->
+<section id="what">
+  <h2>1. What DocDB is, in one paragraph</h2>
+  <p>DocDB is the heart of RNSR. It reads your documents <strong>once</strong>
+  — PDFs, Word files, spreadsheets, emails, plain text — and packs everything
+  it finds into a <strong>single database file</strong> called
+  <code>corpus.db</code>. That file contains the complete original text of
+  every page, plus useful extras layered on top: every table converted into a
+  real, queryable database table; a full-text search index; and a machine-built
+  "table of contents" (the manifest). When you ask a question, an AI model
+  doesn't just <em>read</em> the documents — it <strong>writes small Python
+  programs</strong> against that database to look things up, count, add, and
+  cross-reference. The final answer must come with supporting quotes that the
+  system checks, character by character, against the original text.</p>
+
+  <div class="callout">
+    <strong>The core idea</strong>
+    AI models are good at judgment ("is this clause a termination clause?") but
+    unreliable at arithmetic and exhaustive counting. DocDB splits the work:
+    the model handles the judgment calls, and plain code and SQL handle
+    everything countable — sums, dates, joins, exact quotes. Nothing that can
+    be computed exactly is ever left to the model's memory.
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<section id="problem">
+  <h2>2. The problem it solves</h2>
+  <p>Suppose a lawyer has a matter file: a master services agreement, two
+  amendments that override parts of it, forty invoices, a chain of breach
+  letters, and a superseded draft with the <em>wrong</em> numbers in it. Now
+  they ask: <em>"What is the total value of all unpaid invoices?"</em></p>
+  <p>The two standard AI approaches both struggle here:</p>
+  <table class="info">
+    <tr><th>Approach</th><th>What goes wrong</th></tr>
+    <tr>
+      <td><strong>Stuff everything into the model's context window</strong></td>
+      <td>A modest matter file already exceeds what a model can hold at once.
+      Even when it fits, models make silent arithmetic slips when summing forty
+      numbers by reading them.</td>
+    </tr>
+    <tr>
+      <td><strong>Retrieval (RAG): fetch the "top 10 most relevant" snippets</strong></td>
+      <td>Forty invoices can't fit in ten snippet slots, so aggregation questions
+      are structurally impossible. Retrieval also can't prove a clause is
+      <em>absent</em>, and it happily returns the superseded draft's numbers.</td>
+    </tr>
+  </table>
+  <p>DocDB's answer: don't make the model read everything, and don't gamble on
+  fetching the right snippets. Put the documents in a database and let the
+  model <em>query</em> it. Summing forty invoices becomes one SQL statement
+  that is exact by construction. In RNSR's benchmarks, this is precisely where
+  DocDB wins: it went 24/24 on multi-document matter files while every
+  retrieval variant missed <em>all</em> of the aggregation questions.</p>
+</section>
+
+<!-- ============================================================ -->
+<section id="big-picture">
+  <h2>3. The big picture: two phases</h2>
+  <p>Everything in DocDB happens in one of two phases. <strong>Ingestion</strong>
+  runs once per set of documents and produces the database file.
+  <strong>Querying</strong> runs every time you ask a question, and only needs
+  that file.</p>
+
+  <figure class="figure">
+    <svg viewBox="0 0 900 340" font-family="-apple-system, Segoe UI, sans-serif">
+      <defs>
+        <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M 0 0 L 10 5 L 0 10 z" fill="#5a6a80"/>
+        </marker>
+      </defs>
+      <!-- Documents -->
+      <g>
+        <rect x="20" y="110" width="150" height="120" rx="10" fill="#fff" stroke="#d8dee6" stroke-width="1.5"/>
+        <text x="95" y="140" text-anchor="middle" font-size="14" font-weight="600" fill="#1a2332">Your documents</text>
+        <text x="95" y="163" text-anchor="middle" font-size="12" fill="#5a6a80">PDF · Word · Excel</text>
+        <text x="95" y="181" text-anchor="middle" font-size="12" fill="#5a6a80">PowerPoint · email</text>
+        <text x="95" y="199" text-anchor="middle" font-size="12" fill="#5a6a80">Markdown · text</text>
+      </g>
+      <!-- Arrow 1 -->
+      <line x1="170" y1="170" x2="235" y2="170" stroke="#5a6a80" stroke-width="2" marker-end="url(#arr)"/>
+      <!-- Ingestion -->
+      <g>
+        <rect x="240" y="95" width="185" height="150" rx="10" fill="#e8f0fe" stroke="#1f6feb" stroke-width="1.5"/>
+        <text x="332" y="125" text-anchor="middle" font-size="14" font-weight="700" fill="#1f3a6e">PHASE 1</text>
+        <text x="332" y="146" text-anchor="middle" font-size="14" font-weight="600" fill="#1a2332">Ingestion</text>
+        <text x="332" y="172" text-anchor="middle" font-size="12" fill="#3d4d63">parse · extract tables</text>
+        <text x="332" y="190" text-anchor="middle" font-size="12" fill="#3d4d63">validate · index · manifest</text>
+        <text x="332" y="215" text-anchor="middle" font-size="11.5" font-style="italic" fill="#5a6a80">runs once, offline</text>
+      </g>
+      <!-- Arrow 2 -->
+      <line x1="425" y1="170" x2="490" y2="170" stroke="#5a6a80" stroke-width="2" marker-end="url(#arr)"/>
+      <!-- corpus.db -->
+      <g>
+        <path d="M 495 120 h 130 a 12 14 0 0 1 12 14 v 72 a 12 14 0 0 1 -12 14 h -130 a 12 14 0 0 1 -12 -14 v -72 a 12 14 0 0 1 12 -14 z" fill="#fff8e1" stroke="#9a6700" stroke-width="1.5"/>
+        <ellipse cx="560" cy="134" rx="77" ry="13" fill="#fff3cd" stroke="#9a6700" stroke-width="1.5"/>
+        <text x="560" y="168" text-anchor="middle" font-size="14" font-weight="700" fill="#7a5200">corpus.db</text>
+        <text x="560" y="190" text-anchor="middle" font-size="11.5" fill="#7a5200">one self-contained</text>
+        <text x="560" y="206" text-anchor="middle" font-size="11.5" fill="#7a5200">SQLite file</text>
+      </g>
+      <!-- Arrow 3 -->
+      <line x1="637" y1="170" x2="700" y2="170" stroke="#5a6a80" stroke-width="2" marker-end="url(#arr)"/>
+      <!-- Query loop -->
+      <g>
+        <rect x="705" y="95" width="180" height="150" rx="10" fill="#e6f4ea" stroke="#1a7f37" stroke-width="1.5"/>
+        <text x="795" y="125" text-anchor="middle" font-size="14" font-weight="700" fill="#0f5825">PHASE 2</text>
+        <text x="795" y="146" text-anchor="middle" font-size="14" font-weight="600" fill="#1a2332">Query loop</text>
+        <text x="795" y="172" text-anchor="middle" font-size="12" fill="#3d4d63">AI writes Python + SQL</text>
+        <text x="795" y="190" text-anchor="middle" font-size="12" fill="#3d4d63">against the database</text>
+        <text x="795" y="215" text-anchor="middle" font-size="11.5" font-style="italic" fill="#5a6a80">runs per question</text>
+      </g>
+      <!-- Question in / answer out -->
+      <line x1="795" y1="55" x2="795" y2="90" stroke="#5a6a80" stroke-width="2" marker-end="url(#arr)"/>
+      <text x="795" y="42" text-anchor="middle" font-size="13" fill="#1a2332" font-weight="600">"What's the total of unpaid invoices?"</text>
+      <line x1="795" y1="245" x2="795" y2="285" stroke="#1a7f37" stroke-width="2" marker-end="url(#arr)"/>
+      <text x="795" y="308" text-anchor="middle" font-size="13" fill="#0f5825" font-weight="600">Answer + verified quotes</text>
+    </svg>
+    <figcaption>Figure 1 — Documents go in once; the resulting database answers many questions.</figcaption>
+  </figure>
+
+  <p>A key design commitment: the database only ever <em>adds</em> views on
+  top of the original text — it never replaces or throws any of it away. The
+  full text of every page is retained inside <code>corpus.db</code>, and every
+  index entry, table row, and search hit can be traced back to an exact
+  character range on an exact page of an exact document.</p>
+</section>
+
+<!-- ============================================================ -->
+<section id="ingestion">
+  <h2>4. Phase 1 — Ingestion: from files to a database</h2>
+  <p>You run ingestion with one command:</p>
+  <pre><code>rnsr ingest report.pdf exhibits.docx ledger.xlsx -o corpus.db</code></pre>
+  <p>Behind that command is a pipeline. Here is what happens to each file,
+  step by step:</p>
+
+  <figure class="figure">
+    <svg viewBox="0 0 920 640" font-family="-apple-system, Segoe UI, sans-serif">
+      <defs>
+        <marker id="arr2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M 0 0 L 10 5 L 0 10 z" fill="#5a6a80"/>
+        </marker>
+      </defs>
+      <!-- Step 1: dispatch -->
+      <rect x="330" y="15" width="260" height="58" rx="10" fill="#e8f0fe" stroke="#1f6feb" stroke-width="1.5"/>
+      <text x="460" y="39" text-anchor="middle" font-size="13.5" font-weight="600" fill="#1a2332">1. Look at the file type</text>
+      <text x="460" y="58" text-anchor="middle" font-size="11.5" fill="#5a6a80">and pick the right parser for it</text>
+      <line x1="460" y1="73" x2="460" y2="98" stroke="#5a6a80" stroke-width="2" marker-end="url(#arr2)"/>
+
+      <!-- Step 2: parse -->
+      <rect x="330" y="102" width="260" height="72" rx="10" fill="#e8f0fe" stroke="#1f6feb" stroke-width="1.5"/>
+      <text x="460" y="126" text-anchor="middle" font-size="13.5" font-weight="600" fill="#1a2332">2. Parse the document</text>
+      <text x="460" y="145" text-anchor="middle" font-size="11.5" fill="#5a6a80">extract text, page by page, plus any</text>
+      <text x="460" y="161" text-anchor="middle" font-size="11.5" fill="#5a6a80">tables found (with their page positions)</text>
+      <!-- scanned side branch -->
+      <rect x="655" y="102" width="240" height="72" rx="10" fill="#fff8e1" stroke="#9a6700" stroke-width="1.5"/>
+      <text x="775" y="126" text-anchor="middle" font-size="12.5" font-weight="600" fill="#7a5200">Scanned page? (no text layer)</text>
+      <text x="775" y="145" text-anchor="middle" font-size="11.5" fill="#7a5200">A vision model transcribes it —</text>
+      <text x="775" y="161" text-anchor="middle" font-size="11.5" fill="#7a5200">no separate OCR engine needed</text>
+      <line x1="655" y1="138" x2="595" y2="138" stroke="#9a6700" stroke-width="1.5" stroke-dasharray="5 4" marker-end="url(#arr2)"/>
+      <line x1="460" y1="174" x2="460" y2="199" stroke="#5a6a80" stroke-width="2" marker-end="url(#arr2)"/>
+
+      <!-- Step 3: chunk -->
+      <rect x="330" y="203" width="260" height="72" rx="10" fill="#e8f0fe" stroke="#1f6feb" stroke-width="1.5"/>
+      <text x="460" y="227" text-anchor="middle" font-size="13.5" font-weight="600" fill="#1a2332">3. Cut text into chunks</text>
+      <text x="460" y="246" text-anchor="middle" font-size="11.5" fill="#5a6a80">following headings where possible, else</text>
+      <text x="460" y="262" text-anchor="middle" font-size="11.5" fill="#5a6a80">~1,500-character windows with overlap</text>
+      <line x1="460" y1="275" x2="460" y2="300" stroke="#5a6a80" stroke-width="2" marker-end="url(#arr2)"/>
+
+      <!-- Step 4: tables -->
+      <rect x="330" y="304" width="260" height="72" rx="10" fill="#e8f0fe" stroke="#1f6feb" stroke-width="1.5"/>
+      <text x="460" y="328" text-anchor="middle" font-size="13.5" font-weight="600" fill="#1a2332">4. Turn each document table</text>
+      <text x="460" y="346" text-anchor="middle" font-size="13.5" font-weight="600" fill="#1a2332">into a real SQL table</text>
+      <text x="460" y="365" text-anchor="middle" font-size="11.5" fill="#5a6a80">with typed columns (numbers as numbers)</text>
+      <line x1="460" y1="376" x2="460" y2="401" stroke="#5a6a80" stroke-width="2" marker-end="url(#arr2)"/>
+
+      <!-- Step 5: validate (decision) -->
+      <g>
+        <polygon points="460,398 620,448 460,498 300,448" fill="#fff" stroke="#9a6700" stroke-width="1.5"/>
+        <text x="460" y="440" text-anchor="middle" font-size="12.5" font-weight="600" fill="#1a2332">5. Validate: do the rows</text>
+        <text x="460" y="458" text-anchor="middle" font-size="12.5" font-weight="600" fill="#1a2332">add up to the stated totals?</text>
+      </g>
+      <!-- yes path -->
+      <line x1="460" y1="498" x2="460" y2="528" stroke="#1a7f37" stroke-width="2" marker-end="url(#arr2)"/>
+      <text x="475" y="518" font-size="12" fill="#1a7f37" font-weight="600">yes → trusted</text>
+      <!-- no path -->
+      <line x1="620" y1="448" x2="700" y2="448" stroke="#b42318" stroke-width="2" marker-end="url(#arr2)"/>
+      <text x="640" y="438" font-size="12" fill="#b42318" font-weight="600">no</text>
+      <rect x="705" y="408" width="200" height="80" rx="10" fill="#fdecea" stroke="#b42318" stroke-width="1.5"/>
+      <text x="805" y="432" text-anchor="middle" font-size="12" font-weight="600" fill="#7a1a12">Re-extract (vision model)</text>
+      <text x="805" y="450" text-anchor="middle" font-size="11.5" fill="#7a1a12">and re-check. Still failing?</text>
+      <text x="805" y="468" text-anchor="middle" font-size="11.5" fill="#7a1a12">Mark table "untrusted" in the</text>
+      <text x="805" y="483" text-anchor="middle" font-size="11.5" fill="#7a1a12">manifest — never hidden</text>
+      <line x1="805" y1="488" x2="805" y2="560" stroke="#b42318" stroke-width="1.5" stroke-dasharray="5 4"/>
+      <line x1="805" y1="560" x2="595" y2="560" stroke="#b42318" stroke-width="1.5" stroke-dasharray="5 4" marker-end="url(#arr2)"/>
+
+      <!-- Step 6: index + manifest + freeze -->
+      <rect x="290" y="532" width="340" height="88" rx="10" fill="#e6f4ea" stroke="#1a7f37" stroke-width="1.5"/>
+      <text x="460" y="556" text-anchor="middle" font-size="13.5" font-weight="600" fill="#0f5825">6. Finish the artifact</text>
+      <text x="460" y="576" text-anchor="middle" font-size="11.5" fill="#2d5a3a">build the full-text search index · write the</text>
+      <text x="460" y="592" text-anchor="middle" font-size="11.5" fill="#2d5a3a">manifest (contents list) · freeze source data</text>
+      <text x="460" y="608" text-anchor="middle" font-size="11.5" fill="#2d5a3a">so nothing can ever alter the original text</text>
+
+      <!-- side note: atomic build -->
+      <rect x="20" y="102" width="240" height="88" rx="10" fill="#f6f8fa" stroke="#d8dee6" stroke-width="1.5"/>
+      <text x="140" y="126" text-anchor="middle" font-size="12" font-weight="600" fill="#1a2332">Safety detail</text>
+      <text x="140" y="145" text-anchor="middle" font-size="11" fill="#5a6a80">The file is built under a temporary</text>
+      <text x="140" y="160" text-anchor="middle" font-size="11" fill="#5a6a80">name and only renamed to corpus.db</text>
+      <text x="140" y="175" text-anchor="middle" font-size="11" fill="#5a6a80">when every step succeeds.</text>
+    </svg>
+    <figcaption>Figure 2 — The ingestion pipeline. Every file passes through these steps; the result is one database file.</figcaption>
+  </figure>
+
+  <h3>The steps in plain English</h3>
+  <p><strong>Pick a parser.</strong> PDFs go through a high-quality PDF parser
+  (Docling), or a faster one when speed matters. Office documents (Word, Excel,
+  PowerPoint and friends) go through an office-format converter. Markdown,
+  plain text, and email files are handled directly. The choice is made purely
+  by file extension.</p>
+  <p><strong>Extract the text.</strong> The parser produces the full text of
+  every page, recording exactly where each piece came from. If a page is a
+  scan with no digital text, a vision-capable AI model reads the image and
+  transcribes it.</p>
+  <p><strong>Cut it into chunks.</strong> Search works better on passages than
+  on whole documents, so the text is cut into pieces — along section headings
+  when the document has structure, or into ~1,500-character windows with a
+  200-character overlap when it doesn't. Every chunk remembers its document,
+  page, and exact character positions.</p>
+  <p><strong>Convert tables.</strong> This is DocDB's signature move. A table
+  spotted in a PDF isn't kept as a picture or a blob of text — it becomes an
+  actual SQL table with properly typed columns, so "$1,250.00" is stored as
+  the number 1250.00 that SQL can sum. The original cell text is kept alongside
+  in shadow columns, and every row records the page and position it came from.</p>
+  <p><strong>Validate the tables.</strong> Table extraction from PDFs is
+  error-prone, so DocDB checks its own work: if a table has a "Total" row, do
+  the extracted numbers actually add up to it? Tables that pass are marked
+  trusted. Tables that fail get a second chance through a vision-model
+  re-extraction; if they still fail, they are honestly labelled
+  <em>untrusted</em> in the manifest so the query phase knows to fall back to
+  the raw text instead.</p>
+  <p><strong>Index, describe, and freeze.</strong> Finally, a full-text search
+  index (SQLite FTS5, with BM25 ranking) is built over the chunks; a
+  <em>manifest</em> is written — a machine-generated inventory listing every
+  document, every table, its columns, and its trust status; and database
+  triggers are installed that make all source data <strong>immutable</strong>.
+  From this moment, nothing — not even the AI at query time — can modify or
+  delete the original text and tables.</p>
+
+  <div class="callout amber">
+    <strong>Deliberately boring by default</strong>
+    Ingestion is deterministic and uses no AI at all unless you opt in
+    (with <code>--llm</code>) for scanned-page transcription and table
+    re-extraction. Same input, same output, every time. AI-generated summaries
+    never go into the manifest — it contains only facts a machine measured.
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<section id="corpus-db">
+  <h2>5. Inside corpus.db</h2>
+  <p>Everything lives in one ordinary SQLite file. You can open it with any
+  SQLite tool. Here is its anatomy:</p>
+
+  <figure class="figure">
+    <svg viewBox="0 0 900 470" font-family="-apple-system, Segoe UI, sans-serif">
+      <!-- outer container -->
+      <rect x="15" y="15" width="870" height="440" rx="14" fill="#fffdf5" stroke="#9a6700" stroke-width="2"/>
+      <text x="450" y="45" text-anchor="middle" font-size="17" font-weight="700" fill="#7a5200">corpus.db — one SQLite file</text>
+
+      <!-- retained text layer -->
+      <rect x="35" y="65" width="830" height="80" rx="10" fill="#e8f0fe" stroke="#1f6feb" stroke-width="1.5"/>
+      <text x="55" y="92" font-size="14" font-weight="700" fill="#1f3a6e">Retained source text (the ground truth — never modified, never evicted)</text>
+      <text x="55" y="114" font-size="12.5" fill="#3d4d63"><tspan font-family="Menlo, monospace" font-weight="600">documents</tspan> — one row per file: path, content hash, page count, parser used</text>
+      <text x="55" y="133" font-size="12.5" fill="#3d4d63"><tspan font-family="Menlo, monospace" font-weight="600">doc_text</tspan> — the complete text of every page, with character offsets</text>
+
+      <!-- search layer -->
+      <rect x="35" y="160" width="405" height="105" rx="10" fill="#e6f4ea" stroke="#1a7f37" stroke-width="1.5"/>
+      <text x="55" y="187" font-size="14" font-weight="700" fill="#0f5825">Search layer</text>
+      <text x="55" y="209" font-size="12.5" fill="#2d5a3a"><tspan font-family="Menlo, monospace" font-weight="600">chunks</tspan> — text passages with doc, page,</text>
+      <text x="55" y="226" font-size="12.5" fill="#2d5a3a">heading path, and character range</text>
+      <text x="55" y="248" font-size="12.5" fill="#2d5a3a"><tspan font-family="Menlo, monospace" font-weight="600">fts_chunks</tspan> — full-text search index (FTS5)</text>
+
+      <!-- typed tables layer -->
+      <rect x="460" y="160" width="405" height="105" rx="10" fill="#fdecea" stroke="#b42318" stroke-width="1.5"/>
+      <text x="480" y="187" font-size="14" font-weight="700" fill="#7a1a12">Extracted data tables</text>
+      <text x="480" y="209" font-size="12.5" fill="#6b2a22"><tspan font-family="Menlo, monospace" font-weight="600">t_invoice12_001, t_report_004, …</tspan></text>
+      <text x="480" y="226" font-size="12.5" fill="#6b2a22">one SQL table per document table: typed</text>
+      <text x="480" y="243" font-size="12.5" fill="#6b2a22">columns + raw-text shadows + page/position</text>
+      <text x="480" y="260" font-size="12.5" fill="#6b2a22">provenance on every row</text>
+
+      <!-- manifest layer -->
+      <rect x="35" y="280" width="405" height="100" rx="10" fill="#fff8e1" stroke="#9a6700" stroke-width="1.5"/>
+      <text x="55" y="307" font-size="14" font-weight="700" fill="#7a5200">Manifest (the map)</text>
+      <text x="55" y="329" font-size="12.5" fill="#6b4d00"><tspan font-family="Menlo, monospace" font-weight="600">manifest</tspan> — corpus-level facts: documents,</text>
+      <text x="55" y="346" font-size="12.5" fill="#6b4d00">chunk stats, software versions</text>
+      <text x="55" y="368" font-size="12.5" fill="#6b4d00"><tspan font-family="Menlo, monospace" font-weight="600">manifest_tables</tspan> — per-table schema, checks,</text>
+      <!-- fifth line squeezed -->
+      <text x="290" y="368" font-size="12.5" fill="#6b4d00">trust status</text>
+
+      <!-- working layer -->
+      <rect x="460" y="280" width="405" height="100" rx="10" fill="#f0eafd" stroke="#6f42c1" stroke-width="1.5"/>
+      <text x="480" y="307" font-size="14" font-weight="700" fill="#4a2a8a">Working layer (grows over time)</text>
+      <text x="480" y="329" font-size="12.5" fill="#3d2a63"><tspan font-family="Menlo, monospace" font-weight="600">annotation_log</tspan> + annotation columns —</text>
+      <text x="480" y="346" font-size="12.5" fill="#3d2a63">AI judgments saved as real columns (audited)</text>
+      <text x="480" y="368" font-size="12.5" fill="#3d2a63"><tspan font-family="Menlo, monospace" font-weight="600">vec_chunks</tspan> — embeddings, built lazily on first use</text>
+
+      <!-- footer note -->
+      <text x="450" y="415" text-anchor="middle" font-size="12.5" font-style="italic" fill="#7a5200">Everything above the working layer is frozen by database triggers after ingestion.</text>
+      <text x="450" y="435" text-anchor="middle" font-size="12.5" font-style="italic" fill="#7a5200">Every row in every layer traces back to a document, page, and character range.</text>
+    </svg>
+    <figcaption>Figure 3 — The anatomy of corpus.db. Indexes and extracted tables are extra views over the retained text, never replacements for it.</figcaption>
+  </figure>
+
+  <p>Two properties are worth underlining:</p>
+  <p><strong>Provenance everywhere.</strong> A chunk knows its document, page,
+  and character range. A table row carries the page and bounding box it was
+  extracted from. This is what makes verified quotes (section 9) possible —
+  any claim can be walked back to the exact original characters.</p>
+  <p><strong>Frozen source, writable margins.</strong> After ingestion,
+  triggers reject any insert, delete, or update against the source columns.
+  The only things that can ever be written later are additions in the working
+  layer: annotation columns the AI adds (section 8), the log recording how they
+  were made, and cached embeddings. The originals are tamper-proof.</p>
+</section>
+
+<!-- ============================================================ -->
+<section id="query">
+  <h2>6. Phase 2 — Answering a question</h2>
+  <p>Now the interesting part. You ask:</p>
+  <pre><code>rnsr query corpus.db "What was FY2023 segment revenue?"</code></pre>
+  <p>RNSR does <em>not</em> paste your documents into an AI prompt. Instead, it
+  runs a loop — called the <strong>RLM loop</strong> (recursive language model)
+  — in which a "root" AI model is given the manifest (the map of what's in the
+  database) and a Python workspace connected to <code>corpus.db</code>. The
+  model investigates by writing code; the system runs the code and shows the
+  model what came back; the model writes more code; and so on until it is
+  confident enough to commit to an answer.</p>
+
+  <figure class="figure">
+    <svg viewBox="0 0 920 660" font-family="-apple-system, Segoe UI, sans-serif">
+      <defs>
+        <marker id="arr3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M 0 0 L 10 5 L 0 10 z" fill="#5a6a80"/>
+        </marker>
+        <marker id="arr3g" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M 0 0 L 10 5 L 0 10 z" fill="#1a7f37"/>
+        </marker>
+        <marker id="arr3r" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M 0 0 L 10 5 L 0 10 z" fill="#b42318"/>
+        </marker>
+      </defs>
+
+      <!-- start -->
+      <rect x="330" y="15" width="260" height="52" rx="26" fill="#e8f0fe" stroke="#1f6feb" stroke-width="1.5"/>
+      <text x="460" y="38" text-anchor="middle" font-size="13" font-weight="600" fill="#1a2332">Question arrives</text>
+      <text x="460" y="56" text-anchor="middle" font-size="11.5" fill="#5a6a80">root model receives it + the manifest</text>
+      <line x1="460" y1="67" x2="460" y2="94" stroke="#5a6a80" stroke-width="2" marker-end="url(#arr3)"/>
+
+      <!-- root model thinks -->
+      <rect x="330" y="98" width="260" height="66" rx="10" fill="#fff" stroke="#1f6feb" stroke-width="1.5"/>
+      <text x="460" y="124" text-anchor="middle" font-size="13" font-weight="600" fill="#1a2332">Root model writes a snippet</text>
+      <text x="460" y="142" text-anchor="middle" font-size="13" font-weight="600" fill="#1a2332">of Python / SQL</text>
+      <text x="460" y="158" text-anchor="middle" font-size="11" fill="#5a6a80">e.g. search("segment revenue"), db.execute(...)</text>
+      <line x1="460" y1="164" x2="460" y2="191" stroke="#5a6a80" stroke-width="2" marker-end="url(#arr3)"/>
+
+      <!-- sandbox -->
+      <rect x="290" y="195" width="340" height="120" rx="10" fill="#f0f3f7" stroke="#5a6a80" stroke-width="1.5"/>
+      <text x="460" y="221" text-anchor="middle" font-size="13" font-weight="600" fill="#1a2332">Sandbox runs the code</text>
+      <text x="460" y="242" text-anchor="middle" font-size="11.5" fill="#5a6a80">a separate process with no network access,</text>
+      <text x="460" y="259" text-anchor="middle" font-size="11.5" fill="#5a6a80">preloaded with: db · doc · manifest · search ·</text>
+      <text x="460" y="276" text-anchor="middle" font-size="11.5" fill="#5a6a80">semantic_annotate · verify · schema_map · FINAL</text>
+      <text x="460" y="300" text-anchor="middle" font-size="11" font-style="italic" fill="#5a6a80">AI/embedding calls are brokered by the parent process</text>
+      <line x1="460" y1="315" x2="460" y2="342" stroke="#5a6a80" stroke-width="2" marker-end="url(#arr3)"/>
+
+      <!-- observation -->
+      <rect x="330" y="346" width="260" height="52" rx="10" fill="#fff" stroke="#5a6a80" stroke-width="1.5"/>
+      <text x="460" y="368" text-anchor="middle" font-size="13" font-weight="600" fill="#1a2332">Result goes back to the model</text>
+      <text x="460" y="387" text-anchor="middle" font-size="11.5" fill="#5a6a80">query rows, search hits, errors — all visible</text>
+      <line x1="460" y1="398" x2="460" y2="425" stroke="#5a6a80" stroke-width="2" marker-end="url(#arr3)"/>
+
+      <!-- decision -->
+      <polygon points="460,425 615,472 460,519 305,472" fill="#fff" stroke="#9a6700" stroke-width="1.5"/>
+      <text x="460" y="466" text-anchor="middle" font-size="12.5" font-weight="600" fill="#1a2332">Confident in an answer,</text>
+      <text x="460" y="484" text-anchor="middle" font-size="12.5" font-weight="600" fill="#1a2332">with quotes to back it?</text>
+
+      <!-- loop back (not yet) -->
+      <line x1="305" y1="472" x2="180" y2="472" stroke="#5a6a80" stroke-width="2"/>
+      <line x1="180" y1="472" x2="180" y2="131" stroke="#5a6a80" stroke-width="2"/>
+      <line x1="180" y1="131" x2="325" y2="131" stroke="#5a6a80" stroke-width="2" marker-end="url(#arr3)"/>
+      <text x="167" y="300" text-anchor="middle" font-size="12" fill="#5a6a80" font-weight="600" transform="rotate(-90 167 300)">not yet — investigate more (max 20 rounds)</text>
+
+      <!-- FINAL path -->
+      <line x1="460" y1="519" x2="460" y2="546" stroke="#1a7f37" stroke-width="2" marker-end="url(#arr3g)"/>
+      <text x="478" y="538" font-size="12" fill="#1a7f37" font-weight="600">yes → FINAL(answer, quotes)</text>
+
+      <!-- verifier -->
+      <rect x="315" y="550" width="290" height="58" rx="10" fill="#fff8e1" stroke="#9a6700" stroke-width="1.5"/>
+      <text x="460" y="574" text-anchor="middle" font-size="13" font-weight="600" fill="#7a5200">Verifier: are the quotes really</text>
+      <text x="460" y="592" text-anchor="middle" font-size="13" font-weight="600" fill="#7a5200">in the source text? (exact string match)</text>
+
+      <!-- verify fail loop -->
+      <line x1="605" y1="579" x2="740" y2="579" stroke="#b42318" stroke-width="2"/>
+      <line x1="740" y1="579" x2="740" y2="131" stroke="#b42318" stroke-width="2"/>
+      <line x1="740" y1="131" x2="595" y2="131" stroke="#b42318" stroke-width="2" marker-end="url(#arr3r)"/>
+      <text x="757" y="360" text-anchor="middle" font-size="12" fill="#b42318" font-weight="600" transform="rotate(90 757 360)">quote not found — rejected, back to the loop</text>
+
+      <!-- done -->
+      <line x1="460" y1="608" x2="460" y2="633" stroke="#1a7f37" stroke-width="2" marker-end="url(#arr3g)"/>
+      <rect x="330" y="637" width="260" height="0" fill="none"/>
+      <text x="460" y="653" text-anchor="middle" font-size="13.5" font-weight="700" fill="#0f5825">Answer delivered, with verified quotes + full trace</text>
+    </svg>
+    <figcaption>Figure 4 — The query loop. The model investigates by running code; it can only finish with an answer whose quotes survive verification.</figcaption>
+  </figure>
+
+  <h3>The model's toolbox</h3>
+  <p>Inside the sandbox, the model finds these ready-made tools:</p>
+  <table class="info">
+    <tr><th>Tool</th><th>What it does, in plain English</th></tr>
+    <tr><td><code>db</code></td><td>A live connection to <code>corpus.db</code>. The model can run any SQL — counting invoices, summing columns, joining tables. Triggers ensure it can't damage the source data.</td></tr>
+    <tr><td><code>doc</code></td><td>Reads the full original text of any document or page on demand (recently used documents are kept in memory).</td></tr>
+    <tr><td><code>manifest</code></td><td>The inventory: what documents exist, what tables were extracted, which are trusted.</td></tr>
+    <tr><td><code>search(...)</code></td><td>The escalating search ladder — see section 7.</td></tr>
+    <tr><td><code>semantic_annotate(...)</code></td><td>Applies an AI judgment to every row of a table at once and saves the results as a new column — see section 8.</td></tr>
+    <tr><td><code>schema_map(...)</code></td><td>Suggests which columns in two different tables mean the same thing (e.g. "revenue_m" vs "net_revenue"). The model must apply the join itself, visibly, so it's auditable.</td></tr>
+    <tr><td><code>verify(...)</code> / <code>FINAL(...)</code></td><td>Check quotes against the source; commit to a final answer. <code>FINAL</code> requires quotes.</td></tr>
+    <tr><td><code>llm_query(...)</code></td><td>Ask a smaller, cheaper "sub-model" a focused question about a specific piece of text — many can run in parallel.</td></tr>
+  </table>
+
+  <div class="callout">
+    <strong>Root model vs. sub-models</strong>
+    The <em>root</em> model is the smart, expensive one that plans and writes
+    code (e.g. Claude Sonnet or GPT-5-class). <em>Sub-models</em> are cheaper,
+    faster models used in bulk for simple judgments — "does this paragraph
+    mention a guarantee, yes or no?" — with up to 16 running at once. This is
+    the "recursive" in RLM: a language model that delegates to language models.
+  </div>
+
+  <h3>Why a sandbox?</h3>
+  <p>The model's code runs in a separate process with <strong>no network
+  access</strong>. It can touch the database and nothing else. When its code
+  needs an AI call (for annotation or search), the request is passed to the
+  parent process, which makes the call on its behalf under strict concurrency
+  and budget limits. If a code cell runs away, the sandbox is restarted. Every
+  code cell, result, and model call is written to a trajectory file — a
+  complete, replayable record of how the answer was reached.</p>
+</section>
+
+<!-- ============================================================ -->
+<section id="ladder">
+  <h2>7. The search ladder: cheap first, expensive only if needed</h2>
+  <p>"Find where the documents talk about X" is the bread-and-butter operation,
+  and DocDB refuses to pay for an expensive search when a cheap one will do.
+  <code>search()</code> is a <strong>ladder of six rungs</strong>, tried from
+  cheapest to priciest. It stops at the first rung that finds hits.</p>
+
+  <figure class="figure">
+    <svg viewBox="0 0 900 480" font-family="-apple-system, Segoe UI, sans-serif">
+      <defs>
+        <marker id="arr4" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M 0 0 L 10 5 L 0 10 z" fill="#5a6a80"/>
+        </marker>
+      </defs>
+      <!-- cost axis -->
+      <line x1="60" y1="430" x2="60" y2="40" stroke="#c4ccd6" stroke-width="2" marker-end="url(#arr4)"/>
+      <text x="42" y="240" text-anchor="middle" font-size="12.5" fill="#5a6a80" font-weight="600" transform="rotate(-90 42 240)">cost per search →</text>
+
+      <!-- rungs, bottom = cheap -->
+      <g>
+        <rect x="100" y="390" width="480" height="52" rx="9" fill="#e6f4ea" stroke="#1a7f37" stroke-width="1.5"/>
+        <text x="118" y="412" font-size="13" font-weight="700" fill="#0f5825">Rung 0 — SQL over extracted tables</text>
+        <text x="118" y="430" font-size="11.5" fill="#2d5a3a">manifest-guided lookups in the typed tables. Free and exact.</text>
+      </g>
+      <g>
+        <rect x="120" y="322" width="480" height="52" rx="9" fill="#e6f4ea" stroke="#1a7f37" stroke-width="1.5"/>
+        <text x="138" y="344" font-size="13" font-weight="700" fill="#0f5825">Rung 1 — Pattern match (grep)</text>
+        <text x="138" y="362" font-size="11.5" fill="#2d5a3a">literal / regex scan of the chunks. Free.</text>
+      </g>
+      <g>
+        <rect x="140" y="254" width="480" height="52" rx="9" fill="#e8f0fe" stroke="#1f6feb" stroke-width="1.5"/>
+        <text x="158" y="276" font-size="13" font-weight="700" fill="#1f3a6e">Rung 2 — Full-text search (FTS5 / BM25)</text>
+        <text x="158" y="294" font-size="11.5" fill="#3d4d63">ranked keyword search over the index built at ingestion. Free.</text>
+      </g>
+      <g>
+        <rect x="160" y="186" width="480" height="52" rx="9" fill="#fff8e1" stroke="#9a6700" stroke-width="1.5"/>
+        <text x="178" y="208" font-size="13" font-weight="700" fill="#7a5200">Rung 3 — Sub-model query expansion</text>
+        <text x="178" y="226" font-size="11.5" fill="#6b4d00">a cheap AI suggests synonyms and related terms, then re-searches. Small cost.</text>
+      </g>
+      <g>
+        <rect x="180" y="118" width="480" height="52" rx="9" fill="#fff8e1" stroke="#9a6700" stroke-width="1.5"/>
+        <text x="198" y="140" font-size="13" font-weight="700" fill="#7a5200">Rung 4 — Semantic embeddings</text>
+        <text x="198" y="158" font-size="11.5" fill="#6b4d00">meaning-based similarity. Built lazily on first use, then cached in the database.</text>
+      </g>
+      <g>
+        <rect x="200" y="50" width="480" height="52" rx="9" fill="#fdecea" stroke="#b42318" stroke-width="1.5"/>
+        <text x="218" y="72" font-size="13" font-weight="700" fill="#7a1a12">Rung 5 — Exhaustive sweep (opt-in only)</text>
+        <text x="218" y="90" font-size="11.5" fill="#6b2a22">a sub-model reads every chunk. Never runs automatically — a cost estimate comes first.</text>
+      </g>
+
+      <!-- escalation arrows -->
+      <line x1="710" y1="416" x2="710" y2="80" stroke="#5a6a80" stroke-width="2" marker-end="url(#arr4)"/>
+      <text x="733" y="250" text-anchor="middle" font-size="12" fill="#5a6a80" font-weight="600" transform="rotate(90 733 250)">escalate only if nothing found</text>
+
+      <!-- auto bracket 0-4 -->
+      <path d="M 775 416 h 14 v -298 h -14" fill="none" stroke="#1a7f37" stroke-width="2"/>
+      <text x="815" y="270" text-anchor="middle" font-size="12" fill="#1a7f37" font-weight="600" transform="rotate(90 815 270)">automatic (rungs 0–4)</text>
+      <!-- manual bracket 5 -->
+      <path d="M 775 98 h 14 v -44 h -14" fill="none" stroke="#b42318" stroke-width="2"/>
+      <text x="815" y="76" text-anchor="middle" font-size="12" fill="#b42318" font-weight="600" transform="rotate(90 815 76)">manual</text>
+    </svg>
+    <figcaption>Figure 5 — The search ladder. Cheapest rungs first; the expensive sweep never runs without an explicit request and a cost estimate.</figcaption>
+  </figure>
+
+  <p>Three details matter:</p>
+  <p><strong>Every rung resolves to real text.</strong> No matter which rung
+  produced a hit, the result carries provenance — document, page, character
+  range — pointing into the retained source text. A hit is never just a score;
+  it's a place you can look.</p>
+  <p><strong>Embeddings are lazy.</strong> Vector embeddings (the technology
+  behind "semantic" search) are <em>not</em> built at ingestion. The first
+  time a question actually needs rung 4, the chunks are embedded and the
+  vectors are cached inside <code>corpus.db</code> itself — so the cost is
+  paid once, and only if ever needed.</p>
+  <p><strong>The sweep asks permission.</strong> If rungs 0–4 all come up
+  empty, the ladder does not silently read every chunk with an AI. It returns
+  a cost estimate, and the root model must explicitly decide the question is
+  worth it. This is how DocDB can <em>prove absence</em> — "there is no such
+  clause" — by actually enumerating everything, but only deliberately.</p>
+</section>
+
+<!-- ============================================================ -->
+<section id="annotate">
+  <h2>8. Semantic annotation: AI judgments become database columns</h2>
+  <p>Some questions need a judgment applied to <em>every</em> row: "How many of
+  these 200 contract clauses are termination clauses?" A naive approach asks
+  the AI to read all 200 and count — slow, expensive, and error-prone.</p>
+  <p><code>semantic_annotate</code> does it differently: it sends each row's
+  text to a cheap sub-model in parallel batches, collects the yes/no (or label)
+  for each, and writes the results back as a <strong>new real column</strong>
+  on the table. Now counting is just SQL:</p>
+  <pre><code># One batched AI pass adds the column...
+semantic_annotate("t_contract_003", "is_termination",
+                  "Is this clause a termination clause? Answer yes or no.")
+
+# ...and the count is exact, forever after:
+db.execute("SELECT COUNT(*) FROM t_contract_003 WHERE is_termination = 'yes'")</code></pre>
+  <p>Three guarantees come with it:</p>
+  <table class="info">
+    <tr><th>Guarantee</th><th>Meaning</th></tr>
+    <tr><td><strong>Idempotent</strong></td><td>Running the same annotation twice (same table, column, prompt, and model) is a no-op — the work is never paid for twice.</td></tr>
+    <tr><td><strong>Audited</strong></td><td>Every annotation is recorded in <code>annotation_log</code>: which model, which prompt, when, and how many rows failed.</td></tr>
+    <tr><td><strong>Persistent</strong></td><td>The column lives in <code>corpus.db</code>. The next question that needs the same judgment finds it already there.</td></tr>
+  </table>
+  <p>In complexity terms: reasoning that would take the model O(N²) reading
+  becomes O(N) cheap calls plus one exact SQL query.</p>
+</section>
+
+<!-- ============================================================ -->
+<section id="verify">
+  <h2>9. Verified quotes: the answer must show its receipts</h2>
+  <p>In DocDB mode, the model cannot simply declare an answer. The
+  <code>FINAL</code> call <strong>requires supporting quotes</strong>, and a
+  verifier then checks each quote by exact string matching (after light
+  whitespace normalisation) against the retained source text.</p>
+  <ul>
+    <li>If a quote is found, the answer ships with the quote <em>and its
+    character offsets</em> — a citation a human can independently check.</li>
+    <li>If a quote is <em>not</em> found — the model paraphrased, misremembered,
+    or invented it — the answer is rejected and the model is sent back into the
+    loop with the failure explained.</li>
+    <li>A three-strike rule stops the model from spiralling: after repeated
+    verification failures the run ends honestly rather than looping forever.</li>
+  </ul>
+  <div class="callout green">
+    <strong>Why this matters</strong>
+    This is the mechanism that resists confabulation. In the CUAD legal
+    benchmark, DocDB's edge over the plain-reading baseline came almost
+    entirely from <em>absent-clause</em> questions — it declined to "find"
+    plausible-sounding clauses that weren't actually in the contract, because
+    a fabricated quote cannot pass an exact string match.
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<section id="budgets">
+  <h2>10. Budgets and safety rails</h2>
+  <p>Every query runs under hard caps, so a confused run costs a bounded amount
+  and then stops:</p>
+  <table class="info">
+    <tr><th>Limit (defaults)</th><th>Purpose</th></tr>
+    <tr><td>20 loop iterations</td><td>The model gets at most 20 rounds of "write code, see result".</td></tr>
+    <tr><td>300 sub-model calls</td><td>Caps bulk annotation and search-expansion spend.</td></tr>
+    <tr><td>600 seconds wall time</td><td>No run hangs forever.</td></tr>
+    <tr><td>$2 of model spend</td><td>The hard financial ceiling per question.</td></tr>
+    <tr><td>16 concurrent sub-calls</td><td>Parallelism without stampeding the API provider.</td></tr>
+  </table>
+  <p>Additional rails: damping against pointless re-verification loops, a
+  variable-recovery fallback (if the loop dies but the model had already
+  computed the answer into a variable, it is salvaged), sandbox restart on
+  runaway code cells, and timeouts on every root-model call. When many
+  questions share one batched loop (the <code>answer-csv</code> path), the caps
+  scale <em>sub-linearly</em> — each extra question adds only half a question's
+  budget — so a confused batch can't burn the full per-question budget times
+  the batch size.</p>
+</section>
+
+<!-- ============================================================ -->
+<section id="amortize">
+  <h2>11. Why it gets cheaper over time</h2>
+  <p>DocDB is built for <em>working sessions</em> — many questions against the
+  same documents — and several kinds of work are paid once and reused:</p>
+  <figure class="figure">
+    <svg viewBox="0 0 900 240" font-family="-apple-system, Segoe UI, sans-serif">
+      <defs>
+        <marker id="arr5" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M 0 0 L 10 5 L 0 10 z" fill="#5a6a80"/>
+        </marker>
+      </defs>
+      <rect x="20" y="30" width="200" height="72" rx="10" fill="#e8f0fe" stroke="#1f6feb" stroke-width="1.5"/>
+      <text x="120" y="58" text-anchor="middle" font-size="13" font-weight="600" fill="#1a2332">Ingestion</text>
+      <text x="120" y="78" text-anchor="middle" font-size="11.5" fill="#5a6a80">parse, tables, index</text>
+      <text x="120" y="94" text-anchor="middle" font-size="11.5" font-weight="600" fill="#1f6feb">paid once per corpus</text>
+
+      <rect x="250" y="30" width="200" height="72" rx="10" fill="#fff8e1" stroke="#9a6700" stroke-width="1.5"/>
+      <text x="350" y="58" text-anchor="middle" font-size="13" font-weight="600" fill="#1a2332">Embeddings (rung 4)</text>
+      <text x="350" y="78" text-anchor="middle" font-size="11.5" fill="#6b4d00">built on first use</text>
+      <text x="350" y="94" text-anchor="middle" font-size="11.5" font-weight="600" fill="#9a6700">cached in corpus.db</text>
+
+      <rect x="480" y="30" width="200" height="72" rx="10" fill="#f0eafd" stroke="#6f42c1" stroke-width="1.5"/>
+      <text x="580" y="58" text-anchor="middle" font-size="13" font-weight="600" fill="#1a2332">Annotations</text>
+      <text x="580" y="78" text-anchor="middle" font-size="11.5" fill="#3d2a63">AI judgments as columns</text>
+      <text x="580" y="94" text-anchor="middle" font-size="11.5" font-weight="600" fill="#6f42c1">persist across questions</text>
+
+      <rect x="710" y="30" width="170" height="72" rx="10" fill="#e6f4ea" stroke="#1a7f37" stroke-width="1.5"/>
+      <text x="795" y="58" text-anchor="middle" font-size="13" font-weight="600" fill="#1a2332">Batched loops</text>
+      <text x="795" y="78" text-anchor="middle" font-size="11.5" fill="#2d5a3a">8 questions share one</text>
+      <text x="795" y="94" text-anchor="middle" font-size="11.5" fill="#2d5a3a">exploration of the corpus</text>
+
+      <line x1="450" y1="130" x2="450" y2="160" stroke="#5a6a80" stroke-width="2" marker-end="url(#arr5)"/>
+      <rect x="200" y="165" width="500" height="56" rx="10" fill="#0d1b2e"/>
+      <text x="450" y="189" text-anchor="middle" font-size="13.5" font-weight="600" fill="#ffffff">Measured: a second pass over the same corpora answered at</text>
+      <text x="450" y="209" text-anchor="middle" font-size="13.5" font-weight="600" fill="#ffffff">half the cost, with a median of one model call per question.</text>
+    </svg>
+    <figcaption>Figure 6 — Four kinds of work that amortize across questions.</figcaption>
+  </figure>
+  <p>There is also a corpus cache: when you point <code>answer-csv</code> at a
+  folder of documents, the resulting <code>corpus.db</code> is keyed by a hash
+  of the files' identities, so re-running never re-ingests unchanged documents.
+  Long runs checkpoint their partial answers, so an interrupted job resumes
+  instead of re-paying.</p>
+</section>
+
+<!-- ============================================================ -->
+<section id="when">
+  <h2>12. When to use DocDB (and when not to)</h2>
+  <p>RNSR's own benchmarks are candid about this — DocDB is not always the
+  right tool.</p>
+  <div class="two-col">
+    <div class="callout green">
+      <strong>Use DocDB when…</strong>
+      <ul style="margin:6px 0 0; padding-left:18px;">
+        <li>The matter spans many documents or exceeds a context window</li>
+        <li>Answers are computed over sets: totals, counts, chronologies</li>
+        <li>Absence must be provable ("there is no such guarantee")</li>
+        <li>The file contains superseded drafts or overriding amendments</li>
+        <li>You'll ask many questions of the same documents</li>
+        <li>Citations must survive independent scrutiny</li>
+      </ul>
+    </div>
+    <div class="callout amber">
+      <strong>Just read the document into context when…</strong>
+      <ul style="margin:6px 0 0; padding-left:18px;">
+        <li>It's a single document under ~150k tokens</li>
+        <li>It's a one-off question</li>
+        <li>The answer is lookup/reading, not computation</li>
+        <li>No independently verifiable citation is required</li>
+      </ul>
+      <p style="margin:8px 0 0; font-size:0.9rem;">Measured accuracy is at
+      parity in this regime, and simple stuffing is cheaper.</p>
+    </div>
+  </div>
+  <p style="margin-top:18px;"><strong>One line:</strong> read a document → use
+  the context window; interrogate a matter → use DocDB.</p>
+
+  <h3>Where to go deeper</h3>
+  <table class="info">
+    <tr><th>Resource</th><th>What it covers</th></tr>
+    <tr><td><code>docdb-rlm-design-spec.md</code></td><td>The authoritative design document — every decision above, with rationale.</td></tr>
+    <tr><td><code>README.md</code></td><td>Benchmark results, install instructions, usage examples.</td></tr>
+    <tr><td><code>HANDOFF.md</code></td><td>The practical runbook for answering question sets over a matter folder.</td></tr>
+    <tr><td><code>rnsr/ingest/</code>, <code>rnsr/db/</code>, <code>rnsr/env/</code>, <code>rnsr/harness/</code></td><td>The source code for ingestion, the database schema, the query environment, and the RLM loop respectively.</td></tr>
+  </table>
+</section>
+
+</main>
+
+<footer>
+  RNSR DocDB — plain-English guide · generated from the codebase and
+  <code>docdb-rlm-design-spec.md</code>
+</footer>
+
+</body>
+</html>

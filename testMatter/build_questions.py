@@ -272,6 +272,24 @@ def item55_anchor(group_name: str) -> str | None:
     return None
 
 
+def relationship_anchor(f: dict) -> str | None:
+    """Multi-select 'relationship to application' fields: current status.
+
+    The intake documents pre-marriage cohabitation, which tempted a run
+    into also listing 'Party to a de facto relationship' for a married
+    party; the form wants the relationship as it stands.
+    """
+    if "relationship to this initiating application" not in (f["title"] or "").lower():
+        return None
+    return (
+        "FORM CONVENTION - RELATIONSHIP TO APPLICATION:\n"
+        "State the party's CURRENT relationship to the application. A de "
+        "facto relationship that later became a marriage counts only as "
+        "'Party to a marriage' - do not also list 'Party to a de facto "
+        "relationship' for parties who married. Include 'Parent' where the "
+        "documents record children of the parties.")
+
+
 def gender_anchor(group_name: str) -> str | None:
     """Hold the no-name-inference line on gender groups specifically.
 
@@ -298,7 +316,7 @@ def gender_anchor(group_name: str) -> str | None:
 def standalone_question(f: dict, roles: dict[str, str], form: str) -> str:
     parts = [roles_block(roles, form), subject_line(f, roles)]
     for anchor in (firm_anchor(f, roles), residence_anchor(f),
-                   parentage_anchor(f, roles)):
+                   parentage_anchor(f, roles), relationship_anchor(f)):
         if anchor:
             parts.append(anchor)
     parts.append(f"FORM QUESTION: {f['title']}")

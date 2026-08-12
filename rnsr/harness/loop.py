@@ -102,6 +102,14 @@ def _coerce_batch(value: object) -> dict | None:
     return None
 
 
+def _is_negative(answer: str) -> bool:
+    """Does this batch answer claim the corpus establishes nothing?"""
+    a = re.sub(r"\s+", " ", answer.strip().lower()).strip(".!")
+    return (a in ("", "no", "unknown", "n/a", "none", "not applicable",
+                  "not_applicable")
+            or a.startswith(("not_found", "not found")))
+
+
 @dataclass
 class RootRunner:
     """Binds the root/sub clients + settings; run() executes one query."""
@@ -160,7 +168,8 @@ class RootRunner:
     async def run(self, question: str, env: EnvSpec, *,
                   run_dir: str | Path | None = None,
                   query_id: str | None = None,
-                  batch_qids: list[str] | None = None) -> QueryResult:
+                  batch_questions: list[tuple[str, str]] | None = None) -> QueryResult:
+        batch_qids = [qid for qid, _ in batch_questions] if batch_questions else None
         s = self.settings
         ledger = BudgetLedger.from_settings(s)
         query_id = query_id or uuid.uuid4().hex[:12]
@@ -177,6 +186,7 @@ class RootRunner:
         seen_candidates: dict[str, int] = {}
         damped = False
         completeness_checked = False
+        negatives_audited = False
         budget_warned = False
 
         try:
@@ -241,6 +251,7 @@ class RootRunner:
                                  final=cell.final, rpc_count=cell.rpc_count)
 
                 if cell.final is not None:
+                    gap = None
                     if not completeness_checked:
                         completeness_checked = True
                         if batch_qids:
@@ -249,16 +260,27 @@ class RootRunner:
                         else:
                             gap = await self._completeness_gap(
                                 question, cell.final, ledger)
-                        if gap:
-                            trajectory.event("completeness_pushback", gap=gap)
-                            fname = "FINAL_BATCH" if batch_qids else "FINAL"
-                            turns.append((code, (
-                                f"[harness] {fname} not accepted yet — the "
-                                f"answer seems incomplete: {gap} Address this "
-                                f"and call {fname} again (or resubmit "
-                                "unchanged if you believe it is complete)."
-                            )))
-                            continue
+                    # Negative-answer audit (once, mechanical): a corpus
+                    # probe for questions answered No/unknown/NOT_FOUND —
+                    # lazy loops declare documented facts missing (seen
+                    # live: verbatim values marked not-found after two
+                    # shallow iterations).
+                    if (gap is None and batch_questions and env.corpus_db
+                            and not negatives_audited):
+                        negatives_audited = True
+                        gap = self._audit_negatives(
+                            cell.final, batch_questions, env.corpus_db,
+                            trajectory)
+                    if gap:
+                        trajectory.event("completeness_pushback", gap=gap)
+                        fname = "FINAL_BATCH" if batch_qids else "FINAL"
+                        turns.append((code, (
+                            f"[harness] {fname} not accepted yet — the "
+                            f"answer seems incomplete: {gap} Address this "
+                            f"and call {fname} again (or resubmit "
+                            "unchanged if you believe it is complete)."
+                        )))
+                        continue
                     final = cell.final
                     break
 
@@ -323,7 +345,7 @@ class RootRunner:
                                                       len(questions)))
         result = await runner.run(render_batch_task(questions), env,
                                   run_dir=run_dir, query_id=query_id,
-                                  batch_qids=qids)
+                                  batch_questions=questions)
         parsed = _coerce_batch(result.answer) or {}
         answers: dict[str, str | None] = {}
         for qid in qids:
@@ -331,6 +353,80 @@ class RootRunner:
             text = "" if value is None else str(value).strip()
             answers[qid] = text or None
         return BatchQueryResult(answers=answers, result=result)
+
+    @staticmethod
+    def _audit_negatives(final: dict, questions: list[tuple[str, str]],
+                         corpus_db: str, trajectory: TrajectoryWriter) -> str | None:
+        """Mechanical audit of negative batch answers against the corpus.
+
+        For each question answered No/unknown/NOT_FOUND without verified
+        quotes, run one free FTS probe (AND of its most distinctive terms).
+        Hits mean the corpus contains text where the question's terms
+        co-occur — the model must read those passages before its negative
+        stands. One shot per loop; a resubmission is accepted, so a
+        genuine negative costs at most one extra iteration.
+        """
+        import itertools
+        import sqlite3
+
+        from rnsr.db import fts
+        from rnsr.env.search import _STOP, _TOKEN
+
+        answers = _coerce_batch(final.get("value")) or {}
+        verification = final.get("verification") or {}
+        negatives = [
+            (qid, text) for qid, text in questions
+            if _is_negative(str(answers.get(qid, "")))
+            and not (verification.get(qid) or {}).get("passed")
+        ]
+        if not negatives:
+            return None
+        # Batched questions share heavy boilerplate (role maps, evidence
+        # rules), so probe each question's DISTINCTIVE adjacent word pairs
+        # — its field labels ("date of birth", "lawyer's code") — as FTS
+        # phrases. A phrase hit means the corpus literally contains the
+        # question's own wording, which is strong evidence a negative is
+        # premature; loose single-term co-occurrence flagged legitimate
+        # negatives and churned loops (seen live).
+        def bigrams(text: str) -> list[tuple[str, str]]:
+            toks = [t.lower() for t in _TOKEN.findall(text)]
+            return [(a, b) for a, b in itertools.pairwise(toks)
+                    if a not in _STOP and b not in _STOP]
+
+        all_bigrams = {qid: bigrams(text) for qid, text in questions}
+        flagged: list[str] = []
+        try:
+            conn = sqlite3.connect(f"file:{corpus_db}?mode=ro", uri=True)
+        except sqlite3.Error:
+            return None
+        try:
+            for qid, _text in negatives:
+                others = [set(bg) for o, bg in all_bigrams.items() if o != qid]
+                distinctive = [
+                    bg for bg in dict.fromkeys(all_bigrams[qid])
+                    if sum(bg in s for s in others) <= len(others) // 2
+                ] if others else list(dict.fromkeys(all_bigrams[qid]))
+                for a, b in distinctive[:8]:
+                    hits = fts.match(conn, f'"{a} {b}"', k=1)
+                    if hits:
+                        sample = " ".join(hits[0]["text"][:120].split())
+                        flagged.append(
+                            f"{qid} (doc {hits[0]['doc_id']}: \"{sample}\")")
+                        break
+        finally:
+            conn.close()
+        if not flagged:
+            return None
+        trajectory.event("negative_audit",
+                         flagged=[f.split(" ", 1)[0] for f in flagged])
+        listing = "; ".join(flagged[:6])
+        return (
+            "these questions were answered negatively, but the corpus "
+            f"contains text matching their terms: {listing}. Read those "
+            "passages (and search around them) before resubmitting — "
+            "change any answer they establish, or resubmit unchanged if "
+            "the negative truly stands."
+        )
 
     @staticmethod
     def _batch_gap(final: dict, qids: list[str]) -> str | None:

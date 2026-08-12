@@ -493,6 +493,9 @@ ANSWER FORMAT: reply with the requested value only, with no explanation. If the 
 THIS QUESTION IS ABOUT: Applicant 1 - Sarah Jane Mitchell.
 Do NOT use details belonging to Respondent 1 (Daniel Robert Mitchell); only Sarah Jane Mitchell's own details answer this.
 
+FORM CONVENTION - RELATIONSHIP TO APPLICATION:
+State the party's CURRENT relationship to the application. A de facto relationship that later became a marriage counts only as 'Party to a marriage' - do not also list 'Party to a de facto relationship' for parties who married. Include 'Parent' where the documents record children of the parties.
+
 FORM QUESTION: What is the the applicants relationship to this initiating application? ""Party to a marriage"" Party to a de facto relationship"" ""Parent"" ""Grandparent"" ""Other"". State all that apply, separated by commas
 
 FIELD DETAILS: For Applicant 1 — Sarah Jane Mitchell. Applicant's relationship to application
@@ -681,6 +684,9 @@ ANSWER FORMAT: reply with the requested value only, with no explanation. If the 
 
 THIS QUESTION IS ABOUT: Respondent 1 - Daniel Robert Mitchell.
 Do NOT use details belonging to Applicant 1 (Sarah Jane Mitchell); only Daniel Robert Mitchell's own details answer this.
+
+FORM CONVENTION - RELATIONSHIP TO APPLICATION:
+State the party's CURRENT relationship to the application. A de facto relationship that later became a marriage counts only as 'Party to a marriage' - do not also list 'Party to a de facto relationship' for parties who married. Include 'Parent' where the documents record children of the parties.
 
 FORM QUESTION: What is the the respondents relationship to this initiating application? ""Party to a marriage"" Party to a de facto relationship"" ""Parent"" ""Grandparent"" ""Other"". State all that apply, separated by commas
 

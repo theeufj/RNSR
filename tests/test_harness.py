@@ -2,6 +2,8 @@
 
 import json
 
+import pytest
+
 from rnsr.config import Settings
 from rnsr.harness.loop import EnvSpec, RootRunner
 from rnsr.harness.recovery import rank_candidates
@@ -288,6 +290,84 @@ class TestBatchLoop:
         prompt = root.calls[0]["prompt"]
         assert "[qA]" in prompt and "[qB]" in prompt
         assert "FINAL_BATCH" in prompt
+
+
+@pytest.fixture
+def docdb_env(tmp_path):
+    """Tiny docdb corpus with known facts for negative-audit tests."""
+    from rnsr.db.artifact import CorpusDB
+    from rnsr.harness.loop import EnvSpec
+    from rnsr.ingest.model import Element, ParsedDocument
+    from rnsr.ingest.pipeline import ingest
+
+    def parse(path):
+        return ParsedDocument(
+            doc_id="intake", source_path=str(path), sha256="c" * 64,
+            n_pages=1, parser="fake",
+            elements=[Element(
+                "text",
+                "Daniel Robert Mitchell resides at 17 Strathfield Avenue. "
+                "Contact email address: daniel@example.com. "
+                "Lawyer code SUF123 appears on the letterhead. ", 1)],
+            tables=[])
+
+    out = tmp_path / "corpus.db"
+    ingest([tmp_path / "intake.pdf"], out, parse=parse)
+    with CorpusDB(out) as c:
+        manifest = c.manifest_dict()
+    return EnvSpec(mode="docdb", corpus_db=str(out), manifest=manifest)
+
+
+class TestNegativeAudit:
+    async def test_lazy_negative_pushed_back_then_corrected(self, tmp_path,
+                                                            docdb_env):
+        root = MockLLM().script(
+            "```python\nFINAL_BATCH({'q1': 'NOT_FOUND', 'q2': 'yes'})\n```",
+            "```python\nFINAL_BATCH({'q1': 'daniel@example.com', "
+            "'q2': 'yes'})\n```",
+        )
+        br = await make_runner(root).run_batch(
+            [("q1", "What is the email address of Daniel Robert Mitchell?"),
+             ("q2", "Does Daniel Robert Mitchell reside at Strathfield?")],
+            docdb_env, run_dir=tmp_path)
+        assert br.answers["q1"] == "daniel@example.com"
+        pushback = root.calls[1]["prompt"]
+        assert "answered negatively" in pushback and "q1" in pushback
+        # the positive answer is not audited
+        assert "q2 (" not in pushback
+
+    async def test_genuine_negative_resubmission_accepted(self, tmp_path,
+                                                          docdb_env):
+        # the model insists after one pushback -> accepted (audit is one-shot)
+        root = MockLLM(
+            default="```python\nFINAL_BATCH({'q1': 'NOT_FOUND'})\n```")
+        br = await make_runner(root).run_batch(
+            [("q1", "What is the email address of Daniel Robert Mitchell?")],
+            docdb_env, run_dir=tmp_path)
+        assert br.result.status == "final"
+        assert br.answers["q1"] == "NOT_FOUND"
+        assert br.result.iterations == 2
+
+    async def test_negative_with_no_corpus_hits_not_flagged(self, tmp_path,
+                                                            docdb_env):
+        # terms absent from the corpus -> probe finds nothing -> no pushback
+        root = MockLLM().script(
+            "```python\nFINAL_BATCH({'q1': 'NOT_FOUND'})\n```")
+        br = await make_runner(root).run_batch(
+            [("q1", "Is there a superannuation splitting agreement "
+                    "registered in Queensland?")],
+            docdb_env, run_dir=tmp_path)
+        assert br.result.status == "final"
+        assert br.result.iterations == 1
+
+    def test_is_negative_classifier(self):
+        from rnsr.harness.loop import _is_negative
+
+        for a in ("No", "no", " unknown ", "N/A", "", "NOT_FOUND",
+                  "Not found in matter corpus", "not applicable"):
+            assert _is_negative(a), a
+        for a in ("Yes", "17 Strathfield Avenue", "14/02/2014", "No. 42"):
+            assert not _is_negative(a), a
 
 
 class TestBatchHelpers:

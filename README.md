@@ -144,6 +144,42 @@ group in one context and picks one. Budgets scale sub-linearly with
 batch size (each extra question adds half a single question's caps), so
 a confused batch cannot burn n questions' worth of spend.
 
+With enriched questions (`rnsr build-questions`: group collapse, role
+maps, evidence rules, per-field answer shapes) the same matter reaches
+**49/49**, holding across repeated fresh runs at ~2.6–2.9 min and ~$1.50
+per full form fill. Two mechanical guards keep it there, neither of them
+a request to the model: a **negative-answer audit** re-checks every
+No/unknown/NOT_FOUND against the corpus by FTS phrase probe before
+FINAL_BATCH is accepted (lazy loops declared documented facts missing),
+and **quotes are mandatory** for value-bearing answers, verified against
+source text (a run invented an address that appears in no document).
+Per-field accuracy across nine fresh runs is 98.8%, with roughly two runs
+in three perfect end-to-end — `--consensus 2` is the lever when every run
+must be.
+
+**Corpus scale** (the same regime, 90× the documents): a vendor
+999-document family-law matter — 467 PDFs, 390 emails, 64 Word files, 30
+text, 26 CSV across seven folders — with a 90-question verification key
+for the FCFCOA Initiating Application, built with deliberate traps (decoy
+separation date, a chronology document whose dates are wrong, questions
+that must be left blank):
+
+| Metric | Result |
+|---|---|
+| Questions correct | **90/90** |
+| Ingest (977 readable files, fast text tier) | **1.3 s**, zero parse failures |
+| Wall time per 90-question run | 7–15 min |
+| LLM spend per run | $5–9 |
+
+Retrieval did not degrade with corpus size: the search ladder found
+needles like a s 60J advice note buried in one FDR intake record among
+999 files. What grew was exploration per question, not the cost of
+having more documents. The instructive trap is the chronology: on the
+first run the model trusted its tidy (wrong) summary table; once told
+that internal chronologies are secondary evidence, it preferred the
+letter where the *opposing* solicitor accepted the true date in writing
+— which is what a careful human does.
+
 **Fix-and-confirm cycle** (post three-seed autopsy): the two DocDB SQL
 slips were converted into prompt disciplines (trust document units/headers;
 sum line items OR total rows, never both; reconcile computed aggregates
@@ -190,6 +226,8 @@ One line: **read a document → context window; interrogate a matter → DocDB.*
 pip install -e .              # query-time core (a prebuilt corpus.db is enough)
 pip install -e ".[ingest]"    # + parsing stack (Docling for PDF, anydoc for office)
 pip install -e ".[eval,dev]"  # benchmarks + dev tooling
+pip install -e ".[service]"   # + HTTP service (rnsr serve)
+pip install -e ".[secure]"    # + trajectory encryption at rest
 ```
 
 Set at least one provider key in `.env` (see `.env.example`):
@@ -215,8 +253,27 @@ rnsr query corpus.db "What was FY2023 segment revenue?"
 # exploration via FINAL_BATCH; unanswered ones are retried solo.
 # Checkpointed: rerunning resumes instead of re-paying.
 rnsr answer-csv --corpus matter_dir/ --questions questions.csv --output out/
-#   --batch-size 8    questions per shared loop (1 = solo loops)
-#   --concurrency 4   loops in flight at once
+#   --batch-size 8       questions per shared loop (1 = solo loops)
+#   --concurrency 4      loops in flight at once
+#   --consensus 2        independent passes voted per field; disagreements are
+#                        settled by a focused loop and flagged, not hidden
+#   --max-error-rate 0   exit 2 rather than return placeholder answers
+# Alongside the CSV: answers_status.csv (per-question status, agreement,
+# error) and run_report.json (counts, spend, metrics).
+
+# Enriched questions from a form spec: mutually exclusive fields collapse
+# into one question each, form conventions attach as data, and the map file
+# fans each answer back out to individual fields.
+rnsr build-questions --spec form.json --out questions.csv --map questions.map.json
+
+# Score a run against a golden set and gate on accuracy (exit 2 below it)
+rnsr regress --answers out/answers_chunk1.csv --golden golden.json \
+    --map questions.map.json --min-accuracy 0.95
+
+# Operations
+rnsr doctor                    # provider keys, live model names, pricing rows
+rnsr serve --port 8000         # /healthz /readyz /metrics POST /jobs
+rnsr trajectory runs/.../q000.jsonl.enc   # decrypt/read a trajectory
 
 # Evaluation harness (§8): systems are flags over the same loop
 rnsr eval --benchmark financebench --system docdb
@@ -269,22 +326,65 @@ db.execute("""
   600 s / $2), damping against re-verification loops, variable-recovery
   fallback, sandbox restart on runaway cells, root-call timeouts. Batched
   loops scale every cap by 1 + 0.5·(n−1) for n questions.
-- **Sandbox**: subprocess with no network; model/embedding calls are RPC-
-  brokered by the parent under a bounded-concurrency semaphore.
+- **Run governance**: one governor gates all provider traffic — in-flight
+  cap, RPM ceiling, aggregate spend ceiling, and a shared cooldown when any
+  call is rate-limited. Per-query budgets cap a query; this caps the run.
+- **Sandbox**: subprocess with no network, spawned with a scrubbed
+  environment (no provider keys) and an audit hook that confines filesystem
+  reads to the interpreter and the corpus artifact, confines writes to the
+  artifact and a private scratch dir, and refuses process creation and
+  ctypes. Matter documents are untrusted input; the cell that reads them
+  also writes code. In-process containment is a bar-raiser, not a jail —
+  run one container per tenant (see `Dockerfile`) for a kernel boundary.
+- **Data protection**: trajectories quote client documents, so content mode
+  (`full`/`redacted`/`metadata`), Fernet encryption at rest, and retention
+  pruning are all settings; a work-directory lock keeps two runs from
+  interleaving one checkpoint.
+- **Observability**: structured logs (text or JSON lines) on stderr, plus
+  counters and latency/spend percentiles in every run report.
+
+## Running it on real matters
+
+Everything below defaults to off or permissive so research runs are
+unchanged; a deployment handling client files should turn them on.
+
+| Concern | Control | Why it exists |
+|---|---|---|
+| Untrusted documents | `RNSR_SANDBOX_FS_GUARD=true` (default) | A poisoned document can talk the model into writing code; reads stay inside the corpus artifact, and processes/ctypes are refused |
+| Kernel-level isolation | `Dockerfile` (non-root, one container per tenant) | In-process containment raises the bar; only the OS is a boundary |
+| Privileged text at rest | `RNSR_TRAJECTORY_CONTENT`, `RNSR_TRAJECTORY_KEY`, `RNSR_TRAJECTORY_RETENTION_DAYS` | Trajectories quote client documents verbatim |
+| Runaway spend | `RNSR_RUN_SPEND_CEILING_USD`, `RNSR_MAX_IN_FLIGHT_REQUESTS`, `RNSR_MAX_REQUESTS_PER_MINUTE` | Per-query budgets cap a query, not a 999-question job |
+| Silent failure | `--max-error-rate` (default: any error fails), `answers_status.csv`, `run_report.json` | A provider outage must not read as "the corpus does not say" |
+| Run-to-run variance | `--consensus 2` | Two independent passes rarely make the same mistake, so a split is a signal |
+| Model rot | `rnsr doctor` | Model names retire on the provider's schedule; an unpriced model makes spend caps infinite |
+| Accuracy drift | `.github/workflows/regression.yml` + `rnsr regress --min-accuracy` | Provider behaviour changes outside this repository |
+
+Known limits, stated plainly: jobs in `rnsr serve` live in one process's
+memory (single node by design — a multi-node deployment needs a real
+queue); quote verification proves a quote matches the source but not that
+the answer matches its own quote, so a correct quote beside a
+mis-transcribed value still passes; and the form conventions in
+`testMatter/mitchell_form_spec.json` were derived from observed misses on
+that matter, so a new form starts from the generic rules and earns its own
+conventions.
 
 ## Development
 
 ```bash
 python3.14 -m venv .venv && source .venv/bin/activate
 pip install -e ".[ingest,eval,dev]"
-pytest            # 268 tests; LLM-free by default (live tests opt-in: -m live)
+pytest            # 371 tests; LLM-free by default (live tests opt-in: -m live)
 ruff check .
 ```
 
 Implementation phases (spec §10) — all delivered and all gates closed:
 **A** deterministic ingestion → **B** RLM harness (OOLONG reproduction
 passed) → **C** fusion + go/no-go gate (passed) → **D** hardening (rung-4
-embeddings + ablation, schema_map, per-provider prompts). Scanned PDFs are
-supported via VLM transcription (no OCR engine). Cross-document schema
-unification stays deliberately manual via `schema_map` proposals (§9);
-sub-model serving remains deployment guidance (`docs/sub-lm-serving.md`).
+embeddings + ablation, schema_map, per-provider prompts) → **E**
+productionisation (sandbox filesystem containment, run governance, error
+surfacing, consensus mode, trajectory data protection, service surface and
+container, spec-driven question enrichment, scheduled golden regression).
+Scanned PDFs are supported via VLM transcription (no OCR engine).
+Cross-document schema unification stays deliberately manual via
+`schema_map` proposals (§9); sub-model serving remains deployment guidance
+(`docs/sub-lm-serving.md`).

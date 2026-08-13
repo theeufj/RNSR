@@ -1,0 +1,107 @@
+name: Golden regression
+
+# Accuracy depends on things this repository does not control: a provider can
+# change a model's behaviour between two identical runs, and the enrichment
+# rules are tuned against observed misses. A weekly live run against the
+# golden matter is how a silent provider-side change gets found here rather
+# than by a client.
+#
+# Needs ANTHROPIC_API_KEY (or OPENAI_API_KEY / GOOGLE_API_KEY) as a repo
+# secret. Skips itself when no key is configured, so forks stay green.
+
+on:
+  schedule:
+    - cron: "0 17 * * 0"        # Sundays 17:00 UTC
+  workflow_dispatch:
+    inputs:
+      min_accuracy:
+        description: "Fail below this field accuracy (0-1)"
+        default: "0.95"
+      consensus:
+        description: "Independent passes per batch"
+        default: "1"
+
+permissions:
+  contents: read
+
+jobs:
+  golden-matter:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      RNSR_LOG_FORMAT: json
+      # a runaway run must not be able to empty the account
+      RNSR_RUN_SPEND_CEILING_USD: "25"
+      MIN_ACCURACY: ${{ inputs.min_accuracy || '0.95' }}
+      CONSENSUS: ${{ inputs.consensus || '1' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install
+        run: pip install -e ".[ingest,eval,dev]"
+
+      - name: Check for a provider key
+        id: guard
+        run: |
+          if [ -z "$ANTHROPIC_API_KEY" ]; then
+            echo "No provider key configured; skipping the live regression."
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Verify models and pricing
+        if: steps.guard.outputs.run == 'true'
+        run: rnsr doctor
+
+      - name: Rebuild enriched questions from the form spec
+        if: steps.guard.outputs.run == 'true'
+        # the spec, not the raw vendor export: it inherits the export's fields
+        # and layers this form's conventions on top, which is what the
+        # measured accuracy depends on
+        run: |
+          rnsr build-questions \
+            --spec testMatter/mitchell_form_spec.json \
+            --out runs/regression/questions.csv \
+            --map runs/regression/questions.map.json
+
+      - name: Answer the golden matter
+        if: steps.guard.outputs.run == 'true'
+        run: |
+          rnsr answer-csv \
+            --corpus "testMatter/Mitchell & Mitchell" \
+            --questions runs/regression/questions.csv \
+            --output runs/regression/out \
+            --work-dir runs/regression/work \
+            --batch-size 8 \
+            --consensus "$CONSENSUS" \
+            --max-error-rate 0.05
+
+      - name: Score against the golden set
+        if: steps.guard.outputs.run == 'true'
+        run: |
+          rnsr regress \
+            --answers runs/regression/out/answers_chunk1.csv \
+            --golden testMatter/golden.json \
+            --map runs/regression/questions.map.json \
+            --out runs/regression/out \
+            --min-accuracy "$MIN_ACCURACY"
+
+      - name: Upload the run for inspection
+        if: always() && steps.guard.outputs.run == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: regression-run
+          # trajectories quote the matter documents, so only the scored
+          # summaries leave the runner
+          path: |
+            runs/regression/out/comparison.csv
+            runs/regression/out/regression_summary.json
+            runs/regression/out/run_report.json
+          retention-days: 30

@@ -4,11 +4,18 @@ Run as ``python -m rnsr.env.sandbox_child``. Speaks length-prefixed JSON
 over the original stdin/stdout; user code's print() goes to an in-memory
 buffer, never the protocol channel.
 
-Hardening (accident containment, not adversarial isolation):
+Hardening:
   - resource rlimits on CPU time and address space
-  - an audit hook that blocks socket use — the child needs zero network;
-    llm_query()/embed() are RPC stubs served by the parent
+  - an audit hook (rnsr.env.fsguard) that confines filesystem reads to
+    the interpreter and the corpus artifact, confines writes to the
+    artifact and temp, and refuses sockets, process creation and ctypes
+  - the parent spawns the child with a scrubbed environment, so provider
+    keys are not readable even in-process
   - the parent enforces per-cell wall-clock with SIGKILL
+
+The guard installs after the namespace is preloaded: ingest-side machinery
+runs unrestricted, and containment begins where untrusted influence does,
+at the first model-written cell.
 
 Ops: init (preload namespace), exec (run a cell), vars (namespace summary
 for the variable-recovery fallback), shutdown.
@@ -22,9 +29,6 @@ import json
 import struct
 import sys
 import traceback
-
-_BLOCKED_AUDIT_PREFIXES = ("socket.connect", "socket.bind", "socket.sendto",
-                           "socket.sendmsg")
 
 
 class _FinalAnswer(Exception):
@@ -42,11 +46,19 @@ def _install_limits(cpu_s: int, mem_bytes: int) -> None:
     with contextlib.suppress(Exception):
         resource.setrlimit(resource.RLIMIT_AS, (mem_bytes, mem_bytes))
 
-    def hook(event: str, args) -> None:
-        if event.startswith(_BLOCKED_AUDIT_PREFIXES):
-            raise PermissionError(f"network access is blocked in the sandbox ({event})")
 
-    sys.addaudithook(hook)
+def _prewarm_native() -> None:
+    """Import the native-extension modules a cell may need, before the
+    guard forbids ctypes.
+
+    numpy calls ctypes.dlopen(None) on import — the very primitive that
+    reaches libc open() from under the audit hook, so it cannot be allowed
+    once untrusted code is running. Importing it here means a later
+    `import numpy` in a cell is a sys.modules lookup that dlopens nothing.
+    """
+    for module in ("numpy", "sqlite_vec"):
+        with contextlib.suppress(ImportError):
+            __import__(module)
 
 
 class Channel:
@@ -135,7 +147,13 @@ class Child:
 
             self.namespace.update(build_namespace(msg["corpus_db"], self, msg))
         self.preloaded = set(self.namespace)
-        return {"ok": True, "mode": msg.get("mode")}
+        if msg.get("fs_guard", True):
+            from rnsr.env import fsguard
+
+            _prewarm_native()
+            fsguard.install(corpus_db=msg.get("corpus_db"))
+        return {"ok": True, "mode": msg.get("mode"),
+                "fs_guard": bool(msg.get("fs_guard", True))}
 
     def op_exec(self, msg: dict) -> dict:
         code = msg["code"]

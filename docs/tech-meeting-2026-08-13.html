@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RNSR — Batched Form-Fill Results · Tech Meeting 13 Aug 2026</title>
+<style>
+  :root {
+    --ink: #1a1f2e; --muted: #5b6474; --line: #e3e7ee;
+    --accent: #0e6e5c; --accent-soft: #e7f4f1;
+    --bad: #b3423a; --bad-soft: #faeceb;
+    --warn: #8a6d1a; --warn-soft: #faf3dc;
+    --card: #ffffff; --page: #f6f7fa;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--page); color: var(--ink);
+    font: 16px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  }
+  .wrap { max-width: 980px; margin: 0 auto; padding: 40px 28px 80px; }
+  header { border-bottom: 3px solid var(--accent); padding-bottom: 18px; margin-bottom: 34px; }
+  h1 { font-size: 30px; margin: 0 0 6px; letter-spacing: -0.02em; }
+  .sub { color: var(--muted); font-size: 15px; }
+  h2 {
+    font-size: 21px; margin: 46px 0 6px; letter-spacing: -0.01em;
+    display: flex; align-items: baseline; gap: 10px;
+  }
+  h2 .n {
+    color: var(--accent); font-size: 15px; font-weight: 700;
+    font-variant-numeric: tabular-nums;
+  }
+  .plain {
+    background: var(--accent-soft); border-left: 4px solid var(--accent);
+    padding: 12px 16px; border-radius: 0 8px 8px 0; margin: 10px 0 18px;
+    font-size: 16.5px;
+  }
+  .plain b { color: var(--accent); }
+  p { margin: 10px 0; }
+  table {
+    border-collapse: collapse; width: 100%; margin: 14px 0 6px;
+    background: var(--card); border-radius: 10px; overflow: hidden;
+    box-shadow: 0 1px 3px rgba(20,30,50,.08); font-size: 15px;
+  }
+  th, td { text-align: left; padding: 9px 14px; border-bottom: 1px solid var(--line); }
+  th { background: #eef1f6; font-size: 13px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
+  tr:last-child td { border-bottom: none; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+  .good { color: var(--accent); font-weight: 700; }
+  .poor { color: var(--bad); font-weight: 600; }
+  .pill {
+    display: inline-block; padding: 1px 9px; border-radius: 99px;
+    font-size: 12.5px; font-weight: 600;
+  }
+  .pill.g { background: var(--accent-soft); color: var(--accent); }
+  .pill.r { background: var(--bad-soft); color: var(--bad); }
+  .pill.y { background: var(--warn-soft); color: var(--warn); }
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 14px; margin: 18px 0; }
+  .card {
+    background: var(--card); border-radius: 12px; padding: 16px 18px;
+    box-shadow: 0 1px 3px rgba(20,30,50,.08);
+  }
+  .card .big { font-size: 30px; font-weight: 800; letter-spacing: -0.02em; }
+  .card .big.g { color: var(--accent); }
+  .card .lbl { color: var(--muted); font-size: 13.5px; margin-top: 2px; }
+  .bar-row { display: flex; align-items: center; gap: 12px; margin: 7px 0; font-size: 14px; }
+  .bar-row .lab { width: 240px; color: var(--muted); flex-shrink: 0; }
+  .bar-row .bar { height: 20px; border-radius: 4px; background: var(--accent); min-width: 3px; }
+  .bar-row .bar.b { background: #7f8ba3; }
+  .bar-row .val { font-variant-numeric: tabular-nums; font-weight: 600; }
+  .note { color: var(--muted); font-size: 13.5px; margin: 6px 0 0; }
+  .caveat {
+    background: var(--warn-soft); border-left: 4px solid var(--warn);
+    padding: 12px 16px; border-radius: 0 8px 8px 0; margin: 14px 0;
+  }
+  code { background: #edf0f5; padding: 1px 6px; border-radius: 5px; font-size: 13.5px; }
+  ul { margin: 8px 0; padding-left: 22px; }
+  li { margin: 5px 0; }
+  footer { margin-top: 60px; color: var(--muted); font-size: 13px; border-top: 1px solid var(--line); padding-top: 14px; }
+  @media print { body { background: #fff; } .wrap { padding: 10px; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <h1>RNSR: batched form-fill — results</h1>
+  <div class="sub">Tech meeting · Wednesday 13 August 2026 · covers work from 5–12 August</div>
+</header>
+
+<div class="cards">
+  <div class="card"><div class="big g">100%</div><div class="lbl">49/49 fields correct on the Mitchell matter (11 documents)</div></div>
+  <div class="card"><div class="big g">100%</div><div class="lbl">90/90 questions correct on the 999-document matter</div></div>
+  <div class="card"><div class="big g">10&times;</div><div class="lbl">faster than one-question-at-a-time (2.9 min vs 27 min)</div></div>
+  <div class="card"><div class="big g">4&times;</div><div class="lbl">cheaper per form fill ($1.50 vs $23 in LLM spend)</div></div>
+</div>
+
+<h2><span class="n">1</span>What changed, in one paragraph</h2>
+<div class="plain">
+We used to send the AI <b>one question at a time</b>: every question paid for its own
+full exploration of the matter documents. Now we send it <b>batches of eight related
+questions</b> and it answers them all from <b>one</b> read of the documents. Because the
+questions share their homework, the whole form fills faster, cheaper — and, unexpectedly,
+<b>more accurately</b>, because the AI can see when questions are two sides of the same
+coin (tick one box, leave its siblings blank) instead of answering each in isolation.
+</div>
+
+<h2><span class="n">2</span>Test 1 — the Mitchell matter (49 form fields, 11 documents)</h2>
+<p>A synthetic family-law matter with a vendor-supplied answer key: 49 fields of a court
+form (checkboxes, dates, addresses, names).</p>
+
+<div class="bar-row"><span class="lab">Old way — one question per run</span><div class="bar b" style="width:245px"></div><span class="val">30/49 correct · 27 min · $23.11</span></div>
+<div class="bar-row"><span class="lab">New way — batched (final)</span><div class="bar" style="width:400px"></div><span class="val good">49/49 correct · ~2.9 min · ~$1.50</span></div>
+
+<p><b>Why the old way scored worse, in plain English:</b> forms have groups of options where
+exactly one may be ticked (“Is the party Aboriginal? / Torres Strait Islander? / Neither?”).
+Asked one at a time, the AI happily answered “yes” to <i>every</i> option — each answer looked
+right on its own. Batched, it decides the group once and the contradictions are impossible.</p>
+
+<table>
+  <tr><th>Stability check (fresh runs, final setup)</th><th class="num">Score</th><th class="num">Time</th></tr>
+  <tr><td>9 independent runs</td><td class="num">6 &times; perfect, 2 &times; 48/49, 1 &times; 47/49</td><td class="num">2.5–5 min</td></tr>
+  <tr><td>Per-field accuracy across all 9 runs</td><td class="num good">98.8% (484/490)</td><td class="num">—</td></tr>
+</table>
+<p class="note">One answer-key error was found and documented along the way: the vendor key
+expected a child’s gender that no document records (their own capture cites no source for it).
+We corrected that one golden value with a written justification in the file.</p>
+
+<h2><span class="n">3</span>Test 2 — scaling up: 999 documents</h2>
+<p>A much larger vendor test set: a de facto separation matter with <b>999 documents</b>
+(bills, emails, letters, certificates, spreadsheets) and a 90-question verification key for
+the FCFCOA Initiating Application. Designed with deliberate traps: decoy dates, a chronology
+document with scrambled facts, questions that must be left blank.</p>
+
+<div class="cards">
+  <div class="card"><div class="big g">1.3s</div><div class="lbl">to ingest all 977 readable documents (fast text tier, zero failures)</div></div>
+  <div class="card"><div class="big g">90/90</div><div class="lbl">questions correct on the final run</div></div>
+  <div class="card"><div class="big">7–15 min</div><div class="lbl">per full 90-question run</div></div>
+  <div class="card"><div class="big">$5–9</div><div class="lbl">LLM spend per run</div></div>
+</div>
+
+<table>
+  <tr><th>Run</th><th class="num">Score</th><th>What we changed before this run (plain English)</th></tr>
+  <tr><td>1</td><td class="num">81/90</td><td>Nothing — first attempt straight from the verification key.</td></tr>
+  <tr><td>2</td><td class="num">87/90</td><td>Some key questions literally said “Mark box as applicable” without listing the boxes — we added the form’s own option lists. Also told the AI that internal chronologies are second-hand summaries: trust original letters over them.</td></tr>
+  <tr><td>3</td><td class="num">86/90</td><td>Clarified which email a “service address” block wants. One of our own new rules over-corrected a field (fixed next run).</td></tr>
+  <tr><td>4</td><td class="num">87/90</td><td>Taught it that “Filed on behalf of” takes a role (“The applicant”), not a person’s name.</td></tr>
+  <tr><td>5</td><td class="num good">90/90</td><td>Gave multi-part questions an explicit answer shape (“Yes — 2: (1) … (2) …”) so a bare “Yes” is never accepted where a list is required.</td></tr>
+</table>
+
+<p><b>The trap that matters:</b> the matter file contains a tidy chronology document whose
+dates were deliberately scrambled. On run&nbsp;1 the AI trusted it and got the cohabitation
+date wrong. After the “summaries are second-hand” rule, it instead trusted the letter where
+the <i>other side’s</i> solicitor accepted the true date in writing — which is exactly what a
+careful human would do.</p>
+
+<h2><span class="n">4</span>Safety rails added along the way</h2>
+<p>Two failure modes showed up in stability testing, and each now has a mechanical guard —
+not a polite request in the prompt, but a check the system enforces:</p>
+<ul>
+  <li><b>The lazy batch.</b> Occasionally a batch declared documented facts “not found” after
+  a shallow look. Now, before any batch of answers is accepted, every negative answer is
+  <b>audited against the documents automatically</b> (a free text-index probe, no AI call):
+  if the corpus contains the question’s own wording — “date of birth”, “lawyer’s code” —
+  the negative is rejected back with the exact passage to read.</li>
+  <li><b>The invented value.</b> One run answered an address that appears in <i>no document</i>.
+  Quotes are now <b>mandatory</b> for any answer that states a value (names, dates, amounts,
+  addresses), and quotes are machine-verified against the source text — a fabricated value
+  can no longer be submitted silently.</li>
+</ul>
+
+<h2><span class="n">5</span>What we tried for speed (and what won)</h2>
+<table>
+  <tr><th>Setup</th><th class="num">Accuracy</th><th class="num">Time</th><th>Verdict</th></tr>
+  <tr><td>Batches of 8, Sonnet (chosen)</td><td class="num good">best &amp; most stable</td><td class="num">~3 min</td><td><span class="pill g">production setting</span></td></tr>
+  <tr><td>Batches of 16</td><td class="num">—</td><td class="num">slower</td><td><span class="pill r">fewer batches = less parallelism; abandoned</span></td></tr>
+  <tr><td>Batches of 4, max parallel</td><td class="num poor">dipped</td><td class="num">~2.6 min</td><td><span class="pill r">small batches re-introduced contradictions</span></td></tr>
+  <tr><td>Cheaper model (Haiku) driving</td><td class="num poor">1 in 3 runs perfect</td><td class="num">2–3.5 min</td><td><span class="pill y">misses the hardest inference chains</span></td></tr>
+</table>
+<p class="note">The floor is the slowest single batch (its AI calls are sequential). Next
+speed lever if we need it: pre-loading document text before the AI’s first turn
+(“warm start”), estimated to land runs at 1.5–2 min.</p>
+
+<h2><span class="n">6</span>Honest caveats</h2>
+<div class="caveat">
+<ul style="margin:4px 0">
+  <li><b>Perfect runs are the norm, not a guarantee.</b> Across repeated fresh runs we see
+  ~99% per-field accuracy, with roughly two runs in three scoring perfect. If a workflow
+  needs <i>every run</i> perfect, the answer is consensus mode: run each batch twice in
+  parallel, auto-accept agreements, re-ask the rare disagreement (≈2&times; cost, same wall
+  time). Designed, not yet built.</li>
+  <li><b>The question tuning was informed by observed misses.</b> Everything we added is
+  public form structure (option lists, answer shapes) — never matter facts — but the clean
+  generalisation test is a fresh unseen test set using these patterns from day one.</li>
+  <li><b>Long answers are graded by an AI judge</b> (17 of the 90 on the big set), because
+  “the same answer in different words” can’t be string-matched. Judge-scored items were
+  spot-checked by hand.</li>
+</ul>
+</div>
+
+<h2><span class="n">7</span>Where this ships</h2>
+<ul>
+  <li>All of it is on <code>main</code> and published to PyPI as <code>rnsr 1.0.0a4</code>.</li>
+  <li>One command per matter: <code>rnsr answer-csv --corpus &lt;folder&gt; --questions &lt;csv&gt; --fast-ingest --batch-size 8</code>.
+  Ingest is cached; re-running a matter resumes from its checkpoint at zero cost.</li>
+  <li>270+ automated tests; the batching machinery, the negative-answer audit, and quote
+  verification are all covered.</li>
+</ul>
+
+<footer>
+  Data sources: <code>runs/stability-b8-run*</code>, <code>runs/ts6*</code>, <code>runs/solo-baseline</code>,
+  <code>testMatter/score_answers.py</code>, <code>testMatter/ts6_score.py</code> comparison CSVs ·
+  Generated 13 Aug 2026
+</footer>
+
+</div>
+</body>
+</html>

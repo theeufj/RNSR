@@ -55,7 +55,7 @@ class MockLLM:
     async def complete(self, prompt, *, model="mock-model", system=None,
                        max_tokens=4096, temperature=0.0, seed=None):
         self.calls.append({"kind": "complete", "prompt": prompt, "system": system,
-                           "model": model})
+                           "model": model, "seed": seed})
         if self.fail_times > 0:
             self.fail_times -= 1
             raise RuntimeError("rate limit (simulated 429)")

@@ -37,6 +37,27 @@ class Settings:
     sub_concurrency: int = 16
     cell_timeout_s: float = 120.0   # per-cell wall clock; sandbox killed past this
 
+    # --- run-level provider governance (rnsr.llm.governor) ---
+    # Budgets above cap ONE query; these cap the run. 0 disables a limit.
+    max_in_flight_requests: int = 24     # concurrent provider requests, all roles
+    max_requests_per_minute: int = 0     # sliding-window RPM ceiling
+    run_spend_ceiling_usd: float = 0.0   # aggregate USD before calls are refused
+
+    # --- trajectory data protection (rnsr.harness.trajectory) ---
+    # Trajectories quote client documents verbatim. 'full' keeps the complete
+    # forensic record; 'redacted' replaces document-bearing values with a
+    # length + digest; 'metadata' drops them. A Fernet key encrypts each line
+    # at rest (needs the 'secure' extra).
+    trajectory_content: str = "full"
+    trajectory_key: str = ""
+    trajectory_retention_days: float = 0.0    # 0 keeps trajectories forever
+
+    # --- containment ---
+    # Confines model-written code to the corpus artifact (rnsr.env.fsguard).
+    # Only turn this off to debug the guard itself: matter documents are
+    # untrusted input, and the cell that reads them can also write code.
+    sandbox_fs_guard: bool = True
+
     # --- ingestion validation (§3.3) ---
     table_confidence_threshold: float = 0.7
     arithmetic_rel_tol: float = 0.005   # 0.5%
@@ -62,6 +83,7 @@ class Settings:
     llm_seed: int = 42
     run_dir: Path = field(default_factory=lambda: Path("runs"))
     log_level: str = "INFO"
+    log_format: str = "text"        # text for terminals, json for log shippers
 
     @classmethod
     def from_env(cls, dotenv_path: str | Path | None = None) -> Settings:
@@ -80,6 +102,11 @@ class Settings:
                 kwargs[f.name] = int(raw)
             elif f.type in ("float",):
                 kwargs[f.name] = float(raw)
+            elif f.type in ("bool",):
+                # every non-empty string is truthy, so a bare cast would make
+                # RNSR_SANDBOX_FS_GUARD=false silently enable the guard's
+                # opposite of what the operator asked for
+                kwargs[f.name] = raw.strip().lower() in ("1", "true", "yes", "on")
             elif f.name == "run_dir":
                 kwargs[f.name] = Path(raw)
             else:

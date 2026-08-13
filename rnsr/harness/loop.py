@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import re
 import uuid
 from dataclasses import dataclass, field, replace
@@ -28,9 +29,12 @@ from rnsr.harness.recovery import recover_variable
 from rnsr.harness.trajectory import TrajectoryWriter
 from rnsr.llm.base import LLMClient
 from rnsr.llm.batch import map_prompts
+from rnsr.obs import get_logger, log, metrics
 
 _CODE_BLOCK = re.compile(r"```(?:python|py)?\s*\n(.*?)```", re.DOTALL)
 _OBSERVATION_LIMIT = 4000
+
+_LOG = get_logger("harness.loop")
 
 
 @dataclass
@@ -65,6 +69,40 @@ class BatchQueryResult:
 
     answers: dict[str, str | None]
     result: QueryResult
+
+
+@dataclass
+class ConsensusAnswer:
+    """One field's answer after independent passes voted on it."""
+
+    value: str | None
+    resolved_by: str            # 'unanimous' | 'majority' | 'tiebreak' | 'unresolved'
+    agreement: float            # share of passes that produced the chosen value
+    votes: list[str | None] = field(default_factory=list)
+
+    @property
+    def contested(self) -> bool:
+        return self.resolved_by in ("tiebreak", "unresolved")
+
+
+@dataclass
+class ConsensusBatchResult:
+    answers: dict[str, ConsensusAnswer]
+    pass_results: list[QueryResult] = field(default_factory=list)
+    tiebreak_results: dict[str, QueryResult] = field(default_factory=dict)
+
+    @property
+    def contested_qids(self) -> list[str]:
+        return [q for q, a in self.answers.items() if a.contested]
+
+
+def _vote_key(answer: str | None) -> str | None:
+    """Comparison form for voting: two passes that wrote the same fact with
+    different punctuation or casing must not read as a disagreement."""
+    if answer is None:
+        return None
+    text = re.sub(r"[^\w\s/@.:$%-]", " ", answer.strip().lower())
+    return re.sub(r"\s+", " ", text).strip(" .") or None
 
 
 def scale_budgets(s: Settings, n_questions: int) -> Settings:
@@ -173,14 +211,21 @@ class RootRunner:
         s = self.settings
         ledger = BudgetLedger.from_settings(s)
         query_id = query_id or uuid.uuid4().hex[:12]
-        trajectory = TrajectoryWriter(run_dir or s.run_dir, query_id)
+        trajectory = TrajectoryWriter(run_dir or s.run_dir, query_id,
+                                      content=s.trajectory_content,
+                                      key=s.trajectory_key)
         trajectory.event("start", question=question, mode=env.mode,
                          root_model=self.root_model, sub_model=self.sub_model)
+        log(_LOG, logging.INFO, "query.start", query_id=query_id, mode=env.mode,
+            root_model=self.root_model,
+            batch_size=len(batch_qids) if batch_qids else 1)
+        metrics().incr("queries_started", mode=env.mode)
 
         system = render_system(env.mode, manifest=env.manifest,
                                batch_chars=s.sub_call_char_budget,
                                provider=getattr(self.root_client, "provider", ""))
-        sandbox = SandboxedRepl(rpc_handlers=self._rpc_handlers(ledger, trajectory))
+        sandbox = SandboxedRepl(rpc_handlers=self._rpc_handlers(ledger, trajectory),
+                                fs_guard=s.sandbox_fs_guard)
         turns: list[tuple[str, str]] = []
         final: dict | None = None
         seen_candidates: dict[str, int] = {}
@@ -196,6 +241,9 @@ class RootRunner:
                 cap = ledger.breached()
                 if cap:
                     trajectory.event("budget_breached", cap=cap, **ledger.snapshot())
+                    log(_LOG, logging.WARNING, "query.budget_breached",
+                        query_id=query_id, cap=cap, **ledger.snapshot())
+                    metrics().incr("budget_breaches", cap=cap)
                     result = await recover_variable(
                         sandbox, self, question, turns, trajectory
                     )
@@ -235,6 +283,9 @@ class RootRunner:
                     # reconstructable; only user variables are lost — and
                     # let the loop continue.
                     trajectory.event("sandbox_restarted", error=str(e)[:200])
+                    log(_LOG, logging.WARNING, "sandbox.restarted",
+                        query_id=query_id, error=str(e)[:200])
+                    metrics().incr("sandbox_restarts")
                     await sandbox.start(mode=env.mode, context=env.context,
                                         corpus_db=env.corpus_db)
                     turns.append((code, (
@@ -273,6 +324,9 @@ class RootRunner:
                             trajectory)
                     if gap:
                         trajectory.event("completeness_pushback", gap=gap)
+                        log(_LOG, logging.INFO, "final.pushback",
+                            query_id=query_id, gap=gap[:200])
+                        metrics().incr("final_pushbacks")
                         fname = "FINAL_BATCH" if batch_qids else "FINAL"
                         turns.append((code, (
                             f"[harness] {fname} not accepted yet — the "
@@ -323,6 +377,8 @@ class RootRunner:
             return self._finish(final, "final", ledger, trajectory, turns)
         except Exception as e:
             trajectory.event("error", error=f"{type(e).__name__}: {e}")
+            log(_LOG, logging.ERROR, "query.error", query_id=query_id,
+                error=f"{type(e).__name__}: {e}"[:300])
             return self._finish(None, "error", ledger, trajectory, turns)
         finally:
             await sandbox.close()
@@ -353,6 +409,96 @@ class RootRunner:
             text = "" if value is None else str(value).strip()
             answers[qid] = text or None
         return BatchQueryResult(answers=answers, result=result)
+
+    async def run_batch_consensus(
+        self, questions: list[tuple[str, str]], env: EnvSpec, *,
+        run_dir: str | Path | None = None, query_id: str | None = None,
+        passes: int = 2, tiebreak: bool = True,
+    ) -> ConsensusBatchResult:
+        """Answer a batch several times independently and vote per field.
+
+        Repeated runs agree on ~99% of fields; the residual disagreements are
+        where a run went wrong, and they are visible without a golden set
+        because two independent passes rarely make the SAME mistake. Passes
+        run concurrently (wall-clock unchanged, cost multiplied by `passes`)
+        with different seeds, so the passes are as independent as the
+        provider allows.
+
+        Fields where the passes split are re-asked in their own focused loop
+        and the vote is settled by that answer; a field that still cannot be
+        settled comes back marked 'unresolved' rather than silently picking a
+        side.
+        """
+        passes = max(1, passes)
+        qids = [qid for qid, _ in questions]
+        base_id = query_id or uuid.uuid4().hex[:12]
+
+        async def one_pass(n: int) -> BatchQueryResult:
+            # a distinct seed per pass: identical seeds invite identical
+            # mistakes, which is exactly what voting cannot detect
+            runner = replace(self, settings=replace(self.settings,
+                                                    llm_seed=self.settings.llm_seed + n))
+            return await runner.run_batch(questions, env, run_dir=run_dir,
+                                          query_id=f"{base_id}_p{n}")
+
+        pass_results = list(await asyncio.gather(
+            *(one_pass(n) for n in range(passes))))
+
+        answers: dict[str, ConsensusAnswer] = {}
+        for qid in qids:
+            votes = [pr.answers.get(qid) for pr in pass_results]
+            tally: dict[str | None, int] = {}
+            for vote in votes:
+                key = _vote_key(vote)
+                if key is not None:
+                    tally[key] = tally.get(key, 0) + 1
+            best_key, best_n = None, 0
+            for key, n in tally.items():
+                if n > best_n:
+                    best_key, best_n = key, n
+            chosen = next((v for v in votes if _vote_key(v) == best_key), None)
+            agreement = best_n / passes
+            if best_n == passes:
+                resolved = "unanimous"
+            elif best_n * 2 > passes:
+                resolved = "majority"
+            else:
+                resolved = "split"
+            answers[qid] = ConsensusAnswer(value=chosen, resolved_by=resolved,
+                                           agreement=agreement, votes=votes)
+
+        contested = [qid for qid, a in answers.items()
+                     if a.resolved_by == "split" or a.value is None]
+        metrics().incr("consensus_fields", len(qids))
+        metrics().incr("consensus_contested", len(contested))
+        log(_LOG, logging.INFO, "consensus.voted", query_id=base_id,
+            fields=len(qids), passes=passes, contested=contested)
+
+        tiebreak_results: dict[str, QueryResult] = {}
+        if contested and tiebreak:
+            texts = dict(questions)
+
+            async def settle(qid: str) -> tuple[str, QueryResult]:
+                result = await self.run(texts[qid], env, run_dir=run_dir,
+                                        query_id=f"{base_id}_tb_{qid}")
+                return qid, result
+
+            for qid, result in await asyncio.gather(
+                    *(settle(qid) for qid in contested)):
+                tiebreak_results[qid] = result
+                text = "" if result.answer is None else str(result.answer).strip()
+                prior = answers[qid]
+                answers[qid] = ConsensusAnswer(
+                    value=text or prior.value,
+                    resolved_by="tiebreak" if text else "unresolved",
+                    agreement=prior.agreement,
+                    votes=[*prior.votes, text or None])
+            metrics().incr("consensus_tiebreaks", len(contested))
+
+        return ConsensusBatchResult(
+            answers=answers,
+            pass_results=[pr.result for pr in pass_results],
+            tiebreak_results=tiebreak_results)
 
     @staticmethod
     def _audit_negatives(final: dict, questions: list[tuple[str, str]],
@@ -417,8 +563,10 @@ class RootRunner:
             conn.close()
         if not flagged:
             return None
-        trajectory.event("negative_audit",
-                         flagged=[f.split(" ", 1)[0] for f in flagged])
+        flagged_ids = [f.split(" ", 1)[0] for f in flagged]
+        trajectory.event("negative_audit", flagged=flagged_ids)
+        log(_LOG, logging.INFO, "negative_audit.flagged", flagged=flagged_ids)
+        metrics().incr("negative_audit_flags", len(flagged_ids))
         listing = "; ".join(flagged[:6])
         return (
             "these questions were answered negatively, but the corpus "
@@ -508,7 +656,19 @@ class RootRunner:
     def _finish(self, final: dict | None, status: str, ledger: BudgetLedger,
                 trajectory: TrajectoryWriter, turns: list,
                 breached: str | None = None) -> QueryResult:
-        trajectory.event("end", status=status, **ledger.snapshot())
+        snapshot = ledger.snapshot()
+        trajectory.event("end", status=status, **snapshot)
+        # .jsonl or .jsonl.enc, depending on trajectory encryption
+        query_id = Path(trajectory.path).name.split(".", 1)[0]
+        level = logging.INFO if status in ("final", "recovered") else logging.WARNING
+        log(_LOG, level, "query.end", query_id=query_id, status=status,
+            breached=breached, **snapshot)
+        m = metrics()
+        m.incr("queries_finished", status=status)
+        m.incr("spend_usd", snapshot["spend_usd"])
+        m.observe("query_latency_s", snapshot["wall_s"])
+        m.observe("query_spend_usd", snapshot["spend_usd"])
+        m.observe("root_iters", snapshot["root_iters"])
         return QueryResult(
             answer=final.get("value") if final else None,
             status=status,

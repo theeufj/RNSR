@@ -370,6 +370,73 @@ class TestNegativeAudit:
             assert not _is_negative(a), a
 
 
+class TestConsensus:
+    """Two independent passes rarely make the same mistake, so a split is a
+    signal — the point is to surface it rather than pick a side silently."""
+
+    async def test_unanimous_passes_need_no_tiebreak(self, tmp_path):
+        root = MockLLM(default="```python\nFINAL_BATCH({'q1': '3234'})\n```")
+        cr = await make_runner(root).run_batch_consensus(
+            [("q1", "total?")], CLASSIC, run_dir=tmp_path, passes=2)
+        assert cr.answers["q1"].value == "3234"
+        assert cr.answers["q1"].resolved_by == "unanimous"
+        assert cr.answers["q1"].agreement == 1.0
+        assert cr.tiebreak_results == {}
+        assert cr.contested_qids == []
+
+    async def test_split_is_settled_by_a_focused_loop(self, tmp_path):
+        # pass 1 says 3234, pass 2 says 9999, the tie-break says 3234
+        root = MockLLM().script(
+            "```python\nFINAL_BATCH({'q1': '3234'})\n```",
+            "```python\nFINAL_BATCH({'q1': '9999'})\n```",
+            "```python\nFINAL('3234')\n```",
+        )
+        cr = await make_runner(root, MockLLM(default="COMPLETE")).run_batch_consensus(
+            [("q1", "total?")], CLASSIC, run_dir=tmp_path, passes=2)
+        assert cr.answers["q1"].resolved_by == "tiebreak"
+        assert cr.answers["q1"].value == "3234"
+        assert cr.answers["q1"].agreement == 0.5
+        assert "q1" in cr.tiebreak_results
+
+    async def test_majority_of_three_wins_without_tiebreak(self, tmp_path):
+        root = MockLLM().script(
+            "```python\nFINAL_BATCH({'q1': 'yes'})\n```",
+            "```python\nFINAL_BATCH({'q1': 'no'})\n```",
+            "```python\nFINAL_BATCH({'q1': 'yes'})\n```",
+        )
+        cr = await make_runner(root).run_batch_consensus(
+            [("q1", "q?")], CLASSIC, run_dir=tmp_path, passes=3)
+        assert cr.answers["q1"].value == "yes"
+        assert cr.answers["q1"].resolved_by == "majority"
+        assert cr.tiebreak_results == {}
+
+    async def test_formatting_differences_are_not_disagreements(self, tmp_path):
+        root = MockLLM().script(
+            "```python\nFINAL_BATCH({'q1': '14/02/2014'})\n```",
+            "```python\nFINAL_BATCH({'q1': '14/02/2014.'})\n```",
+        )
+        cr = await make_runner(root).run_batch_consensus(
+            [("q1", "date?")], CLASSIC, run_dir=tmp_path, passes=2)
+        assert cr.answers["q1"].resolved_by == "unanimous"
+
+    async def test_passes_use_different_seeds(self, tmp_path):
+        root = MockLLM(default="```python\nFINAL_BATCH({'q1': 'x'})\n```")
+        await make_runner(root).run_batch_consensus(
+            [("q1", "q?")], CLASSIC, run_dir=tmp_path, passes=2, tiebreak=False)
+        # identical seeds invite identical mistakes, which voting cannot see
+        seeds = {c.get("seed") for c in root.calls if c["kind"] == "complete"}
+        assert len(seeds) == 2
+
+    async def test_unanswerable_field_reports_unresolved(self, tmp_path):
+        root = MockLLM(default="```python\nx = 1\n```")   # never FINALs
+        root.rule(r"ended without FINAL", "NONE")
+        cr = await make_runner(root, max_root_iters=1).run_batch_consensus(
+            [("q1", "q?")], CLASSIC, run_dir=tmp_path, passes=2)
+        assert cr.answers["q1"].value is None
+        assert cr.answers["q1"].resolved_by == "unresolved"
+        assert cr.contested_qids == ["q1"]
+
+
 class TestBatchHelpers:
     def test_scale_budgets_half_per_extra_question(self):
         from rnsr.harness.loop import scale_budgets

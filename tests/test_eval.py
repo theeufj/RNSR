@@ -425,6 +425,161 @@ class TestGraphRag:
         assert results[1].sub_calls == 0
 
 
+def _fake_query_result(status: str, answer: object = "x"):
+    """A QueryResult-shaped stand-in for CLI tests (no LLM involved)."""
+    from rnsr.harness.loop import QueryResult
+
+    return QueryResult(
+        answer=answer, status=status, final=None,
+        ledger={"spend_usd": 0.0, "sub_calls": 0}, trajectory_path="",
+        iterations=1)
+
+
+def _answer_csv_corpus(tmp_path):
+    """One small real PDF, so ingest has something to chew on."""
+    import pytest as _pytest
+
+    _pytest.importorskip("docling")
+    from reportlab.lib.pagesizes import LETTER
+    from reportlab.lib.styles import getSampleStyleSheet
+    from reportlab.platypus import Paragraph, SimpleDocTemplate
+
+    corpus = tmp_path / "corpus"
+    corpus.mkdir()
+    styles = getSampleStyleSheet()
+    SimpleDocTemplate(str(corpus / "doc.pdf"), pagesize=LETTER).build(
+        [Paragraph("The secret number is 7714.", styles["BodyText"])])
+    return corpus
+
+
+class TestAnswerCsvErrorSurfacing:
+    """A provider outage must not read as 'the corpus does not say'."""
+
+    def _run(self, tmp_path, monkeypatch, runner, extra_args=()):
+        import csv
+
+        from typer.testing import CliRunner
+
+        import rnsr.cli as cli_mod
+        from rnsr.cli import app
+
+        corpus = _answer_csv_corpus(tmp_path)
+        questions = tmp_path / "q.csv"
+        with open(questions, "w", newline="") as f:
+            w = csv.writer(f)
+            w.writerow(["ground_truth_question"])
+            w.writerow(["What is the secret number?"])
+            w.writerow(["What else?"])
+
+        monkeypatch.setattr(cli_mod, "_make_runner", lambda s: runner)
+        return CliRunner().invoke(app, [
+            "answer-csv", "--corpus", str(corpus), "--questions", str(questions),
+            "--output", str(tmp_path / "out"), "--work-dir", str(tmp_path / "work"),
+            "--batch-size", "1", *extra_args])
+
+    def test_provider_failure_exits_nonzero_and_reports(self, tmp_path, monkeypatch):
+        class Broken:
+            async def run(self, q, env, run_dir=None, query_id=None):
+                raise RuntimeError("provider down")
+
+        result = self._run(tmp_path, monkeypatch, Broken())
+        assert result.exit_code == 2, result.output
+
+        import csv
+        import json
+
+        with open(tmp_path / "out" / "answers_status.csv", newline="") as f:
+            rows = list(csv.DictReader(f))
+        assert [r["status"] for r in rows] == ["error", "error"]
+        assert "provider down" in rows[0]["error"]
+
+        report = json.loads((tmp_path / "out" / "run_report.json").read_text())
+        assert report["status_counts"] == {"error": 2}
+        assert report["error_rate"] == 1.0
+        # the CSV is still written so a resume keeps the completed work
+        assert (tmp_path / "out" / "answers_chunk1.csv").exists()
+
+    def test_threshold_tolerates_allowed_failure_rate(self, tmp_path, monkeypatch):
+        class HalfBroken:
+            def __init__(self):
+                self.n = 0
+
+            async def run(self, q, env, run_dir=None, query_id=None):
+                self.n += 1
+                if self.n == 1:
+                    raise RuntimeError("transient")
+                return _fake_query_result("final", answer="7714")
+
+        result = self._run(tmp_path, monkeypatch, HalfBroken(),
+                           extra_args=["--max-error-rate", "0.5"])
+        assert result.exit_code == 0, result.output
+
+    def test_budget_exhausted_is_recorded_not_hidden(self, tmp_path, monkeypatch):
+        class Exhausted:
+            async def run(self, q, env, run_dir=None, query_id=None):
+                return _fake_query_result("budget_exhausted", answer=None)
+
+        result = self._run(tmp_path, monkeypatch, Exhausted())
+        # not an error: the loop ran, it just ran out of budget
+        assert result.exit_code == 0, result.output
+
+        import csv
+
+        with open(tmp_path / "out" / "answers_status.csv", newline="") as f:
+            rows = list(csv.DictReader(f))
+        assert [r["status"] for r in rows] == ["budget_exhausted"] * 2
+        assert all(r["model_answer"] == "Not found in matter corpus" for r in rows)
+
+
+class TestAnswerCsvConsensus:
+    def test_contested_field_is_flagged_in_status_and_report(self, tmp_path,
+                                                             monkeypatch):
+        import csv
+        import json
+
+        from typer.testing import CliRunner
+
+        import rnsr.cli as cli_mod
+        from rnsr.cli import app
+        from rnsr.harness.loop import ConsensusAnswer, ConsensusBatchResult
+
+        corpus = _answer_csv_corpus(tmp_path)
+        questions = tmp_path / "q.csv"
+        with open(questions, "w", newline="") as f:
+            w = csv.writer(f)
+            w.writerow(["ground_truth_question"])
+            w.writerow(["Agreed question?"])
+            w.writerow(["Contested question?"])
+
+        class ConsensusRunner:
+            async def run_batch_consensus(self, questions, env, run_dir=None,
+                                          query_id=None, passes=2):
+                answers = {
+                    "q000": ConsensusAnswer("7714", "unanimous", 1.0),
+                    "q001": ConsensusAnswer("settled", "tiebreak", 0.5),
+                }
+                return ConsensusBatchResult(
+                    answers=answers,
+                    pass_results=[_fake_query_result("final")] * passes)
+
+        monkeypatch.setattr(cli_mod, "_make_runner", lambda s: ConsensusRunner())
+        result = CliRunner().invoke(app, [
+            "answer-csv", "--corpus", str(corpus), "--questions", str(questions),
+            "--output", str(tmp_path / "out"), "--work-dir", str(tmp_path / "work"),
+            "--batch-size", "8", "--consensus", "2"])
+        assert result.exit_code == 0, result.output
+
+        with open(tmp_path / "out" / "answers_status.csv", newline="") as f:
+            rows = list(csv.DictReader(f))
+        assert rows[0]["agreement"] == "1.00" and rows[0]["contested"] == ""
+        assert rows[1]["agreement"] == "0.50" and rows[1]["contested"] == "yes"
+        assert rows[1]["model_answer"] == "settled"
+
+        report = json.loads((tmp_path / "out" / "run_report.json").read_text())
+        assert report["consensus_passes"] == 2
+        assert report["contested_fields"] == ["q001"]
+
+
 class TestAnswerCsvAdapter:
     def test_contract_shape(self, tmp_path, monkeypatch):
         """answers_chunk1.csv: exact header, verbatim order, no empty cells."""
@@ -460,10 +615,15 @@ class TestAnswerCsvAdapter:
 
         class FakeRunner:
             async def run(self, q, env, run_dir=None, query_id=None):
-                class R:
-                    answer = f"answer to: {q[:20]}"
-                    ledger = {"spend_usd": 0, "sub_calls": 0}
-                return R()
+                return _fake_query_result("final", answer=f"answer to: {q[:20]}")
+
+            async def run_batch(self, questions, env, run_dir=None, query_id=None):
+                from rnsr.harness.loop import BatchQueryResult
+
+                return BatchQueryResult(
+                    answers={qid: f"answer to: {text[:20]}"
+                             for qid, text in questions},
+                    result=_fake_query_result("final"))
 
         monkeypatch.setattr(cli_mod, "_make_runner", lambda s: FakeRunner())
 
@@ -526,15 +686,12 @@ class TestAnswerCsvAdapter:
                         answers[qid] = None
                     else:
                         answers[qid] = "NOT_FOUND"
-                return BatchQueryResult(answers=answers, result=None)
+                return BatchQueryResult(answers=answers,
+                                       result=_fake_query_result("final"))
 
             async def run(self, q, env, run_dir=None, query_id=None):
                 self.solo_calls.append(q)
-
-                class R:
-                    answer = "solo answer"
-                    ledger = {"spend_usd": 0, "sub_calls": 0}
-                return R()
+                return _fake_query_result("final", answer="solo answer")
 
         fake = FakeRunner()
         monkeypatch.setattr(cli_mod, "_make_runner", lambda s: fake)

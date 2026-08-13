@@ -68,29 +68,41 @@ class Resolved:
 
 
 class Router:
-    """Resolves roles to provider clients, constructing each client once."""
+    """Resolves roles to provider clients, constructing each client once.
+
+    Every client is wrapped by the run governor (rnsr.llm.governor), so the
+    in-flight cap, RPM ceiling and spend ceiling apply to all traffic —
+    root turns, sub-call fan-out, judges, ingest hooks — without each call
+    site having to remember.
+    """
 
     def __init__(self, settings: Settings | None = None):
         self.settings = settings or Settings.from_env()
         self.provider = detect_provider(self.settings)
         self._clients: dict[str, LLMClient] = {}
+        from rnsr.llm.governor import configure
+
+        self.governor = configure(self.settings)
 
     def _client_for(self, provider: str) -> LLMClient:
         if provider not in self._clients:
             if provider == "openai":
                 from rnsr.llm.openai_client import OpenAIClient
 
-                self._clients[provider] = OpenAIClient()
+                client = OpenAIClient()
             elif provider == "anthropic":
                 from rnsr.llm.anthropic_client import AnthropicClient
 
-                self._clients[provider] = AnthropicClient()
+                client = AnthropicClient()
             elif provider == "gemini":
                 from rnsr.llm.gemini_client import GeminiClient
 
-                self._clients[provider] = GeminiClient()
+                client = GeminiClient()
             else:
                 raise ValueError(f"unknown provider: {provider}")
+            from rnsr.llm.governor import governed
+
+            self._clients[provider] = governed(client, self.governor)
         return self._clients[provider]
 
     def resolve(self, role: str) -> Resolved:
@@ -112,4 +124,7 @@ class Router:
                     "OPENAI_API_KEY/GOOGLE_API_KEY fallback is set"
                 )
         model = override or DEFAULT_MODELS[provider][role]
+        from rnsr.llm.validate import check_pricing
+
+        check_pricing(model, role)   # free, warns once: unpriced == uncapped
         return Resolved(self._client_for(provider), model)

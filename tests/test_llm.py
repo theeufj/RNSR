@@ -55,6 +55,89 @@ class TestRouter:
             Router(Settings(provider="openai")).resolve("oracle")
 
 
+class TestModelValidation:
+    """An unpriced model makes every spend cap infinite; a retired model name
+    fails every call. Both used to surface only mid-run."""
+
+    def test_unpriced_model_warns_once(self, caplog):
+        import logging
+
+        from rnsr.llm import validate
+
+        validate._warned.clear()
+        with caplog.at_level(logging.WARNING, logger="rnsr.llm.validate"):
+            assert validate.check_pricing("imaginary-model-9", "root") is False
+            assert validate.check_pricing("imaginary-model-9", "root") is False
+        warnings = [r for r in caplog.records if "pricing_missing" in r.message]
+        assert len(warnings) == 1
+
+    def test_priced_model_is_quiet(self, caplog):
+        import logging
+
+        from rnsr.llm import validate
+
+        with caplog.at_level(logging.WARNING, logger="rnsr.llm.validate"):
+            assert validate.check_pricing("claude-haiku-4-5", "root") is True
+        assert caplog.records == []
+
+    def test_every_default_model_has_a_price(self):
+        # the check that would have caught the gpt-5.2 rot before a live run
+        from rnsr.llm.cost import PRICES_PER_MTOK
+        from rnsr.llm.router import DEFAULT_MODELS
+
+        missing = [
+            (provider, role, model)
+            for provider, roles in DEFAULT_MODELS.items()
+            for role, model in roles.items()
+            if model and role not in ("embed",) and model not in PRICES_PER_MTOK
+        ]
+        assert missing == []
+
+    async def test_live_check_reports_retired_names(self, monkeypatch):
+        from rnsr.llm import validate
+
+        class FakeResolved:
+            def __init__(self, model):
+                self.model = model
+
+                class C:
+                    provider = "openai"
+                self.client = C()
+
+        class FakeRouter:
+            def resolve(self, role):
+                return FakeResolved("gpt-5.2" if role == "root"
+                                    else "text-embedding-3-small")
+
+        async def fake_list(client, provider):
+            return {"gpt-5.6-sol", "gpt-5.6-terra", "text-embedding-3-small"}
+
+        monkeypatch.setattr(validate, "_list_models", fake_list)
+        findings = await validate.check_models_live(FakeRouter(),
+                                                   roles=("root",))
+        assert any("not offered by the provider" in f["problem"] for f in findings)
+
+    async def test_live_check_accepts_dated_snapshots(self, monkeypatch):
+        from rnsr.llm import validate
+
+        class FakeResolved:
+            model = "claude-sonnet-4-5"
+
+            class client:
+                provider = "anthropic"
+
+        class FakeRouter:
+            def resolve(self, role):
+                return FakeResolved()
+
+        async def fake_list(client, provider):
+            return {"claude-sonnet-4-5-20260514"}
+
+        monkeypatch.setattr(validate, "_list_models", fake_list)
+        findings = await validate.check_models_live(FakeRouter(), roles=("root",))
+        assert findings == []
+
+
 class TestBatch:
     async def test_order_preserved(self):
         mock = MockLLM().rule("alpha", "A").rule("beta", "B")

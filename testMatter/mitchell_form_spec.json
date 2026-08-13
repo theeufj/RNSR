@@ -1,0 +1,65 @@
+{
+  "_comment": [
+    "Form conventions for the FCFCOA Initiating Application, as used on the",
+    "Mitchell & Mitchell matter. Fields and context are inherited from the",
+    "vendor export (golden.json) so the evidence file stays evidence; every",
+    "convention below states how THE FORM expects a field to be completed and",
+    "contains no fact about this matter. Each one exists because a measured run",
+    "got the field wrong without it."
+  ],
+  "extends": "golden.json",
+  "form": "Initiating Application",
+  "conventions": [
+    {
+      "_why": "Both firms appear in the intake form ~2 sections apart; a run answered with the respondent firm's address.",
+      "role_pattern": "^applicant\\s*-\\s*law",
+      "text": "PARTY DISAMBIGUATION - READ CAREFULLY:\nThis question is about the APPLICANT's law firm and its lawyer. The documents ALSO contain details for the RESPONDENT's law firm and lawyer - those details are NOT the answer. Where a document shows more than one firm, address, lawyer or email, use only the one acting for the applicant. For an address-for-service block, use the firm's service address and its firm-level service email, not an individual lawyer's direct email."
+    },
+    {
+      "_why": "A run retrieved the address and answered 'present in Australia' correctly, then answered 'ordinarily resident' No from the same evidence; 'last known address' also read as doubt.",
+      "title_pattern": "(?i)^(?!.*citizen)(?=.*(ordinarily resident|present in australia))",
+      "text": "HOW TO READ THE DOCUMENTS FOR THIS QUESTION:\nThe documents record a residential or last-known address for each party. A recorded Australian address - INCLUDING one labelled 'last known address' - establishes for form purposes that the party is both present in Australia and ordinarily resident in Australia, unless a document affirmatively places them elsewhere. Do not read 'last known' as doubt: answer Yes from that address. The form's own printed checkbox list is blank scaffolding and is not evidence either way."
+    },
+    {
+      "_why": "The form numbers parents; the documents never do. Without the convention the question is a coin-flip between the two parties, and a run picked the wrong one.",
+      "title_pattern": "\\bparent\\s*[12]\\b",
+      "text": "FORM CONVENTION - NUMBERED PARENT SLOTS:\nThe form numbers each child's parents; the documents do not. On this form, Parent 2 is the APPLICANT parent and Parent 1 is the other parent - applicable only where the documents establish that person is in fact the child's parent (for example, a child recorded as living with 'Client (mother)' establishes the client is that child's parent). Answer with the documented person's details for the numbered slot; do not answer unknown merely because the documents never use the words 'Parent 1' or 'Parent 2'."
+    },
+    {
+      "_why": "Item 55c asks about children of the de facto relationship; a run answered No because the parties later married.",
+      "groups": ["55c"],
+      "text": "FORM CONVENTION - ITEM 55c:\n'Child of the de facto relationship' on this form means any child of the two parties' relationship, whether or not the parties subsequently married. If the documents record children of the parties, the correct option is Yes."
+    },
+    {
+      "_why": "Item 55e is the one item where the absence of any record selects No rather than unknown.",
+      "groups": ["55e"],
+      "text": "FORM CONVENTION - ITEM 55e:\nA registered relationship is a formal act that would appear in the matter file if it existed. Where no document mentions a registration under a state or territory law, the correct option is No - this is the one item where absence of any record selects the No option rather than unknown."
+    },
+    {
+      "_why": "Cohabitation dates are documented, but this form leaves the de facto period item blank for married parties.",
+      "groups": ["55b"],
+      "text": "FORM CONVENTION - ITEM 55b:\nWhere the parties married, this form leaves the de facto period item unanswered. Answer unknown here even if cohabitation dates are documented - do not compute the period."
+    },
+    {
+      "_why": "A batched run picked both children's genders from their first names, which no document records.",
+      "group_pattern": "gender",
+      "text": "REMINDER FOR THIS GENDER QUESTION:\nA person's first name is NOT evidence of their gender. Choose an option ONLY if a document explicitly records this person's gender (for example 'Gender: Male' on an intake form). Before answering unknown, actually check: the client intake form records gender for the adult parties in its personal-details and other-party sections - read that document's full text for this person first. Children's genders are typically not recorded anywhere; unknown is the expected answer for a person whose gender no document states."
+    },
+    {
+      "_why": "The intake documents pre-marriage cohabitation, which tempted a run into also listing 'party to a de facto relationship' for a married party.",
+      "title_pattern": "relationship to this initiating application",
+      "text": "FORM CONVENTION - RELATIONSHIP TO APPLICATION:\nState the party's CURRENT relationship to the application. A de facto relationship that later became a marriage counts only as 'Party to a marriage' - do not also list 'Party to a de facto relationship' for parties who married. Include 'Parent' where the documents record children of the parties."
+    },
+    {
+      "_why": "Citizenship is the longest inference chain in the set and the field haiku dropped 2 of 3 runs: it needs the place of birth, which sits on a certificate that records a party under the name they held at marriage.",
+      "title_pattern": "citizen",
+      "text": "HOW TO ESTABLISH CITIZENSHIP FOR THIS FORM:\nA documented Australian place of birth establishes Australian citizenship for form purposes; citizenship acquired by conferral is instead recorded in correspondence or an intake form. Place of birth is recorded on a marriage certificate, which records each party under the name they held AT MARRIAGE - so a party may appear there under a maiden name. Match on the person (date of birth, role, other details), not only on their current surname, before concluding the documents are silent.",
+      "_note": "States where the evidence lives and how certificates name people; asserts no fact about this matter."
+    },
+    {
+      "_why": "SUF123 sat in the search hits, past the truncated prints the model was reading.",
+      "title_pattern": "lawyer'?s code|date of birth|email|residential address|given names|family name",
+      "text": "WHERE THIS KIND OF DETAIL LIVES:\nPerson and firm details (addresses, emails, phone numbers, dates and places of birth, lawyer codes) are recorded in the client intake form, the filled court forms, and the marriage certificate. READ THOSE DOCUMENTS' FULL TEXT directly (iterate doc.items() and scan each document's text in code) rather than relying on search snippets, and attribute each detail to the correct person by reading the surrounding section headings."
+    }
+  ]
+}

@@ -4,23 +4,27 @@ build-backend = "hatchling.build"
 
 [project]
 name = "rnsr"
-version = "1.0.0a4"
+version = "1.0.0a5"
 description = "DocDB-RLM: a typed-environment recursive language model system for deep document retrieval"
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }
+# Upper bounds are deliberate: provider SDKs break across majors (and
+# anthropic across minors), and an unpinned floor means a fresh install of a
+# tagged rnsr release can stop talking to its own providers. Raise these
+# deliberately, with the model-name check in rnsr/llm/validate.py rerun.
 dependencies = [
-    "pydantic>=2",
-    "typer>=0.12",
-    "rich>=13",
-    "python-dotenv>=1.0",
-    "numpy>=1.26",
-    "sqlite-vec>=0.1.6",
-    "openai>=1.50",
-    "anthropic>=0.40",
-    "google-genai>=1.0",
-    "httpx>=0.27",
-    "tenacity>=8.2",
+    "pydantic>=2,<3",
+    "typer>=0.12,<1",
+    "rich>=13,<15",
+    "python-dotenv>=1.0,<2",
+    "numpy>=1.26,<3",
+    "sqlite-vec>=0.1.6,<0.2",
+    "openai>=2.0,<3",
+    "anthropic>=0.100,<1",
+    "google-genai>=2.0,<3",
+    "httpx>=0.27,<1",
+    "tenacity>=8.2,<10",
 ]
 
 [project.optional-dependencies]
@@ -36,6 +40,15 @@ ingest = [
 eval = [
     "datasets>=2.19",
     "pandas>=2.0",
+]
+# Trajectory encryption at rest (RNSR_TRAJECTORY_KEY).
+secure = [
+    "cryptography>=42.0,<50",
+]
+# HTTP service surface (rnsr serve): health, readiness, metrics, jobs.
+service = [
+    "fastapi>=0.115,<1",
+    "uvicorn>=0.30,<1",
 ]
 dev = [
     "pytest>=8",
@@ -54,7 +67,7 @@ packages = ["rnsr"]
 
 [tool.hatch.build.targets.sdist]
 exclude = ["testMatter/", "runs/", "terminals/", ".claude/", ".cursor/",
-           "Research/"]
+           "Research/", "docs/tech-meeting-*.html"]
 
 [tool.ruff]
 line-length = 100

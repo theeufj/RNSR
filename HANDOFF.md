@@ -128,6 +128,13 @@ only processes what's missing).
   under `runs/matter/` — every answer is backed by verified verbatim
   quotes or SQL lineage, so misses are auditable, not mysterious.
 
+`runs/` is git-ignored and can reach hundreds of MB (full trajectories
+are the default). Defaults keep content verbatim, unencrypted, and
+forever (`RNSR_TRAJECTORY_CONTENT=full`, empty `RNSR_TRAJECTORY_KEY`,
+`RNSR_TRAJECTORY_RETENTION_DAYS=0`). Prune by deleting old run
+directories; on shared machines set `redacted` content, a Fernet key,
+and a non-zero retention window in `.env`.
+
 ## 8. Guardrails already in place
 
 - The corpus directory is opened read-only; nothing under `--corpus` is

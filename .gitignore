@@ -89,7 +89,8 @@ docs/_build/
 site/
 
 # Test PDFs
-test_pdfs/# Test documents (too large for GitHub)
+test_pdfs/
+# Test documents (too large for GitHub)
 rnsr/test-documents/
 scripts/office_demo.py
 
@@ -97,8 +98,9 @@ test-documents/
 
 # Screenshots
 *.png
+# Test Set 6 includes screenshots/photos that belong in the corpus.
+!testMatter/**/*.png
 
 matterAiTests/
 # rnsr run artifacts
 runs/
-*.db

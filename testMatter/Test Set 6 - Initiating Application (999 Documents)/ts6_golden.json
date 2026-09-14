@@ -1,0 +1,814 @@
+{
+ "items": [
+  {
+   "qid": "pf000",
+   "part": "Cover",
+   "item": "Filed in",
+   "question": "Filed in (court)",
+   "golden": "Federal Circuit and Family Court of Australia (Division 2) — Melbourne registry",
+   "note": "",
+   "n_sources": 6
+  },
+  {
+   "qid": "pf001",
+   "part": "Part A",
+   "item": "1a",
+   "question": "Type of orders sought (mark all that apply)",
+   "golden": "Parenting  ☑   Financial or property (and/or maintenance)  ☑   Other  ☐",
+   "note": "Child support is dealt with by administrative assessment, so no 'Other' box is marked.",
+   "n_sources": 5
+  },
+  {
+   "qid": "pf002",
+   "part": "Part A",
+   "item": "2",
+   "question": "Final orders sought",
+   "golden": "1. That the children Harper Mai Nguyen born 8 June 2014, Elliot Van Nguyen born 21 February 2017 and Thea Grace Nguyen born 30 September 2021 live with the applicant. 2. That the children spend time with the respondent each alternate weekend from after school Friday until before school Monday, each Wednesday from after school until 7.30pm, half of all school holidays, and on special occasions as agreed. 3. That the applicant and the respondent have joint decision-making responsibility for major long-term issues concerning the children. 4. That the respondent's interest in the property at 18 Kelburn Street, Coburg VIC 3058 be transferred to the applicant, the applicant to refinance the Bendigo Bank loan within 120 days and indemnify the respondent. 5. That the applicant's interest in the property at 12/6 Nicholson Street, Coburg VIC 3058 be transferred to the respondent, the respondent to refinance the ANZ loan within 120 days and indemnify the applicant. 6. That the respondent retain the shares in and assets of Hai Au Kitchen Pty Ltd (ACN 617 442 908) and be solely liable for its debts. 7. That there be a superannuation splitting order under Part VIIIB of the Family Law Act 1975 whereby a base amount of $57,840 is paid from the respondent's interest in the Australian Retirement Trust to the applicant's interest in HESTA. 8. That the applicant retain the 2019 Mazda CX-5 and the respondent retain the 2021 Toyota HiLux SR5. 9. That the parties otherwise retain the assets, liabilities and financial resources in their respective possession or control. 10. That the net non-superannuation property of the parties be divided as to 58 per cent to the applicant and 42 per cent to the respondent.",
+   "note": "Ten numbered final orders.",
+   "n_sources": 5
+  },
+  {
+   "qid": "pf003",
+   "part": "Part A",
+   "item": "3",
+   "question": "Interlocutory orders sought",
+   "golden": "1. That pending final orders the children live with the applicant and spend time with the respondent each alternate weekend from after school Friday until before school Monday. 2. That pending final orders each party be restrained from selling, encumbering or otherwise dealing with the property at 12/6 Nicholson Street, Coburg VIC 3058 other than by consent in writing or by order of the Court. 3. That the parties jointly appoint a single expert valuer to value Hai Au Kitchen Pty Ltd, the costs of the valuation to be borne equally in the first instance.",
+   "note": "Interlocutory orders ARE sought, so an affidavit must be filed.",
+   "n_sources": 3
+  },
+  {
+   "qid": "pf004",
+   "part": "Part A",
+   "item": "A",
+   "question": "Filed on behalf of",
+   "golden": "The applicant",
+   "note": "",
+   "n_sources": 3
+  },
+  {
+   "qid": "pf005",
+   "part": "Part A",
+   "item": "A",
+   "question": "Prepared by",
+   "golden": "Priya Raman",
+   "note": "",
+   "n_sources": 3
+  },
+  {
+   "qid": "pf006",
+   "part": "Part A",
+   "item": "A",
+   "question": "Lawyer's Code",
+   "golden": "VIC0947",
+   "note": "",
+   "n_sources": 3
+  },
+  {
+   "qid": "pf007",
+   "part": "Part A",
+   "item": "A",
+   "question": "Name of law firm",
+   "golden": "Raman & Cole Family Lawyers",
+   "note": "",
+   "n_sources": 3
+  },
+  {
+   "qid": "pf008",
+   "part": "Part A",
+   "item": "A",
+   "question": "Address for service in Australia",
+   "golden": "Level 8, 350 Collins Street, Melbourne",
+   "note": "",
+   "n_sources": 3
+  },
+  {
+   "qid": "pf009",
+   "part": "Part A",
+   "item": "A",
+   "question": "State",
+   "golden": "VIC",
+   "note": "",
+   "n_sources": 2
+  },
+  {
+   "qid": "pf010",
+   "part": "Part A",
+   "item": "A",
+   "question": "Postcode",
+   "golden": "3000",
+   "note": "",
+   "n_sources": 2
+  },
+  {
+   "qid": "pf011",
+   "part": "Part A",
+   "item": "A",
+   "question": "Email",
+   "golden": "reception@ramancole.com.au",
+   "note": "",
+   "n_sources": 3
+  },
+  {
+   "qid": "pf012",
+   "part": "Part A",
+   "item": "A",
+   "question": "Tel",
+   "golden": "03 9602 7714",
+   "note": "",
+   "n_sources": 4
+  },
+  {
+   "qid": "pf013",
+   "part": "Part A",
+   "item": "A",
+   "question": "Attention",
+   "golden": "Priya Raman",
+   "note": "",
+   "n_sources": 2
+  },
+  {
+   "qid": "pf014",
+   "part": "Part B — Applicant 1",
+   "item": "4",
+   "question": "Family name as used now",
+   "golden": "WHITFIELD",
+   "note": "",
+   "n_sources": 3
+  },
+  {
+   "qid": "pf015",
+   "part": "Part B — Applicant 1",
+   "item": "5",
+   "question": "Given names",
+   "golden": "Amara Jane",
+   "note": "",
+   "n_sources": 3
+  },
+  {
+   "qid": "pf016",
+   "part": "Part B — Applicant 1",
+   "item": "6",
+   "question": "Gender",
+   "golden": "F (female)",
+   "note": "Optional question; answered.",
+   "n_sources": 3
+  },
+  {
+   "qid": "pf017",
+   "part": "Part B — Applicant 1",
+   "item": "7a",
+   "question": "Residential address (incl postcode)",
+   "golden": "18 Kelburn Street, Coburg VIC 3058",
+   "note": "Address is disclosed — the respondent already knows it (former family home).",
+   "n_sources": 9
+  },
+  {
+   "qid": "pf018",
+   "part": "Part B — Applicant 1",
+   "item": "7b",
+   "question": "Email address",
+   "golden": "amara.whitfield88@gmail.com",
+   "note": "",
+   "n_sources": 3
+  },
+  {
+   "qid": "pf019",
+   "part": "Part B — Applicant 1",
+   "item": "8",
+   "question": "Phone number (home and mobile)",
+   "golden": "Home 03 9354 2218; Mobile 0413 662 087",
+   "note": "Both numbers required.",
+   "n_sources": 3
+  },
+  {
+   "qid": "pf020",
+   "part": "Part B — Applicant 1",
+   "item": "9",
+   "question": "Date of birth",
+   "golden": "22/07/1988",
+   "note": "",
+   "n_sources": 10
+  },
+  {
+   "qid": "pf021",
+   "part": "Part B — Applicant 1",
+   "item": "10",
+   "question": "Usual occupation",
+   "golden": "Registered nurse (Nurse Unit Manager)",
+   "note": "",
+   "n_sources": 8
+  },
+  {
+   "qid": "pf022",
+   "part": "Part B — Applicant 1",
+   "item": "11",
+   "question": "Mark box as applicable",
+   "golden": "Present in Australia ☑  Ordinarily resident in Australia ☑  An Australian citizen ☑  Domiciled in Australia ☑",
+   "note": "All four apply.",
+   "n_sources": 5
+  },
+  {
+   "qid": "pf023",
+   "part": "Part B — Applicant 1",
+   "item": "12",
+   "question": "Description",
+   "golden": "Party to a de facto relationship that has broken down ☑   Parent ☑",
+   "note": "Two boxes — she is both a de facto party and a parent. NOT 'party to a marriage'.",
+   "n_sources": 4
+  },
+  {
+   "qid": "pf024",
+   "part": "Part B — Applicant 1",
+   "item": "13",
+   "question": "Is an interpreter required?",
+   "golden": "No",
+   "note": "",
+   "n_sources": 3
+  },
+  {
+   "qid": "pf025",
+   "part": "Part B — Applicant 1",
+   "item": "14",
+   "question": "Aboriginal and/or Torres Strait Islander origin?",
+   "golden": "No",
+   "note": "",
+   "n_sources": 3
+  },
+  {
+   "qid": "pf026",
+   "part": "Part B — Applicant 2",
+   "item": "4–14",
+   "question": "Applicant 2 column",
+   "golden": "Leave blank — there is only one applicant",
+   "note": "Whole column must come back blank.",
+   "n_sources": 2
+  },
+  {
+   "qid": "pf027",
+   "part": "Part B — Respondent 1",
+   "item": "15",
+   "question": "Family name as used now",
+   "golden": "NGUYEN",
+   "note": "",
+   "n_sources": 4
+  },
+  {
+   "qid": "pf028",
+   "part": "Part B — Respondent 1",
+   "item": "16",
+   "question": "Given names",
+   "golden": "Bao Tri",
+   "note": "",
+   "n_sources": 4
+  },
+  {
+   "qid": "pf029",
+   "part": "Part B — Respondent 1",
+   "item": "17",
+   "question": "Gender",
+   "golden": "M (male)",
+   "note": "",
+   "n_sources": 3
+  },
+  {
+   "qid": "pf030",
+   "part": "Part B — Respondent 1",
+   "item": "18a",
+   "question": "Residential address (incl postcode)",
+   "golden": "4/91 Sydney Road, Brunswick VIC 3056",
+   "note": "",
+   "n_sources": 7
+  },
+  {
+   "qid": "pf031",
+   "part": "Part B — Respondent 1",
+   "item": "18b",
+   "question": "Email address",
+   "golden": "bao.nguyen.chef@outlook.com",
+   "note": "",
+   "n_sources": 2
+  },
+  {
+   "qid": "pf032",
+   "part": "Part B — Respondent 1",
+   "item": "19",
+   "question": "Date of birth",
+   "golden": "05/11/1984",
+   "note": "",
+   "n_sources": 11
+  },
+  {
+   "qid": "pf033",
+   "part": "Part B — Respondent 1",
+   "item": "20",
+   "question": "Usual occupation",
+   "golden": "Chef and restaurant proprietor (self-employed)",
+   "note": "",
+   "n_sources": 6
+  },
+  {
+   "qid": "pf034",
+   "part": "Part B — Respondent 1",
+   "item": "21",
+   "question": "Mark box as applicable",
+   "golden": "Present in Australia ☑  Ordinarily resident in Australia ☑  An Australian citizen ☑  Domiciled in Australia ☑",
+   "note": "Australian citizen by conferral in 2009.",
+   "n_sources": 6
+  },
+  {
+   "qid": "pf035",
+   "part": "Part B — Respondent 1",
+   "item": "22",
+   "question": "Description",
+   "golden": "Party to a de facto relationship that has broken down ☑   Parent ☑",
+   "note": "",
+   "n_sources": 3
+  },
+  {
+   "qid": "pf036",
+   "part": "Part B — Respondent 1",
+   "item": "23",
+   "question": "Is an interpreter required?",
+   "golden": "Yes — Vietnamese",
+   "note": "Conditional free-text/dropdown must be filled.",
+   "n_sources": 6
+  },
+  {
+   "qid": "pf037",
+   "part": "Part B — Respondent 1",
+   "item": "24",
+   "question": "Aboriginal and/or Torres Strait Islander origin?",
+   "golden": "No",
+   "note": "",
+   "n_sources": 3
+  },
+  {
+   "qid": "pf038",
+   "part": "Part B — Respondent 2",
+   "item": "15–24",
+   "question": "Respondent 2 column",
+   "golden": "Leave blank — there is only one respondent",
+   "note": "Whole column must come back blank.",
+   "n_sources": 3
+  },
+  {
+   "qid": "pf039",
+   "part": "Part C",
+   "item": "25",
+   "question": "Date parties commenced living together",
+   "golden": "04/03/2012",
+   "note": "",
+   "n_sources": 6
+  },
+  {
+   "qid": "pf040",
+   "part": "Part C",
+   "item": "26",
+   "question": "Date of marriage",
+   "golden": "Not applicable — the parties never married",
+   "note": "Mark 'Not applicable'. Do NOT enter the relationship registration date here.",
+   "n_sources": 6
+  },
+  {
+   "qid": "pf041",
+   "part": "Part C",
+   "item": "27",
+   "question": "Date of final separation",
+   "golden": "27/11/2025",
+   "note": "Separation under one roof until 09/02/2026; the date of final separation is 27/11/2025.",
+   "n_sources": 5
+  },
+  {
+   "qid": "pf042",
+   "part": "Part C",
+   "item": "28",
+   "question": "Date of divorce",
+   "golden": "Not applicable — the parties never married",
+   "note": "Mark 'Not applicable'.",
+   "n_sources": 3
+  },
+  {
+   "qid": "pf043",
+   "part": "Part D — Child 1",
+   "item": "29",
+   "question": "Family name",
+   "golden": "NGUYEN",
+   "note": "",
+   "n_sources": 2
+  },
+  {
+   "qid": "pf044",
+   "part": "Part D — Child 1",
+   "item": "30",
+   "question": "Given names",
+   "golden": "Harper Mai",
+   "note": "",
+   "n_sources": 2
+  },
+  {
+   "qid": "pf045",
+   "part": "Part D — Child 1",
+   "item": "31",
+   "question": "Date of birth",
+   "golden": "08/06/2014",
+   "note": "",
+   "n_sources": 4
+  },
+  {
+   "qid": "pf046",
+   "part": "Part D — Child 1",
+   "item": "32",
+   "question": "Gender",
+   "golden": "F (female)",
+   "note": "",
+   "n_sources": 2
+  },
+  {
+   "qid": "pf047",
+   "part": "Part D — Child 1",
+   "item": "33–34",
+   "question": "Parent 1 family name / given names",
+   "golden": "WHITFIELD / Amara Jane",
+   "note": "",
+   "n_sources": 2
+  },
+  {
+   "qid": "pf048",
+   "part": "Part D — Child 1",
+   "item": "35–36",
+   "question": "Parent 2 family name / given names",
+   "golden": "NGUYEN / Bao Tri",
+   "note": "",
+   "n_sources": 2
+  },
+  {
+   "qid": "pf049",
+   "part": "Part D — Child 1",
+   "item": "37",
+   "question": "With whom does the child live?",
+   "golden": "The applicant mother, Amara Jane Whitfield",
+   "note": "",
+   "n_sources": 5
+  },
+  {
+   "qid": "pf050",
+   "part": "Part D — Child 2",
+   "item": "29",
+   "question": "Family name",
+   "golden": "NGUYEN",
+   "note": "",
+   "n_sources": 2
+  },
+  {
+   "qid": "pf051",
+   "part": "Part D — Child 2",
+   "item": "30",
+   "question": "Given names",
+   "golden": "Elliot Van",
+   "note": "",
+   "n_sources": 2
+  },
+  {
+   "qid": "pf052",
+   "part": "Part D — Child 2",
+   "item": "31",
+   "question": "Date of birth",
+   "golden": "21/02/2017",
+   "note": "",
+   "n_sources": 4
+  },
+  {
+   "qid": "pf053",
+   "part": "Part D — Child 2",
+   "item": "32",
+   "question": "Gender",
+   "golden": "M (male)",
+   "note": "",
+   "n_sources": 2
+  },
+  {
+   "qid": "pf054",
+   "part": "Part D — Child 2",
+   "item": "33–34",
+   "question": "Parent 1 family name / given names",
+   "golden": "WHITFIELD / Amara Jane",
+   "note": "",
+   "n_sources": 2
+  },
+  {
+   "qid": "pf055",
+   "part": "Part D — Child 2",
+   "item": "35–36",
+   "question": "Parent 2 family name / given names",
+   "golden": "NGUYEN / Bao Tri",
+   "note": "",
+   "n_sources": 2
+  },
+  {
+   "qid": "pf056",
+   "part": "Part D — Child 2",
+   "item": "37",
+   "question": "With whom does the child live?",
+   "golden": "The applicant mother, Amara Jane Whitfield",
+   "note": "",
+   "n_sources": 3
+  },
+  {
+   "qid": "pf057",
+   "part": "Part D — Child 3",
+   "item": "38",
+   "question": "Family name",
+   "golden": "NGUYEN",
+   "note": "Child 3 uses the second children's block, Q38–46.",
+   "n_sources": 2
+  },
+  {
+   "qid": "pf058",
+   "part": "Part D — Child 3",
+   "item": "39",
+   "question": "Given names",
+   "golden": "Thea Grace",
+   "note": "",
+   "n_sources": 2
+  },
+  {
+   "qid": "pf059",
+   "part": "Part D — Child 3",
+   "item": "40",
+   "question": "Date of birth",
+   "golden": "30/09/2021",
+   "note": "",
+   "n_sources": 5
+  },
+  {
+   "qid": "pf060",
+   "part": "Part D — Child 3",
+   "item": "41",
+   "question": "Gender",
+   "golden": "F (female)",
+   "note": "",
+   "n_sources": 2
+  },
+  {
+   "qid": "pf061",
+   "part": "Part D — Child 3",
+   "item": "42–43",
+   "question": "Parent 1 family name / given names",
+   "golden": "WHITFIELD / Amara Jane",
+   "note": "",
+   "n_sources": 2
+  },
+  {
+   "qid": "pf062",
+   "part": "Part D — Child 3",
+   "item": "44–45",
+   "question": "Parent 2 family name / given names",
+   "golden": "NGUYEN / Bao Tri",
+   "note": "",
+   "n_sources": 2
+  },
+  {
+   "qid": "pf063",
+   "part": "Part D — Child 3",
+   "item": "46",
+   "question": "With whom does the child live?",
+   "golden": "The applicant mother, Amara Jane Whitfield",
+   "note": "",
+   "n_sources": 2
+  },
+  {
+   "qid": "pf064",
+   "part": "Part D — Child 4",
+   "item": "38–46",
+   "question": "Child 4 column",
+   "golden": "Leave blank — there are only three children",
+   "note": "Whole column must come back blank.",
+   "n_sources": 3
+  },
+  {
+   "qid": "pf065",
+   "part": "Part E",
+   "item": "47",
+   "question": "s 60I family dispute resolution certificate obtained?",
+   "golden": "Yes — issued 10/07/2026 by Fatima Osman (Reg. F1789), Relationships Australia Victoria, under s 60I(8)(b)",
+   "note": "Certificate must be attached; go to Part F.",
+   "n_sources": 4
+  },
+  {
+   "qid": "pf066",
+   "part": "Part E",
+   "item": "48",
+   "question": "s 60J advice from a family counsellor or FDR practitioner received?",
+   "golden": "Yes",
+   "note": "Advice given at the FDR intake on 29/04/2026. This question has NO online equivalent.",
+   "n_sources": 3
+  },
+  {
+   "qid": "pf067",
+   "part": "Part F",
+   "item": "49a",
+   "question": "Any ongoing cases?",
+   "golden": "Yes — one",
+   "note": "",
+   "n_sources": 4
+  },
+  {
+   "qid": "pf068",
+   "part": "Part F",
+   "item": "49b",
+   "question": "Court name and place",
+   "golden": "Magistrates' Court of Victoria at Broadmeadows",
+   "note": "",
+   "n_sources": 2
+  },
+  {
+   "qid": "pf069",
+   "part": "Part F",
+   "item": "49c",
+   "question": "Next Court date",
+   "golden": "09/09/2026",
+   "note": "",
+   "n_sources": 4
+  },
+  {
+   "qid": "pf070",
+   "part": "Part F",
+   "item": "49d",
+   "question": "Names of parties",
+   "golden": "Victoria Police (applicant); Amara Jane Whitfield (affected family member); Bao Tri Nguyen (respondent); Harper, Elliot and Thea Nguyen (protected children)",
+   "note": "",
+   "n_sources": 2
+  },
+  {
+   "qid": "pf071",
+   "part": "Part F",
+   "item": "49e",
+   "question": "Nature of the orders sought",
+   "golden": "Final family violence intervention order under the Family Violence Protection Act 2008 (Vic)",
+   "note": "",
+   "n_sources": 3
+  },
+  {
+   "qid": "pf072",
+   "part": "Part F",
+   "item": "50a",
+   "question": "Any existing orders, agreements, parenting plans or undertakings?",
+   "golden": "Yes — two: (1) interim family violence intervention order 12/06/2026; (2) parenting plan 04/03/2026",
+   "note": "Two entries; attach copies.",
+   "n_sources": 8
+  },
+  {
+   "qid": "pf073",
+   "part": "Part F",
+   "item": "50b",
+   "question": "Court name and place (order 1)",
+   "golden": "Magistrates' Court of Victoria at Broadmeadows",
+   "note": "Entry 2 (parenting plan) is not a court order — no court name.",
+   "n_sources": 2
+  },
+  {
+   "qid": "pf074",
+   "part": "Part F",
+   "item": "50c",
+   "question": "Date (order 1 / item 2)",
+   "golden": "12/06/2026  /  04/03/2026",
+   "note": "",
+   "n_sources": 2
+  },
+  {
+   "qid": "pf075",
+   "part": "Part F",
+   "item": "50d",
+   "question": "Names of parties to the order / agreement",
+   "golden": "Amara Jane Whitfield and the three children (protected persons); Bao Tri Nguyen (respondent). Parenting plan: Amara Jane Whitfield and Bao Tri Nguyen.",
+   "note": "",
+   "n_sources": 3
+  },
+  {
+   "qid": "pf076",
+   "part": "Part G",
+   "item": "51",
+   "question": "Financial agreement or Part VIIIAB Financial Agreement?",
+   "golden": "No",
+   "note": "",
+   "n_sources": 3
+  },
+  {
+   "qid": "pf077",
+   "part": "Part G",
+   "item": "52",
+   "question": "Binding superannuation agreement?",
+   "golden": "No",
+   "note": "",
+   "n_sources": 5
+  },
+  {
+   "qid": "pf078",
+   "part": "Part G",
+   "item": "53",
+   "question": "Bankruptcy / bankruptcy proceedings / personal insolvency agreement?",
+   "golden": "No",
+   "note": "Supported by AFSA NPII searches for both parties.",
+   "n_sources": 4
+  },
+  {
+   "qid": "pf079",
+   "part": "Part G",
+   "item": "54",
+   "question": "Proceeds of crime order or forfeiture application?",
+   "golden": "No",
+   "note": "",
+   "n_sources": 5
+  },
+  {
+   "qid": "pf080",
+   "part": "Part H",
+   "item": "55a",
+   "question": "Relationship broke down on or after 1 March 2009?",
+   "golden": "Yes",
+   "note": "Breakdown 27/11/2025.",
+   "n_sources": 2
+  },
+  {
+   "qid": "pf081",
+   "part": "Part H",
+   "item": "55b",
+   "question": "De facto relationship at least two years?",
+   "golden": "Yes — 13 years 8 months",
+   "note": "",
+   "n_sources": 3
+  },
+  {
+   "qid": "pf082",
+   "part": "Part H",
+   "item": "55c",
+   "question": "Is there a child of the de facto relationship?",
+   "golden": "Yes — three children",
+   "note": "",
+   "n_sources": 3
+  },
+  {
+   "qid": "pf083",
+   "part": "Part H",
+   "item": "55d",
+   "question": "Substantial contributions and serious injustice?",
+   "golden": "Yes",
+   "note": "",
+   "n_sources": 3
+  },
+  {
+   "qid": "pf084",
+   "part": "Part H",
+   "item": "55e",
+   "question": "Relationship registered under a prescribed law of a state or territory?",
+   "golden": "Yes — Relationships Act 2008 (Vic), registered 19/09/2014, RR 2014/018842",
+   "note": "",
+   "n_sources": 6
+  },
+  {
+   "qid": "pf085",
+   "part": "Part H",
+   "item": "55f",
+   "question": "Both parties ordinarily resident in a participating state/territory?",
+   "golden": "Yes — Victoria, for the whole relationship",
+   "note": "",
+   "n_sources": 3
+  },
+  {
+   "qid": "pf086",
+   "part": "Part H",
+   "item": "55g",
+   "question": "Applicant made substantial contributions in a participating state/territory?",
+   "golden": "Yes — Victoria",
+   "note": "",
+   "n_sources": 3
+  },
+  {
+   "qid": "pf087",
+   "part": "Part I",
+   "item": "56",
+   "question": "Territory law relied on (cross-vested jurisdiction)",
+   "golden": "Not applicable — no cross-vesting law relied on. Leave blank.",
+   "note": "Dependent question — not reached.",
+   "n_sources": 2
+  },
+  {
+   "qid": "pf088",
+   "part": "Part J",
+   "item": "57",
+   "question": "Lawyer's declaration",
+   "golden": "Signed by Priya Anjali Raman on 21/08/2026. Brochure given to the applicant on 24/02/2026.",
+   "note": "Always applies — FormPhil users are lawyers.",
+   "n_sources": 3
+  },
+  {
+   "qid": "pf089",
+   "part": "Part K",
+   "item": "58",
+   "question": "Statement of Truth",
+   "golden": "Applicant 1: Amara Jane Whitfield, signed 21/08/2026. Applicant 2: blank.",
+   "note": "",
+   "n_sources": 3
+  }
+ ]
+}

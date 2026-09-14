@@ -297,6 +297,53 @@ db.execute("""
 """).fetchall()   # the join is written out — auditable in the trajectory
 ```
 
+## Python API
+
+The CLI is a veneer over `rnsr.sdk` — the same machinery embeds in any
+worker framework (Celery, FastAPI, Lambda, Ray) in a few lines:
+
+```python
+import rnsr
+from rnsr import sdk
+
+# ingest lives on the sdk module (the rnsr.ingest subpackage shadows a
+# root-level function of that name)
+report = sdk.ingest(["report.pdf", "ledger.xlsx"], "corpus.db")
+
+# one question — async `rnsr.answer(...)`, or the sync wrapper:
+result = rnsr.answer_sync("What was FY2023 segment revenue?", "corpus.db")
+print(result.answer, result.status, result.ledger["spend_usd"])
+print(result.trajectory_path)          # the audit record
+
+# many questions, shared exploration: the answer-csv core minus the
+# platform parts (CSV contract, checkpoints, work-dir lock) — bring your
+# own persistence. Returns list[BatchAnswer] in input order.
+answers = rnsr.answer_batch_sync(questions, "corpus.db",
+                                 batch_size=8, concurrency=4, consensus=2)
+
+# reuse one runner across calls to skip per-call provider resolution
+runner = rnsr.make_runner()
+result = rnsr.answer_sync("Who signed the agreement?", "corpus.db",
+                          runner=runner)
+
+# the form-fill pipeline (build-questions / regress as APIs):
+items = rnsr.build_questions("form_spec.json")     # enriched QuestionItems
+answers = rnsr.answer_batch_sync([i.question for i in items], "corpus.db")
+fields, notes = rnsr.fan_out(items, [a.answer for a in answers])
+report = rnsr.score_answers_sync("golden.json", fields, min_accuracy=0.95)
+```
+
+Provider keys and budgets resolve exactly as for the CLI (`Settings.from_env()`
+unless a `Settings` is passed). `rnsr.__version__` reports the installed
+package version.
+
+Worker-framework recipes live in `docs/examples/` (Celery, FastAPI, AWS
+Lambda). Multi-node deployments that need one shared rate limit or spend
+envelope implement `GovernorProtocol` (`rnsr/llm/governor.py`) over their
+own backend and `rnsr.llm.governor.install()` it — the in-memory governor
+stays the single-process default, and RNSR ships no distributed
+infrastructure by design.
+
 ## Architecture
 
 ```
@@ -373,7 +420,7 @@ conventions.
 ```bash
 python3.14 -m venv .venv && source .venv/bin/activate
 pip install -e ".[ingest,eval,dev]"
-pytest            # 371 tests; LLM-free by default (live tests opt-in: -m live)
+pytest            # 389 tests; LLM-free by default (live tests opt-in: -m live)
 ruff check .
 ```
 

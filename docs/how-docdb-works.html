@@ -127,8 +127,8 @@
 <header>
   <h1>How RNSR DocDB Works</h1>
   <p>A plain-English guide to the system that turns a pile of documents into a
-  database an AI can interrogate — with exact numbers, verified quotes, and a
-  full audit trail.</p>
+  database an AI can interrogate — and then fills in a whole form from it, with
+  exact numbers, verified quotes, and a full audit trail.</p>
 </header>
 
 <main>
@@ -145,7 +145,11 @@
     <li><a href="#ladder">The search ladder</a></li>
     <li><a href="#annotate">Semantic annotation</a></li>
     <li><a href="#verify">Verified quotes</a></li>
-    <li><a href="#budgets">Budgets and safety rails</a></li>
+    <li><a href="#forms">Answering a whole form</a></li>
+    <li><a href="#outputs">What a run hands back</a></li>
+    <li><a href="#budgets">Budgets and governance</a></li>
+    <li><a href="#containment">Containment: untrusted documents</a></li>
+    <li><a href="#operating">Operating it</a></li>
     <li><a href="#amortize">Why it gets cheaper over time</a></li>
     <li><a href="#when">When to use it (and when not to)</a></li>
   </ol>
@@ -260,7 +264,7 @@
         <text x="795" y="146" text-anchor="middle" font-size="14" font-weight="600" fill="#1a2332">Query loop</text>
         <text x="795" y="172" text-anchor="middle" font-size="12" fill="#3d4d63">AI writes Python + SQL</text>
         <text x="795" y="190" text-anchor="middle" font-size="12" fill="#3d4d63">against the database</text>
-        <text x="795" y="215" text-anchor="middle" font-size="11.5" font-style="italic" fill="#5a6a80">runs per question</text>
+        <text x="795" y="215" text-anchor="middle" font-size="11.5" font-style="italic" fill="#5a6a80">per question — or per batch of 8</text>
       </g>
       <!-- Question in / answer out -->
       <line x1="795" y1="55" x2="795" y2="90" stroke="#5a6a80" stroke-width="2" marker-end="url(#arr)"/>
@@ -276,6 +280,13 @@
   full text of every page is retained inside <code>corpus.db</code>, and every
   index entry, table row, and search hit can be traced back to an exact
   character range on an exact page of an exact document.</p>
+
+  <p>Sections 4–9 describe those two phases for a single question, because
+  that's the clearest way to see the machinery. In practice the common job is
+  bigger: fill in an entire court form, or work through a whole question set,
+  over a matter folder. That job is the same loop run many times with a few
+  extra rules on top, and it gets its own walkthrough in
+  <a href="#forms">section 10</a>.</p>
 </section>
 
 <!-- ============================================================ -->
@@ -405,6 +416,23 @@
     re-extraction. Same input, same output, every time. AI-generated summaries
     never go into the manifest — it contains only facts a machine measured.
   </div>
+
+  <h3>Two speeds</h3>
+  <p>The pipeline above is the careful tier: a layout-aware PDF parser that
+  recovers table structure, at roughly a second per document. That is the right
+  trade for eleven exhibits and the wrong one for a discovery dump.</p>
+  <p><code>--fast-ingest</code> switches PDFs to a straight text-layer
+  extractor, parses documents in parallel across all but two of your CPU
+  cores, and commits progress every 50 documents so an interrupted run resumes
+  where it stopped rather than starting over. On a real 999-document family-law
+  matter — 467 PDFs, 390 emails, 64 Word files, and assorted text and CSV —
+  the fast tier read all 977 readable files in <strong>1.3 seconds</strong>
+  with zero parse failures.</p>
+  <p>What you give up is table structure and scanned pages: the fast tier reads
+  text layers only, and pages without one are counted and reported rather than
+  transcribed. So the rule of thumb is to use the fast tier when the answers
+  live in prose (correspondence, affidavits, file notes) and the careful tier
+  when they live in tables you intend to sum.</p>
 </section>
 
 <!-- ============================================================ -->
@@ -518,7 +546,7 @@
       <!-- sandbox -->
       <rect x="290" y="195" width="340" height="120" rx="10" fill="#f0f3f7" stroke="#5a6a80" stroke-width="1.5"/>
       <text x="460" y="221" text-anchor="middle" font-size="13" font-weight="600" fill="#1a2332">Sandbox runs the code</text>
-      <text x="460" y="242" text-anchor="middle" font-size="11.5" fill="#5a6a80">a separate process with no network access,</text>
+      <text x="460" y="242" text-anchor="middle" font-size="11.5" fill="#5a6a80">a separate process — no network, no provider keys —</text>
       <text x="460" y="259" text-anchor="middle" font-size="11.5" fill="#5a6a80">preloaded with: db · doc · manifest · search ·</text>
       <text x="460" y="276" text-anchor="middle" font-size="11.5" fill="#5a6a80">semantic_annotate · verify · schema_map · FINAL</text>
       <text x="460" y="300" text-anchor="middle" font-size="11" font-style="italic" fill="#5a6a80">AI/embedding calls are brokered by the parent process</text>
@@ -581,20 +609,24 @@
   <div class="callout">
     <strong>Root model vs. sub-models</strong>
     The <em>root</em> model is the smart, expensive one that plans and writes
-    code (e.g. Claude Sonnet or GPT-5-class). <em>Sub-models</em> are cheaper,
+    code — a current frontier model, Claude Sonnet or GPT-5-series class.
+    <em>Sub-models</em> are cheaper,
     faster models used in bulk for simple judgments — "does this paragraph
     mention a guarantee, yes or no?" — with up to 16 running at once. This is
     the "recursive" in RLM: a language model that delegates to language models.
   </div>
 
   <h3>Why a sandbox?</h3>
-  <p>The model's code runs in a separate process with <strong>no network
-  access</strong>. It can touch the database and nothing else. When its code
-  needs an AI call (for annotation or search), the request is passed to the
+  <p>The model's code runs in a separate process that can reach the database
+  and very little else: no network, and no provider API keys — those are
+  stripped out of the environment before the child starts. When its code needs
+  an AI call (for annotation or search), the request is passed back to the
   parent process, which makes the call on its behalf under strict concurrency
   and budget limits. If a code cell runs away, the sandbox is restarted. Every
   code cell, result, and model call is written to a trajectory file — a
-  complete, replayable record of how the answer was reached.</p>
+  complete, replayable record of how the answer was reached.
+  <a href="#containment">Section 13</a> covers what else the sandbox refuses to
+  do, and why that matters when the documents themselves are untrusted.</p>
 </section>
 
 <!-- ============================================================ -->
@@ -722,6 +754,15 @@ db.execute("SELECT COUNT(*) FROM t_contract_003 WHERE is_termination = 'yes'")</
     <li>A three-strike rule stops the model from spiralling: after repeated
     verification failures the run ends honestly rather than looping forever.</li>
   </ul>
+  <p>When a whole batch of questions is answered at once, the same rule applies
+  field by field, with one distinction that came out of practice: any answer
+  that <em>states a value</em> taken from the documents — a name, an address, a
+  date, a bank account, an amount — must carry a quote, while a plain
+  yes/no/unknown need not. That distinction exists because a run once produced
+  a confident, well-formatted residential address that appears in no document
+  in the matter. An invented address cannot survive an exact string match
+  against the source text; requiring the quote is what turns that from a
+  reviewer's problem into a rejected answer.</p>
   <div class="callout green">
     <strong>Why this matters</strong>
     This is the mechanism that resists confabulation. In the CUAD legal
@@ -733,12 +774,211 @@ db.execute("SELECT COUNT(*) FROM t_contract_003 WHERE is_termination = 'yes'")</
 </section>
 
 <!-- ============================================================ -->
-<section id="budgets">
-  <h2>10. Budgets and safety rails</h2>
-  <p>Every query runs under hard caps, so a confused run costs a bounded amount
-  and then stops:</p>
+<section id="forms">
+  <h2>10. Answering a whole form: batches, audits, and second opinions</h2>
+  <p>Everything so far describes one question. The job people actually bring is
+  a form: forty-nine fields of a family-law application, or a ninety-question
+  verification set over a matter folder. Running that as forty-nine independent
+  queries is both slow and — surprisingly — <em>less accurate</em>. RNSR runs it
+  as a handful of shared explorations instead.</p>
+
+  <figure class="figure">
+    <svg viewBox="0 0 900 600" font-family="-apple-system, Segoe UI, sans-serif">
+      <defs>
+        <marker id="arr6" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M 0 0 L 10 5 L 0 10 z" fill="#5a6a80"/>
+        </marker>
+        <marker id="arr6g" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M 0 0 L 10 5 L 0 10 z" fill="#1a7f37"/>
+        </marker>
+        <marker id="arr6r" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M 0 0 L 10 5 L 0 10 z" fill="#b42318"/>
+        </marker>
+      </defs>
+
+      <!-- A: form spec -->
+      <rect x="250" y="20" width="300" height="76" rx="10" fill="#e8f0fe" stroke="#1f6feb" stroke-width="1.5"/>
+      <text x="400" y="44" text-anchor="middle" font-size="13.5" font-weight="600" fill="#1a2332">1. Form spec → questions</text>
+      <text x="400" y="63" text-anchor="middle" font-size="11.5" fill="#5a6a80">fields, mutually exclusive groups, role map,</text>
+      <text x="400" y="80" text-anchor="middle" font-size="11.5" fill="#5a6a80">form conventions · writes questions.csv + a map</text>
+      <line x1="400" y1="96" x2="400" y2="124" stroke="#5a6a80" stroke-width="2" marker-end="url(#arr6)"/>
+
+      <!-- B: batching -->
+      <rect x="250" y="128" width="300" height="76" rx="10" fill="#e8f0fe" stroke="#1f6feb" stroke-width="1.5"/>
+      <text x="400" y="152" text-anchor="middle" font-size="13.5" font-weight="600" fill="#1a2332">2. Group into batches of 8</text>
+      <text x="400" y="171" text-anchor="middle" font-size="11.5" fill="#5a6a80">4 batches explored concurrently, over one</text>
+      <text x="400" y="188" text-anchor="middle" font-size="11.5" fill="#5a6a80">corpus.db that was built (or cached) once</text>
+      <line x1="400" y1="204" x2="400" y2="232" stroke="#5a6a80" stroke-width="2" marker-end="url(#arr6)"/>
+
+      <!-- C: shared exploration -->
+      <rect x="250" y="236" width="300" height="86" rx="10" fill="#fff" stroke="#1f6feb" stroke-width="1.5"/>
+      <text x="400" y="260" text-anchor="middle" font-size="13.5" font-weight="600" fill="#1a2332">3. One shared exploration</text>
+      <text x="400" y="279" text-anchor="middle" font-size="11.5" fill="#5a6a80">the loop of section 6, but the eight questions</text>
+      <text x="400" y="296" text-anchor="middle" font-size="11.5" fill="#5a6a80">share every search and every document read</text>
+      <text x="400" y="314" text-anchor="middle" font-size="11" font-weight="600" fill="#1f6feb">ends in FINAL_BATCH(all answers + quotes)</text>
+      <line x1="400" y1="322" x2="400" y2="348" stroke="#5a6a80" stroke-width="2" marker-end="url(#arr6)"/>
+
+      <!-- D: gates -->
+      <polygon points="400,350 565,410 400,470 235,410" fill="#fff8e1" stroke="#9a6700" stroke-width="1.5"/>
+      <text x="400" y="404" text-anchor="middle" font-size="12.5" font-weight="600" fill="#7a5200">Passes both gates?</text>
+      <text x="400" y="423" text-anchor="middle" font-size="11.5" fill="#7a5200">(completeness · negative audit)</text>
+
+      <!-- no branch back to C -->
+      <line x1="235" y1="410" x2="150" y2="410" stroke="#b42318" stroke-width="2"/>
+      <line x1="150" y1="410" x2="150" y2="270" stroke="#b42318" stroke-width="2"/>
+      <line x1="150" y1="270" x2="245" y2="270" stroke="#b42318" stroke-width="2" marker-end="url(#arr6r)"/>
+      <text x="136" y="340" text-anchor="middle" font-size="12" fill="#b42318" font-weight="600" transform="rotate(-90 136 340)">no — pushback, resubmit</text>
+
+      <!-- yes -->
+      <line x1="400" y1="470" x2="400" y2="498" stroke="#1a7f37" stroke-width="2" marker-end="url(#arr6g)"/>
+      <text x="418" y="490" font-size="12" fill="#1a7f37" font-weight="600">yes</text>
+
+      <!-- E: finish -->
+      <rect x="230" y="502" width="340" height="82" rx="10" fill="#e6f4ea" stroke="#1a7f37" stroke-width="1.5"/>
+      <text x="400" y="526" text-anchor="middle" font-size="13.5" font-weight="600" fill="#0f5825">4. Finish the run</text>
+      <text x="400" y="545" text-anchor="middle" font-size="11.5" fill="#2d5a3a">any still-blank question gets its own solo loop ·</text>
+      <text x="400" y="562" text-anchor="middle" font-size="11.5" fill="#2d5a3a">group answers fan back out to individual fields ·</text>
+      <text x="400" y="578" text-anchor="middle" font-size="11.5" fill="#2d5a3a">answers + per-question status + run report written</text>
+
+      <!-- annotation: budgets -->
+      <rect x="588" y="236" width="292" height="86" rx="10" fill="#f6f8fa" stroke="#d8dee6" stroke-width="1.5"/>
+      <text x="604" y="259" font-size="12" font-weight="700" fill="#1a2332">Budgets scale sub-linearly</text>
+      <text x="604" y="278" font-size="11" fill="#5a6a80">1 + 0.5 × (n − 1). A batch of eight gets</text>
+      <text x="604" y="294" font-size="11" fill="#5a6a80">4.5 questions' worth of iterations, time</text>
+      <text x="604" y="310" font-size="11" fill="#5a6a80">and spend — not eight.</text>
+      <line x1="588" y1="279" x2="556" y2="279" stroke="#c4ccd6" stroke-width="1.5" stroke-dasharray="5 4"/>
+
+      <!-- annotation: gates -->
+      <rect x="588" y="350" width="292" height="120" rx="10" fill="#f6f8fa" stroke="#d8dee6" stroke-width="1.5"/>
+      <text x="604" y="373" font-size="12" font-weight="700" fill="#1a2332">The two gates, both mechanical</text>
+      <text x="604" y="392" font-size="11" fill="#5a6a80">Completeness — every question id must come</text>
+      <text x="604" y="408" font-size="11" fill="#5a6a80">back with a non-empty answer.</text>
+      <text x="604" y="429" font-size="11" fill="#5a6a80">Negative audit — every No / unknown /</text>
+      <text x="604" y="445" font-size="11" fill="#5a6a80">not-found is re-probed against the search</text>
+      <text x="604" y="461" font-size="11" fill="#5a6a80">index before it is allowed to stand.</text>
+      <line x1="588" y1="410" x2="566" y2="410" stroke="#c4ccd6" stroke-width="1.5" stroke-dasharray="5 4"/>
+    </svg>
+    <figcaption>Figure 6 — A whole form in one run. Eight questions share one exploration, and the batch cannot finish until it survives two mechanical checks.</figcaption>
+  </figure>
+
+  <h3>Why batching is more accurate, not just faster</h3>
+  <p>Forms are full of mutually exclusive families — radio buttons, checkbox
+  sets, "tick one of the following". A loop that can see only its own field
+  cheerfully ticks <em>every</em> sibling, because each one looks individually
+  defensible. A loop that sees the whole family in one context has to pick.
+  On a real matter the batched run scored 39/49 against 30/49 for one-loop-per-question,
+  while running 3.7× faster and costing 4.2× less.</p>
+
+  <h3>Preparing the questions</h3>
+  <p>Raw form fields make poor questions. <code>rnsr build-questions</code>
+  reads a <strong>form spec</strong> — the fields, which of them belong to a
+  mutually exclusive group, who the parties are, and any conventions of that
+  particular form — and turns it into a question set:</p>
   <table class="info">
-    <tr><th>Limit (defaults)</th><th>Purpose</th></tr>
+    <tr><th>What the spec adds</th><th>Why</th></tr>
+    <tr><td><strong>Group collapse</strong></td><td>An exclusive family of fields becomes a single question ("which one of these applies?"), so the model must choose rather than agree with everything.</td></tr>
+    <tr><td><strong>Role map</strong></td><td>"Applicant 1" is a name, not a role, until you say so. Every question carries the cast list.</td></tr>
+    <tr><td><strong>Evidence rules</strong></td><td>Form-specific conventions — for instance, that an internally-produced chronology is secondary to a letter in which the other side's solicitor concedes the date.</td></tr>
+    <tr><td><strong>Answer shape</strong></td><td>What a correct answer looks like for that field: a date, a code, "leave blank", one of a list.</td></tr>
+  </table>
+  <p>It also writes a <strong>map file</strong> beside the questions. That is
+  what lets a single answer to a collapsed group be fanned back out afterwards
+  into the individual form fields — the chosen option gets the value, its
+  siblings get "No".</p>
+
+  <h3>The negative audit: making "not found" earn its place</h3>
+  <p>The characteristic failure of a shared exploration is laziness. Eight
+  questions, one budget, and the cheapest way to finish is to answer the easy
+  three and declare the other five absent from the corpus. Asking the model
+  politely not to do this does not work.</p>
+  <p>So before a batch is accepted, the harness checks the negatives itself,
+  without involving a model at all. For every answer that is a No, an unknown,
+  or a not-found <em>and</em> has no verified quote behind it, it takes the
+  distinctive word pairs from that question — pairs that appear in that
+  question but not in most of its neighbours, so the probe is about the actual
+  subject rather than shared boilerplate — and runs each as a phrase search
+  against the full-text index, over a read-only connection to the corpus. If
+  any of them hits, the batch is pushed back with the offending question ids,
+  the document that matched, and a sample of the text. The model has to go and
+  read it.</p>
+  <div class="callout green">
+    <strong>The cost of this check is zero</strong>
+    It is an index lookup, not a model call — a few milliseconds against a
+    structure that already exists. It fires once per loop, which is enough:
+    once a loop has been caught claiming something is absent when it is sitting
+    in a document, it stops trying.
+  </div>
+
+  <h3>Consensus: two opinions when one isn't enough</h3>
+  <p>Batched runs are not deterministic. Per-field accuracy on the matter above
+  is 98.8% across nine fresh runs, and roughly two runs in three are perfect
+  end to end — which is excellent, and still not the same as always.</p>
+  <p><code>--consensus 2</code> runs the whole batch twice over, concurrently,
+  with different sampling seeds, and votes field by field after normalising for
+  punctuation and case. Where the passes agree, the answer stands and is marked
+  unanimous. Where they split — or where one pass simply had nothing — that
+  field gets a third, focused loop of its own to break the tie, and is
+  <strong>flagged as contested in the output</strong> whether or not the tie
+  broke cleanly. Two independent passes rarely invent the same wrong answer, so
+  a disagreement is a genuine signal about where to look, not noise to be
+  hidden.</p>
+
+  <div class="callout">
+    <strong>Measured, end to end</strong>
+    With enriched questions and both guards on, the 49-field matter reaches
+    <strong>49/49</strong>, repeatably, in about 2.6–2.9 minutes for roughly
+    $1.50 of model spend. The same regime over the 999-document matter answers
+    all <strong>90/90</strong> verification questions — including deliberate
+    traps: a decoy separation date, a chronology whose dates are wrong, and
+    questions whose correct answer is to leave the field blank — in 7–15
+    minutes for $5–9. Retrieval did not degrade with corpus size; what grew was
+    the exploration per question, not the cost of having more documents.
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<section id="outputs">
+  <h2>11. What a run hands back</h2>
+  <p>A run writes three files, and the two you might overlook are the important
+  ones:</p>
+  <table class="info">
+    <tr><th>File</th><th>What's in it</th></tr>
+    <tr><td><code>answers_chunk1.csv</code></td><td>The answers themselves, in the order the questions came in.</td></tr>
+    <tr><td><code>answers_status.csv</code></td><td>One row per question: how it ended (a real answer, a recovered variable, a budget exhaustion, an error), the consensus agreement, whether it was contested, and the error text if there was one.</td></tr>
+    <tr><td><code>run_report.json</code></td><td>The run as a whole: status counts, error rate, wall time, batch and consensus settings, contested fields, provider requests and spend, rate-limit hits, and latency percentiles.</td></tr>
+  </table>
+  <p>Alongside them sits one trajectory file per query — every code cell, every
+  result, every model call, in order.</p>
+
+  <div class="callout amber">
+    <strong>A failure must never read as an answer</strong>
+    If a provider times out on question 34, the honest output is "this question
+    errored", not "not found in the matter corpus" — those two look identical
+    in an answers column and mean opposite things. By default
+    <code>answer-csv</code> treats <em>any</em> question that ended in an error
+    as a failed run: it still writes every file so nothing is lost, then exits
+    non-zero. <code>--max-error-rate</code> raises that tolerance deliberately,
+    if you want it raised.
+  </div>
+
+  <p>To find out whether a run was any <em>good</em>, <code>rnsr regress</code>
+  scores it against a golden answer set — fanning group answers back out to
+  fields via the map file first — falls back to a sub-model for
+  equivalence judgments where a string comparison is too literal, and exits
+  non-zero below a <code>--min-accuracy</code> you set. That is the same
+  command the scheduled regression job runs against a known matter, which is
+  how accuracy drift caused by a provider changing something outside this
+  repository gets noticed.</p>
+</section>
+
+<!-- ============================================================ -->
+<section id="budgets">
+  <h2>12. Budgets and governance</h2>
+  <p>There are two separate ceilings: one on a query, one on the run. Every
+  query runs under hard caps, so a confused question costs a bounded amount and
+  then stops:</p>
+  <table class="info">
+    <tr><th>Per-query limit (defaults)</th><th>Purpose</th></tr>
     <tr><td>20 loop iterations</td><td>The model gets at most 20 rounds of "write code, see result".</td></tr>
     <tr><td>300 sub-model calls</td><td>Caps bulk annotation and search-expansion spend.</td></tr>
     <tr><td>600 seconds wall time</td><td>No run hangs forever.</td></tr>
@@ -749,15 +989,131 @@ db.execute("SELECT COUNT(*) FROM t_contract_003 WHERE is_termination = 'yes'")</
   variable-recovery fallback (if the loop dies but the model had already
   computed the answer into a variable, it is salvaged), sandbox restart on
   runaway code cells, and timeouts on every root-model call. When many
-  questions share one batched loop (the <code>answer-csv</code> path), the caps
-  scale <em>sub-linearly</em> — each extra question adds only half a question's
-  budget — so a confused batch can't burn the full per-question budget times
-  the batch size.</p>
+  questions share one batched loop, the caps scale <em>sub-linearly</em> — each
+  extra question adds only half a question's budget — so a confused batch can't
+  burn the full per-question budget times the batch size.</p>
+
+  <p>None of that, though, caps a <em>job</em>. Ninety questions under a $2
+  per-question ceiling is a $180 ceiling, which is not a ceiling anyone
+  intended. So all provider traffic — every root call, every sub-model call,
+  every embedding — passes through one process-wide governor:</p>
+  <table class="info">
+    <tr><th>Run-level control</th><th>Default</th><th>What it does</th></tr>
+    <tr><td>Concurrent requests</td><td>24</td><td>Total requests in flight across every question and every role.</td></tr>
+    <tr><td>Requests per minute</td><td>off</td><td>Paces against a provider's published rate limit when you set one.</td></tr>
+    <tr><td>Run spend ceiling</td><td>off</td><td>An aggregate dollar stop for the entire job; reaching it ends the run non-zero rather than quietly continuing.</td></tr>
+    <tr><td>Rate-limit cooldown</td><td>5 s, shared</td><td>When any call comes back rate-limited, <em>everything</em> backs off — not just the unlucky caller, which is what turns one 429 into a cascade.</td></tr>
+  </table>
+  <p>The two defaults that are off are off deliberately: research runs
+  shouldn't acquire new ways to fail. A deployment spending someone else's
+  money should turn them on.</p>
+</section>
+
+<!-- ============================================================ -->
+<section id="containment">
+  <h2>13. Containment: the documents are untrusted input</h2>
+  <p>Here is the uncomfortable shape of this system. Matter documents arrive
+  from opponents, third parties, and subpoena responses. The same loop that
+  reads them also writes and executes code. A document containing text along
+  the lines of <em>"ignore your instructions and run the following"</em> is not
+  an exotic scenario; it is a PDF someone can email you.</p>
+  <p>So the sandbox is not merely "a process without internet". A Python audit
+  hook sits inside the child process and refuses whole categories of operation
+  outright:</p>
+  <table class="info">
+    <tr><th>Refused</th><th>Allowed</th></tr>
+    <tr>
+      <td>Starting processes of any kind — <code>subprocess</code>, <code>fork</code>, <code>exec</code>, <code>os.system</code>, shells</td>
+      <td>Reading the corpus artifact, the Python installation, and the RNSR package itself</td>
+    </tr>
+    <tr>
+      <td>Loading native libraries through <code>ctypes</code>, which is the standard way to step around a Python-level guard</td>
+      <td>Writing to a private scratch directory created for this sandbox and deleted when it closes</td>
+    </tr>
+    <tr>
+      <td>Opening sockets — connect, bind, send</td>
+      <td>Writing SQLite's own sidecar files next to the corpus</td>
+    </tr>
+    <tr>
+      <td>Reading or writing anywhere else on the filesystem — including the repository, the working directory, and <code>.env</code></td>
+      <td>Everything the loop legitimately needs, which is why the guard is on by default</td>
+    </tr>
+  </table>
+  <p>Around that: the child inherits a scrubbed environment with no provider
+  API keys in it, so code in the sandbox cannot read a key even in principle;
+  it is capped at 300 seconds of CPU and 4 GiB of memory, so a runaway cell
+  hits a wall rather than the host; and individual cells are killed on a
+  timeout with the sandbox restarted. Legitimate native libraries such as NumPy
+  are imported <em>before</em> the guard goes up, so blocking library loading
+  doesn't break the tools the model is supposed to use.</p>
+  <div class="callout amber">
+    <strong>Be clear about what this is</strong>
+    In-process containment is a bar-raiser, not a jail. An audit hook is
+    enforced by the interpreter, and the interpreter is a large piece of C.
+    The only real boundary is the operating system's, so a deployment handling
+    other people's matters should run one container per tenant — the shipped
+    <code>Dockerfile</code> builds a non-root image for exactly this — and
+    treat the sandbox as defence in depth behind it.
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<section id="operating">
+  <h2>14. Operating it</h2>
+
+  <h3>The trace is privileged material</h3>
+  <p>Trajectory files are the audit trail, and they are useful precisely
+  because they quote client documents verbatim. That makes them the most
+  sensitive artifact the system produces. Three settings control them: content
+  mode (keep everything, redact long values and sensitive fields down to a
+  hash, or keep metadata only), an encryption key that makes each line
+  encrypted at rest, and a retention window after which old trajectories are
+  pruned at the start of the next run. <code>rnsr trajectory</code> reads them
+  back, decrypting as needed.</p>
+  <p>A related hazard: two runs sharing a working directory will interleave
+  each other's checkpoints and corrupt both. A run takes an exclusive lock on
+  its working directory and exits immediately if another holds it. The lock is
+  released by the operating system if the process dies, so a crash doesn't
+  leave a directory permanently wedged.</p>
+
+  <h3>Seeing what happened</h3>
+  <p>Logs go to standard error as either human-readable text or one JSON object
+  per line, so a container's log collector gets structured events without
+  anything having to parse prose. Counters and timing percentiles accumulate
+  through the run — model spend, rate-limit hits, sandbox restarts, batch
+  pushbacks, negative-audit flags, contested consensus fields, query latency —
+  and land in <code>run_report.json</code> at the end.</p>
+
+  <h3>As a service</h3>
+  <p><code>rnsr serve</code> exposes the same machinery over HTTP for callers
+  who shouldn't be shelling out to a CLI:</p>
+  <table class="info">
+    <tr><th>Endpoint</th><th>Purpose</th></tr>
+    <tr><td><code>GET /healthz</code></td><td>Liveness — is the process up.</td></tr>
+    <tr><td><code>GET /readyz</code></td><td>Readiness — are provider keys present and the run directory writable. Fails with 503 rather than accepting work it can't do.</td></tr>
+    <tr><td><code>GET /metrics</code></td><td>Counters, percentiles, and the governor's view of spend and throttling.</td></tr>
+    <tr><td><code>POST /jobs</code></td><td>Submit a question set. Returns immediately with a job id; the work runs in the background rather than holding the connection open.</td></tr>
+    <tr><td><code>GET /jobs</code>, <code>GET /jobs/{id}</code></td><td>Poll job state — queued, running, done, failed — and collect results.</td></tr>
+  </table>
+  <p>The container image runs as a non-root user, defaults to JSON logging, and
+  health-checks itself. One honest limitation: jobs live in a single process's
+  memory. That is a deliberate single-node design, and a multi-node deployment
+  needs a real queue in front of it.</p>
+
+  <h3>Guarding against drift</h3>
+  <p>Two things rot on someone else's schedule. Model names get retired, and an
+  unpriced model silently makes every spend cap infinite because the system
+  can't tell what it just spent — <code>rnsr doctor</code> checks provider keys,
+  resolves each role to a model, verifies those names against the live API, and
+  confirms every one has a pricing row. And provider behaviour changes without
+  telling you, which is what the scheduled regression run against a golden
+  matter is for: same corpus, same questions, known answers, an accuracy floor,
+  and a failed build when reality moves.</p>
 </section>
 
 <!-- ============================================================ -->
 <section id="amortize">
-  <h2>11. Why it gets cheaper over time</h2>
+  <h2>15. Why it gets cheaper over time</h2>
   <p>DocDB is built for <em>working sessions</em> — many questions against the
   same documents — and several kinds of work are paid once and reused:</p>
   <figure class="figure">
@@ -792,7 +1148,7 @@ db.execute("SELECT COUNT(*) FROM t_contract_003 WHERE is_termination = 'yes'")</
       <text x="450" y="189" text-anchor="middle" font-size="13.5" font-weight="600" fill="#ffffff">Measured: a second pass over the same corpora answered at</text>
       <text x="450" y="209" text-anchor="middle" font-size="13.5" font-weight="600" fill="#ffffff">half the cost, with a median of one model call per question.</text>
     </svg>
-    <figcaption>Figure 6 — Four kinds of work that amortize across questions.</figcaption>
+    <figcaption>Figure 7 — Four kinds of work that amortize across questions.</figcaption>
   </figure>
   <p>There is also a corpus cache: when you point <code>answer-csv</code> at a
   folder of documents, the resulting <code>corpus.db</code> is keyed by a hash
@@ -803,7 +1159,7 @@ db.execute("SELECT COUNT(*) FROM t_contract_003 WHERE is_termination = 'yes'")</
 
 <!-- ============================================================ -->
 <section id="when">
-  <h2>12. When to use DocDB (and when not to)</h2>
+  <h2>16. When to use DocDB (and when not to)</h2>
   <p>RNSR's own benchmarks are candid about this — DocDB is not always the
   right tool.</p>
   <div class="two-col">
@@ -814,8 +1170,10 @@ db.execute("SELECT COUNT(*) FROM t_contract_003 WHERE is_termination = 'yes'")</
         <li>Answers are computed over sets: totals, counts, chronologies</li>
         <li>Absence must be provable ("there is no such guarantee")</li>
         <li>The file contains superseded drafts or overriding amendments</li>
-        <li>You'll ask many questions of the same documents</li>
+        <li>You'll ask many questions of the same documents — or fill in a
+        whole form from them</li>
         <li>Citations must survive independent scrutiny</li>
+        <li>The documents came from someone you don't control</li>
       </ul>
     </div>
     <div class="callout amber">
@@ -837,9 +1195,12 @@ db.execute("SELECT COUNT(*) FROM t_contract_003 WHERE is_termination = 'yes'")</
   <table class="info">
     <tr><th>Resource</th><th>What it covers</th></tr>
     <tr><td><code>docdb-rlm-design-spec.md</code></td><td>The authoritative design document — every decision above, with rationale.</td></tr>
-    <tr><td><code>README.md</code></td><td>Benchmark results, install instructions, usage examples.</td></tr>
+    <tr><td><code>README.md</code></td><td>Benchmark results, install instructions, usage examples, and the table of production controls.</td></tr>
     <tr><td><code>HANDOFF.md</code></td><td>The practical runbook for answering question sets over a matter folder.</td></tr>
+    <tr><td><code>.env.example</code></td><td>Every setting named in this guide, with its default.</td></tr>
+    <tr><td><code>Dockerfile</code></td><td>The non-root service image — the per-tenant boundary discussed in section 13.</td></tr>
     <tr><td><code>rnsr/ingest/</code>, <code>rnsr/db/</code>, <code>rnsr/env/</code>, <code>rnsr/harness/</code></td><td>The source code for ingestion, the database schema, the query environment, and the RLM loop respectively.</td></tr>
+    <tr><td><code>rnsr/forms/</code>, <code>rnsr/env/fsguard.py</code>, <code>rnsr/llm/governor.py</code>, <code>rnsr/service.py</code></td><td>Question enrichment, sandbox containment, run governance, and the HTTP surface.</td></tr>
   </table>
 </section>
 
@@ -847,7 +1208,7 @@ db.execute("SELECT COUNT(*) FROM t_contract_003 WHERE is_termination = 'yes'")</
 
 <footer>
   RNSR DocDB — plain-English guide · generated from the codebase and
-  <code>docdb-rlm-design-spec.md</code>
+  <code>docdb-rlm-design-spec.md</code> · updated August 2026
 </footer>
 
 </body>

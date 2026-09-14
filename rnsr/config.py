@@ -67,6 +67,12 @@ class Settings:
     # --- table coercion (§3.2) ---
     coerce_threshold: float = 0.95      # >=95% of non-null cells must coerce
 
+    # --- derived cell index (engine-poc-plan Stage 1) ---
+    # Populates `cells` at ingest so rung-0 sweeps run one indexed scan
+    # instead of LIKE over every t_* table. Off -> the legacy per-table
+    # sweep path (also used automatically for artifacts without cells).
+    cells_index: bool = True
+
     # --- chunking (§3.4) ---
     chunk_chars: int = 1500
     chunk_overlap: int = 200

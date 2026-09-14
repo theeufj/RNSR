@@ -27,6 +27,9 @@ class CorpusDB:
         uri = f"file:{self.path}?mode={'ro' if mode == 'ro' else 'rw'}"
         self.conn = sqlite3.connect(uri, uri=True)
         self.conn.row_factory = sqlite3.Row
+        # mmap-backed reads: DB pages come from the OS page cache, shared
+        # across every process reading the same artifact (Stage 1).
+        schema.apply_read_pragmas(self.conn)
 
     @classmethod
     def create(cls, path: str | Path) -> CorpusDB:

@@ -27,6 +27,9 @@ def build_namespace(corpus_db: str, child, init_msg: dict) -> dict:
         manifest = ro.manifest_dict()
 
     conn = sqlite3.connect(corpus_db)  # rw for annotations; triggers guard sources
+    from rnsr.db.schema import apply_read_pragmas
+
+    apply_read_pragmas(conn)  # mmap-backed reads via the shared OS page cache
     from rnsr.env.lazydoc import LazyDoc
 
     doc = LazyDoc(conn)  # bounded memory at any corpus size

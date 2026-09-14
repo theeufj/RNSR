@@ -98,6 +98,49 @@ CREATE UNIQUE INDEX annotation_idempotency
     ON annotation_log (table_name, column, prompt_sha256, model, ifnull(where_clause, ''));
 """
 
+# Derived cell index (engine-poc-plan Stage 1): one indexed table over every
+# typed-table cell, so rung-0 sweeps run one scan instead of un-indexed LIKE
+# over every t_* table. Derived data — rebuildable, deliberately unfrozen.
+# text_value is stored lowercased (it exists only to be searched).
+CELLS_DDL = (
+    """
+    CREATE TABLE IF NOT EXISTS cells (
+        doc_id     TEXT NOT NULL,
+        table_name TEXT NOT NULL,
+        row_idx    INTEGER NOT NULL,      -- rowid in the source t_* table
+        col_name   TEXT NOT NULL,
+        text_value TEXT,
+        num_value  REAL
+    )
+    """,
+    "CREATE INDEX IF NOT EXISTS cells_num ON cells(num_value) "
+    "WHERE num_value IS NOT NULL",
+    "CREATE INDEX IF NOT EXISTS cells_table ON cells(table_name)",
+)
+
+# Default read mmap: the OS page cache serves DB pages, shared across every
+# process that opens the same artifact (multi-worker deployments pay for the
+# corpus once). 0 disables; RNSR_DB_MMAP_BYTES overrides.
+DEFAULT_MMAP_BYTES = 256 << 20
+
+
+def ensure_cells_table(conn: sqlite3.Connection) -> None:
+    for stmt in CELLS_DDL:
+        conn.execute(stmt)
+
+
+def apply_read_pragmas(conn: sqlite3.Connection,
+                       mmap_bytes: int | None = None) -> None:
+    """Per-connection read tuning; safe on rw connections too."""
+    import os
+
+    if mmap_bytes is None:
+        raw = os.environ.get("RNSR_DB_MMAP_BYTES", "")
+        mmap_bytes = int(raw) if raw.strip().isdigit() else DEFAULT_MMAP_BYTES
+    if mmap_bytes:
+        conn.execute(f"PRAGMA mmap_size={int(mmap_bytes)}")
+
+
 _IDENT_RE = re.compile(r"[^a-z0-9_]+")
 
 
@@ -124,6 +167,7 @@ def create_corpus_db(conn: sqlite3.Connection) -> None:
     """Create the core schema in an empty database (unfrozen — ingestion writes next)."""
     conn.execute("PRAGMA journal_mode=WAL")
     conn.executescript(CORE_DDL)
+    ensure_cells_table(conn)
     conn.commit()
 
 

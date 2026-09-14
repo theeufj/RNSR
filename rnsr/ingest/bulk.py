@@ -123,7 +123,8 @@ def ingest_bulk(
                 built = build_data_table(
                     conn, parsed.doc_id, seq, raw,
                     coerce_threshold=config.coerce_threshold,
-                    style_overrides=validation.style_overrides)
+                    style_overrides=validation.style_overrides,
+                    cells=config.cells_index)
                 write_table_manifest(conn, built, validation, status)
             n_new += 1
             if n_new % commit_every == 0:

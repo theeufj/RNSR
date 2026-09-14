@@ -78,6 +78,126 @@ class Ladder:
     def _rung0_sql(self, query: str, k: int) -> list[dict]:
         terms = [t.lower() for t in _terms(query)]
         numbers = [n.replace(",", "") for n in _NUMBER.findall(query)]
+        if self._cells_ready():
+            return self._rung0_cells(terms, numbers, k)
+        return self._rung0_scan(terms, numbers, k)
+
+    def _cells_ready(self) -> bool:
+        """Does this artifact carry the populated derived cell index?
+
+        Cached: presence is fixed for the connection's lifetime. Artifacts
+        ingested before Stage 1 (or with cells_index off) fall back to the
+        legacy per-table sweep — both paths stay live (engine-poc-plan).
+        """
+        ready = getattr(self, "_cells_ok", None)
+        if ready is None:
+            try:
+                ready = bool(self.conn.execute(
+                    "SELECT 1 FROM cells LIMIT 1").fetchone())
+            except sqlite3.Error:
+                ready = False
+            self._cells_ok = ready
+        return ready
+
+    def _routed_tables(self, terms: list[str], numbers: list[str]) -> list[str]:
+        """Legacy rung-0 routing gate: probe only trusted tables whose
+        column names or caption overlap the query, or any trusted table
+        when the query carries numbers.
+
+        This gate is load-bearing beyond performance: natural-language
+        queries that match no table must yield NO rung-0 hits so the
+        auto-escalating ladder reaches FTS prose chunks — weak table-row
+        hits here would stop the escalation with worse evidence (seen
+        live on the golden matter: address/email answers regressed when
+        the gate was dropped)."""
+        routed = []
+        for table in self.manifest.get("tables", []):
+            if table.get("status") == "untrusted":
+                continue
+            col_names = {c["name"] for c in table.get("schema", [])}
+            caption = (table.get("title") or "").lower()
+            overlap = [t for t in terms
+                       if any(t in c for c in col_names) or t in caption]
+            if overlap or numbers:
+                routed.append(table["table_name"])
+        return routed
+
+    def _rung0_cells(self, terms: list[str], numbers: list[str],
+                     k: int) -> list[dict]:
+        """One scan of the derived cells index instead of LIKE over every
+        routed t_* table — with legacy hit semantics preserved exactly:
+
+        - routing gate as in the legacy path (_routed_tables);
+        - text probes match text cells only (num_value IS NULL), the way
+          legacy LIKEs only TEXT columns; numeric probes hit num_value;
+        - at most k rows per table, tables in name order — the per-table
+          cap keeps evidence diverse across documents (a single wide
+          early table must not monopolize every hit; seen live: golden-
+          matter answers regressed when hits collapsed to one table).
+        """
+        routed = self._routed_tables(terms, numbers)
+        clauses, params = [], []
+        for t in terms:
+            clauses.append("(num_value IS NULL AND text_value LIKE ?)")
+            params.append(f"%{t}%")
+        for n in numbers:
+            clauses.append("num_value = ?")
+            params.append(float(n))
+        if not clauses or not routed:
+            return []
+        # dedupe (table,row) BEFORE the window: a row matching several cells
+        # would otherwise carry several rn values, and duplicates of the
+        # alphabetically-first table exhaust the LIMIT before later tables
+        # are reached (seen live: ten copies of one row as the whole result)
+        sql = (
+            "SELECT table_name, row_idx FROM ("
+            "  SELECT table_name, row_idx,"
+            "         ROW_NUMBER() OVER (PARTITION BY table_name"
+            "                            ORDER BY row_idx) AS rn"
+            "  FROM (SELECT DISTINCT table_name, row_idx FROM cells"
+            "        WHERE (" + " OR ".join(clauses) + ")"
+            "        AND table_name IN ("
+            + ",".join("?" * len(routed)) + "))"
+            ") WHERE rn <= ? ORDER BY table_name, rn LIMIT ?"
+        )
+        located = self.conn.execute(
+            sql, [*params, *routed, k, k * 4]).fetchall()
+        hits: list[dict] = []
+        for table, row_idx in located:
+            try:
+                cur = self.conn.execute(
+                    f'SELECT rowid, * FROM "{table}" WHERE rowid = ?',
+                    (row_idx,))
+            except sqlite3.Error:
+                continue
+            row = cur.fetchone()
+            if row is None:
+                continue
+            cols = [d[0] for d in cur.description]
+            record = dict(zip(cols, row, strict=True))
+            hits.append(self._sql_hit(table, record))
+            if len(hits) >= k:
+                break
+        return hits
+
+    def _sql_hit(self, name: str, record: dict) -> dict:
+        data_cols = {k: v for k, v in record.items()
+                     if k not in ("rowid", "_page", "_bbox", "_extractor")
+                     and not k.endswith("__raw")}
+        return {
+            "rung": 0, "kind": "sql", "table": name, "rows": record,
+            # uniform fields shared with chunk hits — the root model
+            # reads hit['text']/hit['score'] regardless of rung
+            "text": json.dumps(data_cols, default=str),
+            "score": None,
+            "page": record.get("_page"),
+            "provenance": {"table": name, "rowid": record.get("rowid"),
+                           "_bbox": record.get("_bbox")},
+        }
+
+    def _rung0_scan(self, terms: list[str], numbers: list[str],
+                    k: int) -> list[dict]:
+        """Legacy sweep: manifest-routed LIKE over each t_* table."""
         hits: list[dict] = []
         for table in self.manifest.get("tables", []):
             if table.get("status") == "untrusted":
@@ -112,19 +232,7 @@ class Ladder:
             cols = [d[0] for d in cur.description]
             for row in cur.fetchall():
                 record = dict(zip(cols, row, strict=True))
-                data_cols = {k: v for k, v in record.items()
-                             if k not in ("rowid", "_page", "_bbox", "_extractor")
-                             and not k.endswith("__raw")}
-                hits.append({
-                    "rung": 0, "kind": "sql", "table": name, "rows": record,
-                    # uniform fields shared with chunk hits — the root model
-                    # reads hit['text']/hit['score'] regardless of rung
-                    "text": json.dumps(data_cols, default=str),
-                    "score": None,
-                    "page": record.get("_page"),
-                    "provenance": {"table": name, "rowid": record.get("rowid"),
-                                   "_bbox": record.get("_bbox")},
-                })
+                hits.append(self._sql_hit(name, record))
         return hits[:k]
 
     # --- rung 1: grep with priors -------------------------------------------

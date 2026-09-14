@@ -1,0 +1,55 @@
+{
+  "label": "baseline",
+  "corpus": "testMatter/Test Set 6 - Initiating Application (999 Documents)/Matter Documents",
+  "timestamp": "2026-08-14T10:12:17",
+  "ingest": {
+    "files": 977,
+    "wall_s": 0.96,
+    "files_per_s": 1022.7,
+    "stats": {
+      "resumed": false,
+      "new_docs": 977,
+      "skipped": 0,
+      "parse_failed": 0,
+      "scanned_pages_untranscribed": 0
+    },
+    "artifact_mb": 2.2,
+    "peak_rss_mb": 44.6
+  },
+  "query": {
+    "n_queries": 60,
+    "rung0_sql": {
+      "n": 60,
+      "p50_ms": 1.569,
+      "p95_ms": 2.396,
+      "total_ms": 100.5,
+      "queries_with_hits": 41
+    },
+    "rung1_grep": {
+      "n": 60,
+      "p50_ms": 11.925,
+      "p95_ms": 13.246,
+      "total_ms": 724.6,
+      "queries_with_hits": 60
+    },
+    "rung2_fts": {
+      "n": 60,
+      "p50_ms": 0.338,
+      "p95_ms": 0.586,
+      "total_ms": 19.4,
+      "queries_with_hits": 59
+    },
+    "text_scan": {
+      "docs": 977,
+      "chars": 394980,
+      "wall_s": 0.004,
+      "mb_per_s": 110.5
+    },
+    "counts": {
+      "tables": 30,
+      "chunks": 1012,
+      "cells_present": false
+    },
+    "peak_rss_mb": 45.1
+  }
+}

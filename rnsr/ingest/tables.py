@@ -61,6 +61,64 @@ def merge_multipage(tables: list[RawTable]) -> list[RawTable]:
     return merged
 
 
+def _numeric_stats(values: list) -> dict:
+    """Zone map for a numeric column: min/max over non-null values."""
+    present = [v for v in values if v is not None]
+    if not present:
+        return {"n_null": len(values)}
+    return {"min": min(present), "max": max(present),
+            "n_null": len(values) - len(present)}
+
+
+def _text_stats(values: list[str | None], sample_n: int = 3,
+                sample_chars: int = 40) -> dict:
+    """Zone map for a text column: distinct count plus a short sample.
+
+    Kept small on purpose: schema entries travel in the full manifest (the
+    prompt-side compact_manifest drops them, so token cost is zero there).
+    """
+    present = [v for v in values if v]
+    distinct = list(dict.fromkeys(present))
+    return {
+        "n_distinct": len(distinct),
+        "sample": [d[:sample_chars] for d in distinct[:sample_n]],
+    }
+
+
+def _populate_cells(
+    conn: sqlite3.Connection,
+    doc_id: str,
+    table: str,
+    schema_entries: list[dict],
+    col_values: list[list],
+    raw_columns: list[list[str | None] | None],
+) -> None:
+    """Write every data cell into the derived `cells` index (Stage 1).
+
+    row_idx is the source table rowid (fresh tables insert rowids 1..n in
+    order). Numeric cells carry both the coerced number and the lowered raw
+    string, so a text probe for "3,400" and a SQL probe for 3400 both hit.
+    """
+    schema.ensure_cells_table(conn)
+    rows: list[tuple] = []
+    n_rows = len(col_values[0]) if col_values else 0
+    for i in range(n_rows):
+        for c, entry in enumerate(schema_entries):
+            value = col_values[c][i]
+            if entry["raw_col"] is not None:        # numeric column
+                raw_v = (raw_columns[c] or [None] * n_rows)[i]
+                text = None if raw_v is None else str(raw_v).lower()
+                num = value
+            else:
+                text = None if value is None else str(value).lower()
+                num = None
+            if text is None and num is None:
+                continue
+            rows.append((doc_id, table, i + 1, entry["name"], text, num))
+    if rows:
+        conn.executemany("INSERT INTO cells VALUES (?,?,?,?,?,?)", rows)
+
+
 @dataclass
 class BuiltTable:
     """Result of writing one RawTable; feeds manifest_tables (§3.5)."""
@@ -89,12 +147,18 @@ def build_data_table(
     *,
     coerce_threshold: float = 0.95,
     style_overrides: dict[str, str] | None = None,
+    cells: bool = True,
 ) -> BuiltTable:
     """Create, fill, and freeze one t_{doc_id}_{seq} table.
 
     `style_overrides` maps column name -> 'us'|'eu' for the §9 coercion
     rollback path (validate.py re-runs with an explicit style, or forces
     TEXT by passing style 'text').
+
+    With `cells` (Stage 1, engine-poc-plan), every data cell is also written
+    to the derived `cells` index, and per-column zone-map stats (numeric
+    min/max, text distinct-count + sample) are attached to the schema
+    entries — both feed rung-0 sweeps and table pruning.
     """
     taken: set[str] = set()
     col_names = [schema.sanitize_column_name(h, taken) for h in raw.header]
@@ -120,14 +184,16 @@ def build_data_table(
             rule = coerced.rule.to_dict() if coerced.rule else None
             schema_entries.append(
                 {"name": name, "type": coerced.sql_type, "coercion_rule": rule,
-                 "raw_col": f"{name}__raw"}
+                 "raw_col": f"{name}__raw", "stats": _numeric_stats(coerced.values)}
             )
         else:
+            text_vals = [None if v is None else str(v) for v in raw_vals]
             columns.append((name, "TEXT"))
-            col_values.append([None if v is None else str(v) for v in raw_vals])
+            col_values.append(text_vals)
             raw_columns.append(None)
             schema_entries.append(
-                {"name": name, "type": "TEXT", "coercion_rule": None, "raw_col": None}
+                {"name": name, "type": "TEXT", "coercion_rule": None,
+                 "raw_col": None, "stats": _text_stats(text_vals)}
             )
 
     multipage = raw.row_pages is not None and len(set(raw.row_pages)) > 1
@@ -158,6 +224,10 @@ def build_data_table(
         source_cols.append("source_page")
     source_cols += list(schema.PROVENANCE_COLUMNS)
     schema.freeze_table(conn, table, source_columns=source_cols)
+
+    if cells:
+        _populate_cells(conn, doc_id, table, schema_entries, col_values,
+                        raw_columns)
 
     pages = [raw.row_page(i) for i in range(len(raw.rows))] or [raw.page]
     return BuiltTable(

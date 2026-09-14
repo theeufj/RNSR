@@ -294,6 +294,7 @@ def ingest(
                     conn, parsed.doc_id, seq, chosen,
                     coerce_threshold=config.coerce_threshold,
                     style_overrides=validation.style_overrides,
+                    cells=config.cells_index,
                 )
                 write_table_manifest(conn, built, validation, status)
                 report.tables.append(TableReport(

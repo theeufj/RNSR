@@ -37,7 +37,41 @@ Requirements preserved from v1:
 
 `git worktree add ../RNSR-engine-poc -b engine-poc`. Main checkout and live runs untouched; nothing merges until the parity gate passes.
 
-### Stage 1 — Cheap fixes on the existing stack (days-2 weeks)
+### Stage 1 — Cheap fixes on the existing stack (days-2 weeks) — **DONE 2026-08-14**
+
+Landed in the main tree behind flags rather than a worktree (the changes
+are additive and both paths stay live; `RNSR_CELLS_INDEX=false` ingests
+without the index, and artifacts without cells use the legacy path
+automatically). Measured on Test Set 6 (977 files, `benchmarks/bench_stage1.py`,
+identical query sets, rung-0 hit parity 36/36 both paths):
+
+| metric | legacy | cells | at 20× tables (600): legacy | cells |
+|---|---|---|---|---|
+| rung-0 p50 | 1.65 ms | **0.84 ms** | 40.8 ms | **12.7 ms** |
+| rung-0 p95 | 2.80 ms | **1.34 ms** | 61.2 ms | **17.3 ms** |
+
+Legacy rung-0 scales linearly with table count; cells stays bounded.
+Ingest cost of populating cells: within run-to-run noise. Zone-map stats
+(numeric min/max, text distinct+sample) ride in each table's manifest
+schema entries — REPL-queryable, excluded from the prompt-side compact
+manifest. mmap: `PRAGMA mmap_size` (default 256 MB, `RNSR_DB_MMAP_BYTES`)
+on every read connection, so concurrent workers share the OS page cache.
+
+Hard-won requirement, recorded for Stage 2+: **rung-0 hit semantics are
+part of the agent contract, not an implementation detail.** Two "faster
+but slightly different" versions of the cells path each degraded golden-
+matter accuracy (49/49 → 44-46/49) before exact parity restored it:
+(1) dropping the legacy routing gate returned weak table hits for
+natural-language queries, stopping the ladder's escalation to FTS prose;
+(2) a `DISTINCT`-after-window SQL bug returned duplicate rows that
+starved alphabetically-later tables out of the result. Verification
+that caught it: replaying the live run's own trajectory queries against
+both paths on the same artifact (`benchmarks/replay_drill.py`, 0/39
+diffs after the fix; synthetic-query drills alone missed both bugs).
+Parity gate: golden matter 49/49 with cells active, and the legacy-path
+control run scores the same corpus 48-49/49. Any Stage-2 provider swap
+(Tantivy behind rung 2, usearch behind rung 4) must pass the same
+replay + gate discipline.
 
 1. **Baseline benchmark first**: rung-0 sweep latency, FTS/vector latency, ingest throughput, peak RSS on the largest available corpus (18k-file HANDOFF corpus if accessible, else largest `runs/` artifact plus synthetic scale-up).
 2. **Derived `cells` table**: `(doc_id, table_name, row_idx, col_name, text_value, num_value)`, populated at ingest, indexed on `text_value`/`num_value`. Rung-0 sweeps query this one indexed table instead of `LIKE` over every `t_*` table. The `t_*` tables stay — they are the agent-facing typed-SQL contract and must not change.

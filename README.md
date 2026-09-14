@@ -94,6 +94,12 @@ by question class):
 | Graph-RAG (lean reimpl., entity graph + community summaries) | 30/36 (83%) | 3/9 | 6/6 | **21/21** | $0.17 incl. index |
 | BM25-RAG / +LLM reranker (1 matter) | 7/12 both | 0/3 | — | — | $0.006/$0.018 |
 
+False-positive rate (confident answer on an absent/not-applicable item) is
+now a first-class metric, reported by `rnsr regress` next to accuracy and
+gated by `--max-false-positive-rate`. Matter-gen already plants `absent`
+and `cross-doc` items; needle-gen plants `absent` and `superseded`. A
+weekly regression fails if the rate exceeds 15%.
+
 RAG aced the retrieval-friendly v1 (12/12 at 1/30th the cost — stated
 plainly) and collapsed to 7/12 on the realistic v2: its five misses are
 structural, not marginal — every invoice aggregation (the set exceeds any
@@ -136,6 +142,10 @@ golden answers):
 | **Batched (8/loop)** | **39/49** | **7m 12s** | **$5.46** |
 | One loop per question | 30/49 | 26m 55s | $23.11 |
 
+False-positive rate (confident answer on an absent/not-applicable field) is
+reported beside accuracy by `rnsr regress` and gated by
+`--max-false-positive-rate` (weekly CI fails above 15%).
+
 3.7× faster and 4.2× cheaper — and *more accurate*, for a structural
 reason: forms carry mutually-exclusive field groups (radio buttons,
 checkbox families), and a solo loop seeing only its own field happily
@@ -167,6 +177,7 @@ that must be left blank):
 | Metric | Result |
 |---|---|
 | Questions correct | **90/90** |
+| False-positive rate (absent / leave-blank items) | gated by `--max-false-positive-rate` (CI 15%) |
 | Ingest (977 readable files, fast text tier) | **1.3 s**, zero parse failures |
 | Wall time per 90-question run | 7–15 min |
 | LLM spend per run | $5–9 |

@@ -1,0 +1,15 @@
+{
+  "id": "chatcmpl-vision-fixture",
+  "choices": [
+    {
+      "index": 0,
+      "message": {"role": "assistant", "content": "a single pixel"},
+      "finish_reason": "stop"
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 40,
+    "completion_tokens": 4,
+    "total_tokens": 44
+  }
+}

@@ -36,8 +36,8 @@ def _seed_data_table(conn, table="t_doc1_001"):
         conn, table, [("revenue", "REAL"), ("revenue__raw", "TEXT"), ("segment", "TEXT")]
     )
     conn.execute(
-        f'INSERT INTO "{table}" VALUES (?, ?, ?, ?, ?, ?)',
-        (1234.0, "$1,234", "Widgets", 3, "[0,0,100,50]", "docling"),
+        f'INSERT INTO "{table}" VALUES (?, ?, ?, ?, ?, ?, ?)',
+        (1234.0, "$1,234", "Widgets", 3, "[0,0,100,50]", "docling", "data"),
     )
     schema.freeze_table(
         conn, table,
@@ -50,7 +50,7 @@ class TestImmutability:
     def test_insert_blocked_after_freeze(self, conn):
         table = _seed_data_table(conn)
         with pytest.raises(sqlite3.IntegrityError, match="immutable"):
-            conn.execute(f'INSERT INTO "{table}" VALUES (1, "1", "x", 1, "[]", "t")')
+            conn.execute(f'INSERT INTO "{table}" VALUES (1, "1", "x", 1, "[]", "t", "data")')
 
     def test_delete_blocked(self, conn):
         table = _seed_data_table(conn)

@@ -58,7 +58,7 @@ jobs:
 
       - name: Verify models and pricing
         if: steps.guard.outputs.run == 'true'
-        run: rnsr doctor
+        run: rnsr doctor --check-models
 
       - name: Rebuild enriched questions from the form spec
         if: steps.guard.outputs.run == 'true'
@@ -91,7 +91,8 @@ jobs:
             --golden testMatter/golden.json \
             --map runs/regression/questions.map.json \
             --out runs/regression/out \
-            --min-accuracy "$MIN_ACCURACY"
+            --min-accuracy "$MIN_ACCURACY" \
+            --max-false-positive-rate 0.15
 
       - name: Upload the run for inspection
         if: always() && steps.guard.outputs.run == 'true'

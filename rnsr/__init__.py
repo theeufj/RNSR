@@ -17,7 +17,7 @@ signatures and worker-integration notes.
 # `dynamic = ["version"]` and hatch reads it from here at build time.
 # (Reading installed metadata instead goes stale in editable installs,
 # and this value is stamped into every corpus manifest.)
-__version__ = "1.0.0a5"
+__version__ = "1.0.0a6"
 
 __all__ = [
     "BatchAnswer",

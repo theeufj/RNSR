@@ -239,8 +239,13 @@ def _env_for(item: EvalItem, system: str, cache_dir: Path, settings: Settings) -
             corpus_path = _text_corpus_for(item.context, cache_dir, settings)
         else:
             corpus_path = _corpus_for(item.sources, cache_dir, settings)
+        from rnsr.ingest.health import enforce_health, load_health
+
         with CorpusDB(corpus_path) as corpus:
             manifest = corpus.manifest_dict()
+            health = load_health(corpus, settings)
+        enforce_health(health, settings)
+        manifest["health"] = health.to_dict()
         return EnvSpec(mode="docdb", corpus_db=str(corpus_path), manifest=manifest)
 
     raise ValueError(f"unknown system: {system} (choose from {SYSTEMS})")
@@ -342,6 +347,7 @@ async def run_eval(
             sub_calls=ledger["sub_calls"],
             iterations=iterations,
             trajectory_path=trajectory_path,
+            expect=getattr(item, "expect", "value"),
         )
 
     with open(results_path, "a") as out:

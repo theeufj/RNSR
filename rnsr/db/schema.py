@@ -19,7 +19,14 @@ import re
 import sqlite3
 
 # Provenance columns stamped on every extracted-table row (§3.2).
-PROVENANCE_COLUMNS = ("_page", "_bbox", "_extractor")
+PROVENANCE_COLUMNS = ("_page", "_bbox", "_extractor", "_row_kind")
+
+# Integer stamped as PRAGMA user_version and manifest.format_version.
+ARTIFACT_FORMAT_VERSION = 1
+REQUIRED_TABLES = (
+    "documents", "doc_text", "chunks", "manifest", "manifest_tables",
+    "annotation_log",
+)
 
 CORE_DDL = """
 CREATE TABLE documents (
@@ -75,7 +82,7 @@ CREATE TABLE manifest_tables (
     schema_json TEXT NOT NULL,       -- [{name, type, coercion_rule, raw_col}]
     confidence  REAL NOT NULL,
     checks_json TEXT NOT NULL,       -- {arithmetic:…, structural:…, prose:…}
-    status      TEXT NOT NULL CHECK (status IN ('trusted','reextracted','untrusted')),
+    status      TEXT NOT NULL CHECK (status IN ('trusted','reextracted','untrusted','unchecked')),
     extractor   TEXT NOT NULL
 );
 
@@ -168,6 +175,11 @@ def create_corpus_db(conn: sqlite3.Connection) -> None:
     conn.execute("PRAGMA journal_mode=WAL")
     conn.executescript(CORE_DDL)
     ensure_cells_table(conn)
+    conn.execute(f"PRAGMA user_version = {ARTIFACT_FORMAT_VERSION}")
+    conn.execute(
+        "INSERT INTO manifest (key, value) VALUES (?, ?)",
+        ("format_version", str(ARTIFACT_FORMAT_VERSION)),
+    )
     conn.commit()
 
 
@@ -211,6 +223,7 @@ def create_data_table(
         '"_page" INTEGER NOT NULL',
         '"_bbox" TEXT NOT NULL',  # JSON [x0, y0, x1, y1] in page coords
         '"_extractor" TEXT NOT NULL',
+        '"_row_kind" TEXT NOT NULL',  # data | total | subtotal | footnote | section
     ]
     conn.execute(f"CREATE TABLE {quote_ident(table)} ({', '.join(cols)})")
 

@@ -1,0 +1,6 @@
+{
+  "data": [
+    {"embedding": [0.1, 0.2, 0.3], "index": 0}
+  ],
+  "usage": {"prompt_tokens": 4, "total_tokens": 4}
+}

@@ -15,7 +15,8 @@ Check groups:
                is fully deterministic without it).
 
 Confidence is a weighted mean over the groups that actually applied.
-No silent failures: every table ends trusted, re-extracted, or untrusted.
+No silent failures: every table ends trusted, re-extracted, untrusted, or
+unchecked (no arithmetic/prose evidence — excluded from the pass rate).
 """
 
 from __future__ import annotations
@@ -29,6 +30,27 @@ from rnsr.ingest.coerce import CoercedColumn, coerce_column, is_null_cell
 from rnsr.ingest.model import RawTable
 
 TOTAL_LABEL = re.compile(r"\b(total|subtotal|sum|net)\b", re.IGNORECASE)
+_SUBTOTAL = re.compile(r"\bsubtotal\b", re.IGNORECASE)
+FOOTNOTE_LABEL = re.compile(
+    r"^\s*(\*|†|‡|§|\(\d+\)|\[\d+\]|[¹²³⁴⁵⁶⁷⁸⁹⁰])"
+)
+
+
+def classify_row_kind(row: list, label_col: int = 0) -> str:
+    """Classify a body row: data | total | subtotal | footnote | section."""
+    cell = row[label_col] if label_col < len(row) else None
+    text = str(cell).strip() if cell not in (None, "") else ""
+    others = [
+        c for i, c in enumerate(row)
+        if i != label_col and c not in (None, "", "-", "–", "—")
+    ]
+    if text and TOTAL_LABEL.search(text):
+        return "subtotal" if _SUBTOTAL.search(text) else "total"
+    if text and FOOTNOTE_LABEL.match(text) and not others:
+        return "footnote"
+    if text and not others:
+        return "section"
+    return "data"
 _YEAR = re.compile(r"^(19|20)\d{2}$")
 _ISO_DATE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
@@ -61,6 +83,38 @@ class TableValidation:
 
     def to_checks_json(self) -> dict:
         return {k: v.to_dict() for k, v in self.checks.items()}
+
+    @property
+    def evidence(self) -> bool:
+        """True when arithmetic or prose actually applied.
+
+        Structural grid checks always run and almost always pass; they are
+        not evidence the *values* are right. Tables with no totals and no
+        prose check are ``unchecked``, not trusted.
+        """
+        return any(
+            name in ("arithmetic", "prose") and g.applicable > 0
+            for name, g in self.checks.items()
+        )
+
+
+def assign_table_status(
+    validation: TableValidation,
+    threshold: float,
+    *,
+    first_attempt: bool = True,
+    reextracted: bool = False,
+) -> str:
+    """Map a validation result to a manifest_tables status."""
+    if not validation.evidence:
+        return "unchecked"
+    if validation.confidence < threshold:
+        return "untrusted"
+    if reextracted:
+        return "reextracted"
+    if first_attempt:
+        return "trusted"
+    return "reextracted"
 
 
 def _coerce_all(raw: RawTable, threshold: float,

@@ -91,10 +91,21 @@ def make_runner(settings: Settings | None = None) -> RootRunner:
                       settings=settings)
 
 
-def corpus_env(corpus_db: str | Path) -> EnvSpec:
-    """Build the docdb EnvSpec for a corpus artifact (manifest included)."""
+def corpus_env(corpus_db: str | Path, *,
+               settings: Settings | None = None) -> EnvSpec:
+    """Build the docdb EnvSpec for a corpus artifact (manifest included).
+
+    Enforces the corpus health gate: a blocked corpus raises
+    ``CorpusHealthError`` unless ``settings.allow_degraded``.
+    """
+    from rnsr.ingest.health import enforce_health, load_health
+
+    settings = settings or Settings.from_env()
     with CorpusDB(corpus_db) as c:
         manifest = c.manifest_dict()
+        health = load_health(c, settings)
+    enforce_health(health, settings)
+    manifest["health"] = health.to_dict()
     return EnvSpec(mode="docdb", corpus_db=str(corpus_db), manifest=manifest)
 
 
@@ -113,9 +124,13 @@ async def answer(
     ``.status`` ('final' | 'recovered' | 'budget_exhausted' | 'error'),
     budget ``.ledger``, and ``.trajectory_path`` for the audit record.
     """
+    settings = settings or getattr(runner, "settings", None)
     runner = runner or make_runner(settings)
-    env = corpus_env(corpus_db)
-    return await runner.run(question, env, run_dir=run_dir, query_id=query_id)
+    env = corpus_env(corpus_db, settings=settings or runner.settings)
+    result = await runner.run(question, env, run_dir=run_dir, query_id=query_id)
+    health = (env.manifest or {}).get("health")
+    result.health = health
+    return result
 
 
 @dataclass
@@ -134,6 +149,7 @@ class BatchAnswer:
     error: str | None = None
     agreement: float | None = None
     contested: bool = False
+    health: dict | None = None          # corpus health snapshot, if gated
 
 
 async def answer_batch(
@@ -163,8 +179,10 @@ async def answer_batch(
     """
     qs = list(questions)
     qids = [f"q{i:03d}" for i in range(len(qs))]
+    settings = settings or getattr(runner, "settings", None)
     runner = runner or make_runner(settings)
-    env = corpus_env(corpus_db)
+    env = corpus_env(corpus_db, settings=settings or runner.settings)
+    health = (env.manifest or {}).get("health")
     sem = asyncio.Semaphore(max(1, concurrency))
 
     out: dict[int, BatchAnswer] = {}
@@ -186,7 +204,8 @@ async def answer_batch(
                             continue
                         out[i] = BatchAnswer(
                             question=qs[i], answer=got.value, status=status,
-                            agreement=got.agreement, contested=got.contested)
+                            agreement=got.agreement, contested=got.contested,
+                            health=health)
                 else:
                     br = await runner.run_batch(pairs, env, run_dir=run_dir,
                                                 query_id=group_id)
@@ -195,13 +214,14 @@ async def answer_batch(
                         if text is None:
                             continue
                         out[i] = BatchAnswer(question=qs[i], answer=text,
-                                             status=br.result.status)
+                                             status=br.result.status,
+                                             health=health)
             except Exception as e:  # a failed group must not sink the run
                 error = f"{type(e).__name__}: {e}"[:300]
                 for i in group:
                     out.setdefault(i, BatchAnswer(
                         question=qs[i], answer=None, status="error",
-                        error=error))
+                        error=error, health=health))
                     out[i].error = out[i].error or error
 
     async def run_solo(i: int) -> None:
@@ -211,11 +231,13 @@ async def answer_batch(
                                        query_id=qids[i])
                 text = "" if res.answer is None else str(res.answer).strip()
                 out[i] = BatchAnswer(question=qs[i], answer=text or None,
-                                     status=res.status if text else "unanswered")
+                                     status=res.status if text else "unanswered",
+                                     health=health)
             except Exception as e:
                 out[i] = BatchAnswer(question=qs[i], answer=None,
                                      status="error",
-                                     error=f"{type(e).__name__}: {e}"[:300])
+                                     error=f"{type(e).__name__}: {e}"[:300],
+                                     health=health)
 
     if batch_size > 1:
         indices = list(range(len(qs)))
@@ -234,7 +256,7 @@ async def answer_batch(
         await asyncio.gather(*(run_solo(i) for i in range(len(qs))))
 
     return [out.get(i) or BatchAnswer(question=qs[i], answer=None,
-                                      status="unanswered")
+                                      status="unanswered", health=health)
             for i in range(len(qs))]
 
 
@@ -286,6 +308,7 @@ async def score_answers(
     field_answers: dict[str, str],
     *,
     min_accuracy: float = 0.0,
+    max_false_positive_rate: float = 1.0,
     judge: bool = False,
     settings: Settings | None = None,
 ):
@@ -302,7 +325,10 @@ async def score_answers(
 
     if not isinstance(golden, dict):
         golden = load_golden(golden)
-    report = score_run(golden, field_answers, min_accuracy=min_accuracy)
+    report = score_run(
+        golden, field_answers, min_accuracy=min_accuracy,
+        max_false_positive_rate=max_false_positive_rate,
+    )
     if judge and any(not r.agrees for r in report.results):
         from rnsr.llm.router import Router
 

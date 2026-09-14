@@ -28,6 +28,8 @@ PRICES_PER_MTOK: dict[str, tuple[float, float]] = {
     "gemini-2.5-flash": (0.30, 2.50),
     "gemini-2.5-flash-lite": (0.10, 0.40),
     "text-embedding-004": (0.15, 0.0),
+    # Gemini Embedding 2 (ai.google.dev/gemini-api/docs/pricing, text input)
+    "gemini-embedding-2": (0.20, 0.0),
 }
 
 unknown_models: set[str] = set()

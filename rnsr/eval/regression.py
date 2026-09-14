@@ -67,6 +67,21 @@ def string_agrees(golden: list[str] | str, answer: str) -> bool:
     return False
 
 
+def infer_expect(golden: list[str] | str, note: str = "") -> str:
+    """Classify a golden as value-bearing or absent."""
+    golds = [golden] if isinstance(golden, str) else list(golden or [])
+    if not golds or all(not str(g).strip() for g in golds):
+        return "absent"
+    blob = " ".join(str(g) for g in golds) + " " + (note or "")
+    n = normalize(blob)
+    if n in _NEGATIVES or any(
+        k in n for k in ("not applicable", "leave blank", "not reached",
+                         "not found")
+    ):
+        return "absent"
+    return "value"
+
+
 @dataclass
 class FieldResult:
     field_id: str
@@ -75,12 +90,14 @@ class FieldResult:
     agrees: bool
     scored_by: str = "string"
     note: str = ""
+    expect: str = "value"
 
 
 @dataclass
 class RegressionReport:
     results: list[FieldResult] = field(default_factory=list)
     min_accuracy: float = 0.0
+    max_false_positive_rate: float = 1.0
 
     @property
     def total(self) -> int:
@@ -96,7 +113,31 @@ class RegressionReport:
 
     @property
     def passed(self) -> bool:
-        return self.accuracy >= self.min_accuracy
+        return (self.accuracy >= self.min_accuracy
+                and self.false_positive_rate <= self.max_false_positive_rate)
+
+    @property
+    def absent_results(self) -> list[FieldResult]:
+        return [r for r in self.results if r.expect == "absent"]
+
+    @property
+    def confident_wrong(self) -> int:
+        return sum(
+            1 for r in self.absent_results
+            if r.answer.strip() and not is_negative(r.answer) and not r.agrees
+        )
+
+    @property
+    def false_positive_rate(self) -> float:
+        n = len(self.absent_results)
+        return self.confident_wrong / n if n else 0.0
+
+    @property
+    def abstain_rate(self) -> float:
+        value_items = [r for r in self.results if r.expect == "value"]
+        if not value_items:
+            return 0.0
+        return sum(1 for r in value_items if is_negative(r.answer)) / len(value_items)
 
     @property
     def substantive(self) -> tuple[int, int]:
@@ -119,6 +160,10 @@ class RegressionReport:
             "substantive_total": sub_total,
             "scored_by_judge": sum(r.scored_by == "judge" for r in self.results),
             "min_accuracy": self.min_accuracy,
+            "max_false_positive_rate": self.max_false_positive_rate,
+            "confident_wrong": self.confident_wrong,
+            "false_positive_rate": round(self.false_positive_rate, 4),
+            "abstain_rate": round(self.abstain_rate, 4),
             "passed": self.passed,
             "disagreements": [
                 {"field_id": r.field_id, "golden": r.golden[:200],
@@ -153,6 +198,18 @@ def load_golden(path: str | Path) -> dict[str, list[str]]:
     return out
 
 
+def load_golden_notes(path: str | Path) -> dict[str, str]:
+    """field_id -> note text, used to infer absent/not-reached golds."""
+    data = json.loads(Path(path).read_text(encoding="utf-8"))
+    fields = data.get("fields") or data.get("items") or []
+    out: dict[str, str] = {}
+    for f in fields:
+        key = f["id"] if "id" in f else f.get("qid")
+        if key:
+            out[key] = str(f.get("note") or f.get("notes") or "")
+    return out
+
+
 def load_field_answers(path: str | Path) -> dict[str, str]:
     """field_id -> answer, from a two-column CSV (id, answer)."""
     with open(path, newline="", encoding="utf-8") as f:
@@ -165,16 +222,23 @@ def load_field_answers(path: str | Path) -> dict[str, str]:
 
 
 def score_run(golden: dict[str, list[str]], answers: dict[str, str], *,
-              min_accuracy: float = 0.0) -> RegressionReport:
+              min_accuracy: float = 0.0,
+              max_false_positive_rate: float = 1.0,
+              notes: dict[str, str] | None = None) -> RegressionReport:
     """String-only scoring (free, deterministic). Judge separately."""
-    report = RegressionReport(min_accuracy=min_accuracy)
+    report = RegressionReport(
+        min_accuracy=min_accuracy,
+        max_false_positive_rate=max_false_positive_rate)
+    notes = notes or {}
     for field_id, gold in golden.items():
         answer = answers.get(field_id, "")
+        expect = infer_expect(gold, notes.get(field_id, ""))
         report.results.append(FieldResult(
             field_id=field_id,
             golden="; ".join(str(g) for g in gold),
             answer=answer,
             agrees=string_agrees(gold, answer),
+            expect=expect,
         ))
     return report
 

@@ -239,7 +239,7 @@ class TestIngestTextLinesTable:
 
         text = "spam offer now\nhi mum\nwin prize cash\nsee you at 5\n"
         report = ingest_text({"msgs": text}, tmp_path / "m.db")
-        assert report.tables and report.tables[0].status == "trusted"
+        assert report.tables and report.tables[0].status == "unchecked"
         table = report.tables[0].name
 
         def responder(req):

@@ -56,6 +56,7 @@ class QueryResult:
     trajectory_path: str
     iterations: int
     breached_cap: str | None = None
+    health: dict | None = None          # corpus health snapshot, if gated
 
 
 @dataclass

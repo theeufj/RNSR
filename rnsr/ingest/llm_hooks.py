@@ -134,6 +134,7 @@ def make_page_transcriber(client: LLMClient, model: str, *,
     def transcribe(pdf_path: Path, pages: list[int]) -> dict[int, dict | None]:
         return asyncio.run(_run(pdf_path, pages))
 
+    transcribe.model = model  # type: ignore[attr-defined]
     return transcribe
 
 

@@ -47,13 +47,20 @@ def ingest(
     llm: bool = typer.Option(False, "--llm/--no-llm",
                              help="Enable the sub-LM prose cross-check and vision "
                                   "re-extraction rung (§3.3); default is fully LLM-free"),
+    no_transcribe: bool = typer.Option(
+        False, "--no-transcribe",
+        help="Leave scanned pages untranscribed even if a vision key is set"),
 ) -> None:
     """Ingest documents into a corpus.db artifact (Phase A)."""
     from rnsr.config import Settings
+    from rnsr.ingest.cost_estimate import resolve_transcriber
     from rnsr.ingest.pipeline import ingest as run_ingest
 
     settings = Settings.from_env()
     prose_checker = vision = transcriber = None
+    transcriber, vision_model = resolve_transcriber(settings, no_transcribe=no_transcribe)
+    if transcriber is not None:
+        console.print(f"scanned-page transcription: on ({vision_model})")
     if llm:
         from rnsr.ingest.llm_hooks import (
             make_page_transcriber,
@@ -67,7 +74,8 @@ def ingest(
         prose_checker = make_prose_checker(sub.client, sub.model,
                                            concurrency=settings.sub_concurrency)
         vision = make_vision_extractor(vis.client, vis.model)
-        transcriber = make_page_transcriber(vis.client, vis.model)
+        if transcriber is None:
+            transcriber = make_page_transcriber(vis.client, vis.model)
 
     report = run_ingest(sources, out, config=settings,
                         prose_checker=prose_checker, vision=vision,
@@ -105,19 +113,31 @@ def query(
     corpus: Path = typer.Argument(..., exists=True, help="corpus.db artifact"),
     question: str = typer.Argument(...),
     run_dir: Path = typer.Option(Path("runs/query"), "--run-dir"),
+    allow_degraded: bool = typer.Option(
+        False, "--allow-degraded",
+        help="Answer even when corpus health is blocked; stamp health on the result"),
 ) -> None:
     """Answer a question against a corpus.db via the RLM loop (Phase B/C)."""
     import asyncio
+    from dataclasses import replace
 
     from rnsr.config import Settings
-    from rnsr.db.artifact import CorpusDB
-    from rnsr.harness.loop import EnvSpec
+    from rnsr.errors import CorpusHealthError
+    from rnsr.sdk import corpus_env
 
     settings = Settings.from_env()
-    with CorpusDB(corpus) as c:
-        manifest = c.manifest_dict()
-    env = EnvSpec(mode="docdb", corpus_db=str(corpus), manifest=manifest)
+    if allow_degraded:
+        settings = replace(settings, allow_degraded=True)
+    try:
+        env = corpus_env(corpus, settings=settings)
+    except CorpusHealthError as e:
+        console.print(f"[red]corpus health blocked:[/red] {e}")
+        raise typer.Exit(2) from e
+    health = (env.manifest or {}).get("health") or {}
+    if health.get("grade") and health["grade"] != "ok":
+        console.print(f"[yellow]corpus health {health['grade']}[/yellow]")
     result = asyncio.run(_make_runner(settings).run(question, env, run_dir=run_dir))
+    result.health = health
     console.print(f"[bold]{result.answer}[/bold]")
     console.print(f"status={result.status} iterations={result.iterations} "
                   f"cost=${result.ledger['spend_usd']:.4f} "
@@ -177,6 +197,29 @@ def gate(
     console.print("[green]GATE PASS[/green]" if report["pass"]
                   else "[red]GATE FAIL[/red]")
     raise typer.Exit(0 if report["pass"] else 1)
+
+
+@app.command("eval-tables")
+def eval_tables_cmd(
+    directory: Path = typer.Option(..., "--dir", exists=True, file_okay=False,
+                                   help="directory with labels.json + documents"),
+    out_db: Path | None = typer.Option(None, "--out-db",
+                                       help="corpus.db path (default: DIR/corpus.db)"),
+) -> None:
+    """Score table extraction against a labelled set (see testMatter/messy-tables)."""
+    import json
+
+    from rnsr.config import Settings
+    from rnsr.eval.tables_score import score_labelled_tables
+
+    report = score_labelled_tables(directory, out_db=out_db, config=Settings.from_env())
+    console.print_json(json.dumps({k: report[k] for k in report if k != "results"}))
+    for r in report["results"]:
+        mark = "PASS" if r["passed"] else "FAIL"
+        color = "green" if r["passed"] or not r["must_pass"] else "red"
+        console.print(f"[{color}]{mark}[/{color}] {r['doc']} {r['checks']}")
+    if report["n_required"] and report["n_required_passed"] < report["n_required"]:
+        raise typer.Exit(2)
 
 
 @app.command("eval")
@@ -286,6 +329,12 @@ def answer_csv(
                                      help="corpus-scale text-tier ingest (pdfium, no "
                                           "layout ML): use for thousands of files; "
                                           "resumable per document"),
+    no_transcribe: bool = typer.Option(
+        False, "--no-transcribe",
+        help="Leave scanned pages untranscribed even if a vision key is set"),
+    allow_degraded: bool = typer.Option(
+        False, "--allow-degraded",
+        help="Answer even when corpus health is blocked; stamp health on the report"),
 ) -> None:
     """Answer a questions CSV over a document corpus (fable-replicate contract).
 
@@ -307,6 +356,7 @@ def answer_csv(
     import csv as _csv
     import json as _json
     import time as _time
+    from dataclasses import replace as _replace
 
     from rnsr import obs as _obs
     from rnsr.config import Settings
@@ -318,6 +368,8 @@ def answer_csv(
     from rnsr.runlock import WorkDirBusy, WorkDirLock
 
     settings = Settings.from_env()
+    if allow_degraded:
+        settings = _replace(settings, allow_degraded=True)
     # One writer per work dir: the checkpoint and the corpus artifact are
     # both single-writer, and a second run would interleave with this one.
     try:
@@ -367,8 +419,11 @@ def answer_csv(
         corpus_path.unlink()
     if not corpus_path.exists() and fast_ingest:
         cache_dir.mkdir(parents=True, exist_ok=True)
-        transcriber = None
-        if llm:
+        from rnsr.ingest.cost_estimate import resolve_transcriber
+
+        transcriber, _vision_model = resolve_transcriber(
+            settings, no_transcribe=no_transcribe)
+        if llm and transcriber is None and not no_transcribe:
             from rnsr.ingest.llm_hooks import make_page_transcriber
             from rnsr.llm.router import Router
 
@@ -387,7 +442,11 @@ def answer_csv(
                 "may miss their content")
     if not corpus_path.exists():
         cache_dir.mkdir(parents=True, exist_ok=True)
-        prose_checker = vision = transcriber = None
+        from rnsr.ingest.cost_estimate import resolve_transcriber
+
+        prose_checker = vision = None
+        transcriber, _vision_model = resolve_transcriber(
+            settings, no_transcribe=no_transcribe)
         if llm:
             from rnsr.ingest.llm_hooks import (
                 make_page_transcriber,
@@ -401,7 +460,8 @@ def answer_csv(
             prose_checker = make_prose_checker(sub.client, sub.model,
                                                concurrency=settings.sub_concurrency)
             vision = make_vision_extractor(vis.client, vis.model)
-            transcriber = make_page_transcriber(vis.client, vis.model)
+            if transcriber is None and not no_transcribe:
+                transcriber = make_page_transcriber(vis.client, vis.model)
         from rnsr.ingest.pipeline import ingest as _ingest
 
         report = _ingest(files, corpus_path, config=settings,
@@ -416,8 +476,23 @@ def answer_csv(
                 "pages across "
                 f"{len(report.scanned_pages_untranscribed)} docs — rerun with "
                 "--llm to transcribe them, or answers may miss their content")
+    from rnsr.errors import CorpusHealthError
+    from rnsr.ingest.health import enforce_health, load_health
+
     with CorpusDB(corpus_path) as c:
         manifest = c.manifest_dict()
+        corpus_health = load_health(c, settings)
+    try:
+        enforce_health(corpus_health, settings)
+    except CorpusHealthError as e:
+        console.print(f"[red]corpus health blocked:[/red] {e}")
+        lock.release()
+        raise typer.Exit(2) from e
+    manifest["health"] = corpus_health.to_dict()
+    if corpus_health.grade != "ok":
+        console.print(f"[yellow]corpus health {corpus_health.grade}[/yellow]")
+        for f in corpus_health.findings:
+            console.print(f"  [{f.severity}] {f.detail}")
     env = EnvSpec(mode="docdb", corpus_db=str(corpus_path), manifest=manifest)
 
     runner = _make_runner(settings)
@@ -545,13 +620,14 @@ def answer_csv(
     with open(status_path, "w", newline="", encoding="utf-8") as f:
         w = _csv.writer(f)
         w.writerow(["row", "query_id", "status", "agreement", "contested",
-                    "error", "model_answer"])
+                    "error", "model_answer", "corpus_health"])
+        health_grade = corpus_health.grade
         for i in range(len(qs)):
             qid = f"q{i:03d}"
             w.writerow([i, qid, status.get(i, "error"),
                         "" if i not in agreements else f"{agreements[i]:.2f}",
                         "yes" if qid in contested else "",
-                        errors.get(i, ""), answers[i]])
+                        errors.get(i, ""), answers[i], health_grade])
 
     counts: dict[str, int] = {}
     for i in range(len(qs)):
@@ -578,6 +654,7 @@ def answer_csv(
         "contested_fields": sorted(contested),
         "provider": gov,
         "metrics": _obs.metrics().snapshot(),
+        "health": corpus_health.to_dict(),
     }
     (output / "run_report.json").write_text(_json.dumps(report, indent=2))
 
@@ -658,20 +735,26 @@ def build_questions_cmd(
 
 @app.command("regress")
 def regress_cmd(
-    answers: Path = typer.Option(..., "--answers", exists=True,
-                                 help="answers CSV from answer-csv"),
-    golden: Path = typer.Option(..., "--golden", exists=True,
-                                help="golden JSON with per-field values"),
+    answers: Path | None = typer.Option(None, "--answers", exists=True,
+                                        help="answers CSV from answer-csv"),
+    golden: Path | None = typer.Option(None, "--golden", exists=True,
+                                       help="golden JSON with per-field values"),
     item_map: Path | None = typer.Option(None, "--map",
                                          help="item map from build-questions; "
                                               "fans group answers out to fields"),
     out_dir: Path | None = typer.Option(None, "--out"),
     min_accuracy: float = typer.Option(0.0, "--min-accuracy",
                                        help="exit 2 below this field accuracy"),
+    max_false_positive_rate: float = typer.Option(
+        1.0, "--max-false-positive-rate",
+        help="exit 2 when confident-wrong / absent-items exceeds this"),
     judge: bool = typer.Option(True, "--judge/--no-judge",
                                help="sub-LM equivalence check for string "
                                     "failures (long answers differ in wording, "
                                     "not meaning)"),
+    from_review: Path | None = typer.Option(
+        None, "--from-review", exists=True,
+        help="score a filled review.csv from audit-export into a miss report"),
 ) -> None:
     """Score answers against a golden set and gate on accuracy."""
     import asyncio
@@ -683,9 +766,31 @@ def regress_cmd(
         judge_disagreements,
         load_field_answers,
         load_golden,
+        load_golden_notes,
         score_run,
     )
     from rnsr.forms.fanout import fan_out
+
+    if from_review:
+        from rnsr.eval.audit import score_review
+
+        report = score_review(from_review)
+        dest = out_dir or from_review.parent
+        dest.mkdir(parents=True, exist_ok=True)
+        written = dest / "review_misses.json"
+        written.write_text(_json.dumps(report, indent=2))
+        console.print(f"review: {report['correct']}/{report['marked']} marked-correct "
+                      f"({report['accuracy']:.1%}), {report['misses']} miss(es)")
+        for miss in report["miss_list"]:
+            console.print(f"[red]MISS[/red] {miss['qid']}: {miss['answer']!r}  "
+                          f"{miss['note']}")
+        console.print(f"wrote {written}")
+        if report["misses"]:
+            raise typer.Exit(2)
+        return
+
+    if answers is None or golden is None:
+        raise typer.BadParameter("provide --answers and --golden, or --from-review")
 
     gold = load_golden(golden)
     if item_map:
@@ -701,7 +806,11 @@ def regress_cmd(
     else:
         field_answers = load_field_answers(answers)
 
-    report = score_run(gold, field_answers, min_accuracy=min_accuracy)
+    report = score_run(
+        gold, field_answers, min_accuracy=min_accuracy,
+        max_false_positive_rate=max_false_positive_rate,
+        notes=load_golden_notes(golden),
+    )
     if judge and any(not r.agrees for r in report.results):
         from rnsr.llm.router import Router
 
@@ -713,6 +822,9 @@ def regress_cmd(
     console.print(f"agreement: {report.correct}/{report.total} "
                   f"({report.accuracy:.1%})")
     console.print(f"  substantive (golden holds a value): {sub_correct}/{sub_total}")
+    console.print(f"  false-positive rate: {summary['false_positive_rate']:.1%} "
+                  f"({summary['confident_wrong']} confident-wrong on absent items)")
+    console.print(f"  abstain rate (value items): {summary['abstain_rate']:.1%}")
     console.print(f"  resolved by judge: {summary['scored_by_judge']}")
     for d in summary["disagreements"]:
         console.print(f"[red]DIFF[/red] {d['field_id']}\n"
@@ -727,7 +839,100 @@ def regress_cmd(
 
 
 @app.command()
-def doctor() -> None:
+def replay(
+    db: Path = typer.Option(..., "--db", exists=True, help="corpus.db artifact"),
+    queries: list[Path] = typer.Option(..., "--queries", exists=True,
+                                       help="queries.json and/or trajectory JSONL"),
+    baseline: Path | None = typer.Option(None, "--baseline",
+                                         help="frozen row-set JSON to compare against"),
+    write_baseline: Path | None = typer.Option(None, "--write-baseline",
+                                               help="write the cells-path snapshot here"),
+    k: int = typer.Option(10, "--k"),
+) -> None:
+    """Replay rung-0 queries; exit 2 on cells/legacy/baseline diffs."""
+    import json
+
+    from rnsr.eval.replay import load_queries
+    from rnsr.eval.replay import replay as run_replay
+    from rnsr.eval.replay import write_baseline as dump
+
+    qs = load_queries(*queries)
+    base = json.loads(baseline.read_text()) if baseline else None
+    report = run_replay(db, qs, k=k, baseline=base)
+    if write_baseline:
+        dump(write_baseline, report["snapshot"])
+        console.print(f"wrote baseline {write_baseline}")
+    console.print_json(json.dumps({"n": report["n"], "n_diffs": report["n_diffs"],
+                                   "diffs": report["diffs"][:20]}))
+    if report["n_diffs"]:
+        raise typer.Exit(2)
+
+
+@app.command()
+def health(
+    corpus: Path = typer.Argument(..., exists=True, help="corpus.db artifact"),
+) -> None:
+    """Print the corpus health report (grade, findings, table/scan counters)."""
+    import json
+
+    from rnsr.config import Settings
+    from rnsr.db.artifact import CorpusDB
+    from rnsr.ingest.health import load_health
+
+    settings = Settings.from_env()
+    with CorpusDB(corpus) as c:
+        report = load_health(c, settings)
+    console.print_json(json.dumps(report.to_dict()))
+    color = {"ok": "green", "degraded": "yellow", "blocked": "red"}.get(report.grade, "white")
+    console.print(f"[{color}]grade: {report.grade}[/{color}]  "
+                  f"source={report.source}  "
+                  f"tables={report.tables_total} "
+                  f"(untrusted={report.tables_untrusted} "
+                  f"unchecked={report.tables_unchecked})  "
+                  f"pass_rate={report.validation_pass_rate:.1%}")
+    raise typer.Exit(0 if report.grade != "blocked" else 2)
+
+
+@app.command()
+def migrate(
+    corpus: Path = typer.Argument(..., exists=True, help="corpus.db artifact"),
+) -> None:
+    """Stamp user_version / format_version on a pre-versioned artifact."""
+    import json
+
+    from rnsr.db.migrate import migrate_artifact
+
+    result = migrate_artifact(corpus)
+    console.print_json(json.dumps(result))
+
+
+@app.command("audit-export")
+def audit_export(
+    work_dir: Path = typer.Option(..., "--work-dir", exists=True,
+                                  help="answer-csv work directory"),
+    out: Path = typer.Option(..., "--out", help="directory for evidence + review.csv"),
+) -> None:
+    """Export a field-trial packet: evidence.json per question, plus review.csv.
+
+    Trajectories stay in the work directory. The packet has answers, verified
+    quotes, SQL, pages, status and corpus health — enough to review without
+    shipping the full REPL log.
+    """
+    from rnsr.config import Settings
+    from rnsr.eval.audit import export_audit
+
+    settings = Settings.from_env()
+    result = export_audit(work_dir, out, key=settings.trajectory_key)
+    console.print(f"wrote {result['n']} evidence file(s) under {result['evidence_dir']}")
+    console.print(f"review sheet: {result['review']}")
+
+
+@app.command()
+def doctor(
+    check_models: bool = typer.Option(
+        False, "--check-models",
+        help="ask the provider which models exist and fail on retired names"),
+) -> None:
     """Check provider keys, model names and pricing before a real run.
 
     Model names rot on the provider's schedule and an unpriced model makes
@@ -736,8 +941,9 @@ def doctor() -> None:
     import asyncio
 
     from rnsr.config import Settings
-    from rnsr.llm.router import Router, available_providers
-    from rnsr.llm.validate import check_models_live
+    from rnsr.llm.cost import PRICES_PER_MTOK
+    from rnsr.llm.router import DEFAULT_MODELS, Router, available_providers
+    from rnsr.llm.validate import check_models_live, check_pricing
 
     settings = Settings.from_env()
     providers = available_providers()
@@ -745,6 +951,17 @@ def doctor() -> None:
     if not providers:
         console.print("[red]no provider key set[/red] — set ANTHROPIC_API_KEY, "
                       "OPENAI_API_KEY or GOOGLE_API_KEY")
+        raise typer.Exit(1)
+
+    missing = [
+        (provider, role, model)
+        for provider, roles in DEFAULT_MODELS.items()
+        for role, model in roles.items()
+        if model and model not in PRICES_PER_MTOK
+    ]
+    if missing:
+        for provider, role, model in missing:
+            console.print(f"[red]unpriced[/red] {provider}/{role}: {model}")
         raise typer.Exit(1)
 
     router = Router(settings)
@@ -755,11 +972,15 @@ def doctor() -> None:
     for role in ("root", "sub", "embed", "vision"):
         try:
             resolved = router.resolve(role)
-            t.add_row(role, resolved.model,
+            priced = "yes" if check_pricing(resolved.model, role) else "NO"
+            t.add_row(role, f"{resolved.model} (priced={priced})",
                       getattr(resolved.client, "provider", ""))
         except Exception as e:
             t.add_row(role, f"[yellow]unavailable[/yellow]: {e}", "")
     console.print(t)
+
+    if not check_models:
+        return
 
     findings = asyncio.run(check_models_live(router, roles=("root", "sub")))
     if not findings:

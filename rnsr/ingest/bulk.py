@@ -28,7 +28,7 @@ from rnsr.ingest.manifest import write_corpus_manifest, write_table_manifest
 from rnsr.ingest.model import ParsedDocument
 from rnsr.ingest.pipeline import _merge_transcriptions
 from rnsr.ingest.tables import build_data_table, merge_multipage
-from rnsr.ingest.validate import validate_table
+from rnsr.ingest.validate import assign_table_status, validate_table
 
 Progress = Callable[[str], None]
 
@@ -76,21 +76,15 @@ def ingest_bulk(
                 seen_ids.add(did)
             progress(f"resuming: {len(done_shas)} documents already ingested")
 
-        n_new = n_skipped = n_scanned_gap = n_failed = 0
+        n_new = n_skipped = n_scanned_gap = n_failed = n_scanned_total = 0
         table_seq: dict[str, int] = {}
+        n_tables_trusted = n_tables_untrusted = n_tables_unchecked = 0
 
         def write_parsed(src: Path, parsed: ParsedDocument) -> None:
-            nonlocal n_new, n_scanned_gap
+            nonlocal n_new, n_tables_trusted, n_tables_untrusted, n_tables_unchecked
             if parsed.doc_id in seen_ids:
                 parsed.doc_id = f"{parsed.doc_id}_{len(seen_ids)}"
             seen_ids.add(parsed.doc_id)
-
-            if parsed.scanned_pages:
-                if transcriber is not None:
-                    merged = transcriber(src, parsed.scanned_pages)
-                    _merge_transcriptions(parsed, merged)
-                else:
-                    n_scanned_gap += len(parsed.scanned_pages)
 
             pages, chunks = chunk_document(
                 parsed, chunk_chars=config.chunk_chars,
@@ -118,8 +112,14 @@ def ingest_bulk(
                     rel_tol=config.arithmetic_rel_tol,
                     abs_tol=config.arithmetic_abs_tol,
                     page_texts=page_texts)
-                status = ("trusted" if validation.confidence
-                          >= config.table_confidence_threshold else "untrusted")
+                status = assign_table_status(
+                    validation, config.table_confidence_threshold)
+                if status == "untrusted":
+                    n_tables_untrusted += 1
+                elif status == "unchecked":
+                    n_tables_unchecked += 1
+                else:
+                    n_tables_trusted += 1
                 built = build_data_table(
                     conn, parsed.doc_id, seq, raw,
                     coerce_threshold=config.coerce_threshold,
@@ -147,6 +147,14 @@ def ingest_bulk(
             if workers is None:
                 workers = (max(1, (os.cpu_count() or 2) - 2)
                            if parse in (parse_pdf_fast, parse_any_fast) else 1)
+            parsed_ok: list[tuple[Path, ParsedDocument]] = []
+
+            def _accept(src: Path, parsed: ParsedDocument) -> None:
+                parsed_ok.append((src, parsed))
+                if transcriber is None:
+                    # crash-safe: committed rows survive a later parse failure
+                    write_parsed(src, parsed)
+
             if workers > 1 and pending:
                 progress(f"parsing with {workers} workers")
                 with ProcessPoolExecutor(max_workers=workers) as pool:
@@ -154,7 +162,7 @@ def ingest_bulk(
                     for fut in as_completed(futures):
                         src = futures[fut]
                         try:
-                            write_parsed(src, fut.result())
+                            _accept(src, fut.result())
                         except Exception as e:
                             n_failed += 1
                             progress(f"PARSE FAILED {src.name}: "
@@ -162,12 +170,26 @@ def ingest_bulk(
             else:
                 for src in pending:
                     try:
-                        parsed: ParsedDocument = parse(src)
+                        _accept(src, parse(src))
                     except Exception as e:
                         n_failed += 1
                         progress(f"PARSE FAILED {src.name}: {type(e).__name__}: {e}")
-                        continue
+
+            n_scanned_total = sum(len(p.scanned_pages) for _, p in parsed_ok)
+            if n_scanned_total and transcriber is not None:
+                from rnsr.ingest.cost_estimate import estimate_transcription_usd
+
+                model = getattr(transcriber, "model", "") or config.vision_model or "vision"
+                est = estimate_transcription_usd(n_scanned_total, model)
+                progress(f"{n_scanned_total} scanned page(s), est. ${est:.2f} to transcribe")
+                for src, parsed in parsed_ok:
+                    if parsed.scanned_pages:
+                        merged = transcriber(src, parsed.scanned_pages)
+                        failed_pages = _merge_transcriptions(parsed, merged)
+                        n_scanned_gap += len(failed_pages)
                     write_parsed(src, parsed)
+            else:
+                n_scanned_gap = n_scanned_total
             conn.commit()
             if pending and n_new == 0 and n_failed == len(pending):
                 # every parse failed (broken pool, wrong file type, …):
@@ -186,7 +208,13 @@ def ingest_bulk(
             corpus = CorpusDB(tmp, mode="rw")
             from rnsr.ingest.fast_parse import FAST_PARSER_NAME
 
-            write_corpus_manifest(corpus, FAST_PARSER_NAME)
+            write_corpus_manifest(
+                corpus, FAST_PARSER_NAME, config=config,
+                extra_health={
+                    "parse_failed": n_failed,
+                    "scanned_pages_total": n_scanned_total,
+                    "scanned_pages_untranscribed": n_scanned_gap,
+                })
             schema.finalize_corpus(corpus.conn)
             corpus.conn.commit()
             corpus.close()

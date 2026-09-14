@@ -1,0 +1,5 @@
+{
+  "id": "msg-vision-fixture",
+  "content": [{"type": "text", "text": "a single pixel"}],
+  "usage": {"input_tokens": 30, "output_tokens": 5}
+}

@@ -15,6 +15,10 @@ def test_spec_defaults():
     assert s.table_confidence_threshold == 0.7
     assert s.arithmetic_rel_tol == 0.005
     assert s.arithmetic_abs_tol == 1.0
+    assert s.health_min_validation_rate == 0.7
+    assert s.health_max_untranscribed_pages == 0
+    assert s.transcribe_scans == "auto"
+    assert s.allow_degraded is False
     # §3.2 / §3.4 / §4.1 / §5
     assert s.coerce_threshold == 0.95
     assert (s.chunk_chars, s.chunk_overlap) == (1500, 200)

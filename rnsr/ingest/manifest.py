@@ -40,7 +40,13 @@ def write_table_manifest(
     )
 
 
-def write_corpus_manifest(corpus: CorpusDB, parser: str) -> None:
+def write_corpus_manifest(
+    corpus: CorpusDB,
+    parser: str,
+    *,
+    config=None,
+    extra_health: dict | None = None,
+) -> None:
     conn = corpus.conn
     docs = [
         dict(r)
@@ -61,3 +67,9 @@ def write_corpus_manifest(corpus: CorpusDB, parser: str) -> None:
     )
     corpus.manifest_set("untrusted_tables", untrusted)
     corpus.manifest_set("versions", {"rnsr": __version__, "parser": parser})
+    from rnsr.db.schema import ARTIFACT_FORMAT_VERSION
+
+    corpus.manifest_set("format_version", ARTIFACT_FORMAT_VERSION)
+    from rnsr.ingest.health import persist_health
+
+    persist_health(corpus, config, extra_health)

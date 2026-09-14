@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from rnsr.db import schema
+from rnsr.errors import ArtifactVersionError
 
 
 class CorpusDB:
@@ -30,6 +31,7 @@ class CorpusDB:
         # mmap-backed reads: DB pages come from the OS page cache, shared
         # across every process reading the same artifact (Stage 1).
         schema.apply_read_pragmas(self.conn)
+        self._validate_artifact()
 
     @classmethod
     def create(cls, path: str | Path) -> CorpusDB:
@@ -43,6 +45,27 @@ class CorpusDB:
         finally:
             conn.close()
         return cls(p, mode="rw")
+
+    def _validate_artifact(self) -> None:
+        existing = {
+            r[0] for r in self.conn.execute(
+                "SELECT name FROM sqlite_master WHERE type IN ('table', 'view')")
+        }
+        missing = [t for t in schema.REQUIRED_TABLES if t not in existing]
+        if missing:
+            raise ArtifactVersionError(
+                f"{self.path} is missing required tables {missing}; "
+                f"rebuild with `rnsr ingest` or run `rnsr migrate {self.path}`"
+            )
+        user_version = self.conn.execute("PRAGMA user_version").fetchone()[0]
+        fmt = self.manifest_get("format_version")
+        if user_version != schema.ARTIFACT_FORMAT_VERSION or (
+                fmt is not None and int(fmt) != schema.ARTIFACT_FORMAT_VERSION):
+            raise ArtifactVersionError(
+                f"{self.path} is format {user_version or fmt}, this rnsr "
+                f"reads {schema.ARTIFACT_FORMAT_VERSION}. "
+                f"Run `rnsr migrate {self.path}`"
+            )
 
     # --- manifest -----------------------------------------------------------
 
@@ -63,17 +86,27 @@ class CorpusDB:
             row["key"]: json.loads(row["value"])
             for row in self.conn.execute("SELECT key, value FROM manifest")
         }
-        out["tables"] = [
-            {
+        out["tables"] = []
+        for row in self.conn.execute("SELECT * FROM manifest_tables ORDER BY table_name"):
+            raw_schema = json.loads(row["schema_json"])
+            if isinstance(raw_schema, dict) and "columns" in raw_schema:
+                columns = raw_schema["columns"]
+                n_total_rows = int(raw_schema.get("n_total_rows") or 0)
+                n_data_rows = int(raw_schema.get("n_data_rows") or 0)
+            else:
+                columns = raw_schema
+                n_total_rows = 0
+                n_data_rows = 0
+            entry = {
                 **dict(row),
-                "schema": json.loads(row["schema_json"]),
+                "schema": columns,
                 "checks": json.loads(row["checks_json"]),
+                "n_total_rows": n_total_rows,
+                "n_data_rows": n_data_rows,
             }
-            for row in self.conn.execute("SELECT * FROM manifest_tables ORDER BY table_name")
-        ]
-        for t in out["tables"]:
-            t.pop("schema_json", None)
-            t.pop("checks_json", None)
+            entry.pop("schema_json", None)
+            entry.pop("checks_json", None)
+            out["tables"].append(entry)
         return out
 
     # --- documents / text ---------------------------------------------------

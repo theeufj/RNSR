@@ -30,12 +30,7 @@ import struct
 import sys
 import traceback
 
-
-class _FinalAnswer(Exception):
-    def __init__(self, value, is_var: bool, verification: dict | None = None):
-        self.value = value
-        self.is_var = is_var
-        self.verification = verification
+from rnsr.env.final_answer import FinalAnswer as _FinalAnswer
 
 
 def _install_limits(cpu_s: int, mem_bytes: int) -> None:
@@ -167,7 +162,7 @@ class Child:
             # Matched by name: under `python -m` this module is __main__, so
             # tools.py's `from rnsr.env.sandbox_child import _FinalAnswer`
             # yields a distinct class object for the same code.
-            if type(exc).__name__ == "_FinalAnswer":
+            if type(exc) is _FinalAnswer:
                 value, encoding = _jsonable(exc.value)
                 final = {"value": value, "encoding": encoding,
                          "is_var": exc.is_var,
@@ -205,10 +200,17 @@ class Child:
 
 
 def main() -> None:
-    # Grab the real pipes before user code can touch sys.stdout.
-    channel = Channel(sys.stdin.buffer, sys.stdout.buffer)
-    sys.stdout = sys.stderr  # stray writes go to stderr, not the protocol
-    Child(channel).serve()
+    # Grab the real pipes before user code can touch sys.stdout. detach() so
+    # rebinding sys.stdout / sys.__stdout__ does not close the protocol buffer
+    # when the original TextIOWrapper is collected.
+    rfile = sys.stdin.buffer
+    wfile = sys.stdout.buffer
+    sys.stdout.detach()
+    sink = sys.stderr
+    sys.stdout = sink
+    sys.__stdout__ = sink
+    sys.__stderr__ = sink
+    Child(Channel(rfile, wfile)).serve()
 
 
 if __name__ == "__main__":

@@ -17,6 +17,7 @@ from dataclasses import dataclass
 from rnsr.db import schema
 from rnsr.ingest.coerce import coerce_column
 from rnsr.ingest.model import RawTable
+from rnsr.ingest.validate import classify_row_kind
 
 _WS = re.compile(r"\s+")
 
@@ -133,10 +134,16 @@ class BuiltTable:
     extractor: str
     caption: str | None
     multipage: bool
+    n_total_rows: int = 0
+    n_data_rows: int = 0
 
     @property
     def schema_json(self) -> str:
-        return json.dumps(self.schema_entries)
+        return json.dumps({
+            "columns": self.schema_entries,
+            "n_total_rows": self.n_total_rows,
+            "n_data_rows": self.n_data_rows,
+        })
 
 
 def build_data_table(
@@ -200,6 +207,15 @@ def build_data_table(
     table = schema.data_table_name(doc_id, seq)
     schema.create_data_table(conn, table, columns, with_source_page=multipage)
 
+    label_idx = 0
+    for i, entry in enumerate(schema_entries):
+        if entry["type"] == "TEXT":
+            label_idx = i
+            break
+    kinds = [classify_row_kind(raw.rows[i], label_idx) for i in range(len(raw.rows))]
+    n_total_rows = sum(1 for k in kinds if k in ("total", "subtotal"))
+    n_data_rows = sum(1 for k in kinds if k == "data")
+
     rows_out: list[list] = []
     for i in range(len(raw.rows)):
         row_out: list = []
@@ -210,7 +226,8 @@ def build_data_table(
         if multipage:
             row_out.append(raw.row_page(i))
         bbox = raw.row_bbox(i)
-        row_out += [raw.row_page(i), json.dumps(bbox) if bbox else "[]", raw.extractor]
+        row_out += [raw.row_page(i), json.dumps(bbox) if bbox else "[]",
+                    raw.extractor, kinds[i]]
         rows_out.append(row_out)
 
     width = len(columns) + (1 if multipage else 0) + len(schema.PROVENANCE_COLUMNS)
@@ -241,4 +258,6 @@ def build_data_table(
         extractor=raw.extractor,
         caption=raw.caption,
         multipage=multipage,
+        n_total_rows=n_total_rows,
+        n_data_rows=n_data_rows,
     )

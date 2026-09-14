@@ -15,3 +15,4 @@ class EvalItem:
     context: str | None = None         # flat-text benchmarks (OOLONG, LongBench)
     sources: list[Path] = field(default_factory=list)  # document benchmarks
     meta: dict = field(default_factory=dict)
+    expect: str = "value"              # 'value' | 'absent'

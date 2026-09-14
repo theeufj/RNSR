@@ -30,6 +30,13 @@ def build_namespace(corpus_db: str, child, init_msg: dict) -> dict:
     from rnsr.db.schema import apply_read_pragmas
 
     apply_read_pragmas(conn)  # mmap-backed reads via the shared OS page cache
+
+    def _authorizer(action, _arg1, _arg2, _dbname, _source):
+        if action == sqlite3.SQLITE_ATTACH:
+            return sqlite3.SQLITE_DENY
+        return sqlite3.SQLITE_OK
+
+    conn.set_authorizer(_authorizer)
     from rnsr.env.lazydoc import LazyDoc
 
     doc = LazyDoc(conn)  # bounded memory at any corpus size
@@ -89,7 +96,7 @@ def build_namespace(corpus_db: str, child, init_msg: dict) -> dict:
         retries), the third attempt is accepted with the failed verification
         recorded rather than blocked again.
         """
-        from rnsr.env.sandbox_child import _FinalAnswer
+        from rnsr.env.final_answer import FinalAnswer as _FinalAnswer
 
         report = verifier.verify(str(answer), quotes or [])
         if report["passed"] and quotes:
@@ -118,7 +125,7 @@ def build_namespace(corpus_db: str, child, init_msg: dict) -> dict:
         provided quotes are verified like FINAL's, and failures reject the
         whole batch back to the loop (same 3-strike anti-spiral as FINAL).
         """
-        from rnsr.env.sandbox_child import _FinalAnswer
+        from rnsr.env.final_answer import FinalAnswer as _FinalAnswer
 
         if not isinstance(answers, dict):
             raise ValueError(

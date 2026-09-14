@@ -38,7 +38,10 @@ _BLOCKED_EVENTS = (
     # ctypes calls libc open() beneath the audit layer
     "ctypes.dlopen", "ctypes.dlsym", "ctypes.call_function", "ctypes.cdata",
     # the child holds RPC stubs for model/embedding calls; it needs no sockets
+    "socket.",   # __new__, connect, bind, DNS, sendto, …
     "socket.connect", "socket.bind", "socket.sendto", "socket.sendmsg",
+    "socket.socket", "socket.getaddrinfo", "socket.gethostbyname",
+    "socket.gethostbyname_ex",
 )
 
 # Path-bearing events that mutate the filesystem. Every string argument is
@@ -102,13 +105,24 @@ def install(*, corpus_db: str | None = None,
             read_dirs: Iterable[str] | None = None,
             extra_write_dirs: Iterable[str] = ()) -> None:
     """Install the audit hook. Irreversible for the life of the process."""
-    read_roots = list(read_dirs if read_dirs is not None else default_read_dirs())
-    write_roots = [_norm(tempfile.gettempdir()), *(_norm(d) for d in extra_write_dirs)]
-    # SQLite writes -wal/-shm/-journal/-mjXXXX beside the artifact, so the
-    # artifact is a path PREFIX rather than an exact path.
-    file_prefixes = [_norm(corpus_db)] if corpus_db else []
-    read_roots += write_roots
+    read_roots = tuple(read_dirs if read_dirs is not None else default_read_dirs())
+    write_roots = (_norm(tempfile.gettempdir()),
+                   *(_norm(d) for d in extra_write_dirs))
+    read_roots = read_roots + write_roots
+    artifact = _norm(corpus_db) if corpus_db else ""
     busy = False
+
+    def _artifact_role(resolved: str) -> str | None:
+        if not artifact:
+            return None
+        if resolved == artifact:
+            return "exact"
+        for suffix in ("-wal", "-shm", "-journal"):
+            if resolved == artifact + suffix:
+                return "sidecar"
+        if resolved.startswith(artifact + "-mj"):
+            return "sidecar"
+        return None
 
     def hook(event: str, args) -> None:
         nonlocal busy
@@ -121,12 +135,23 @@ def install(*, corpus_db: str | None = None,
                 f"processes or load native libraries. {_TOOL_HINT}")
         if busy:
             return
+        mode = flags = None
         if event == "open":
-            path, mode, flags = (list(args) + [None, None, None])[:3]
+            path, a1, a2 = (list(args) + [None, None, None])[:3]
+            # builtin open: (path, mode_str, flags); os.open: (path, flags, perm)
+            if isinstance(a1, str):
+                mode, flags = a1, a2
+            else:
+                mode, flags = None, a1
             writing = bool(
                 (isinstance(mode, str) and _WRITE_MODE_CHARS & set(mode))
                 or (isinstance(flags, int) and flags & _WRITE_FLAGS))
             paths, kind = [path], ("write" if writing else "read")
+        elif event == "sqlite3.connect":
+            raw = args[0] if args else None
+            if raw in (":memory:", "", None):
+                return
+            paths, kind = [raw], "read"
         elif event in _WRITE_EVENTS:
             paths, kind = list(args), "write"
         elif event in _READ_EVENTS:
@@ -142,7 +167,12 @@ def install(*, corpus_db: str | None = None,
                 if not isinstance(raw, (str, os.PathLike)):
                     continue        # fd-based reopen: the open() already passed
                 resolved = _norm(os.fspath(raw))
-                if any(resolved.startswith(p) for p in file_prefixes):
+                role = _artifact_role(resolved)
+                if role == "exact" and kind == "write" and isinstance(mode, str) and (
+                        "w" in mode or "x" in mode):
+                    raise PermissionError(
+                        f"raw write to the corpus artifact is blocked. {_TOOL_HINT}")
+                if role:
                     continue
                 allowed = write_roots if kind == "write" else read_roots
                 if _under(resolved, allowed):
@@ -154,3 +184,15 @@ def install(*, corpus_db: str | None = None,
             busy = False
 
     sys.addaudithook(hook)
+
+    # os.walk swallows scandir errors by default; force them through so a
+    # listing of a blocked directory cannot succeed as an empty walk.
+    _orig_walk = os.walk
+
+    def _walk(top, topdown=True, onerror=None, followlinks=False):
+        def _raise(err):
+            raise err
+        return _orig_walk(top, topdown=topdown, onerror=_raise,
+                          followlinks=followlinks)
+
+    os.walk = _walk  # type: ignore[method-assign]

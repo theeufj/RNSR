@@ -23,14 +23,19 @@ from rnsr.ingest.manifest import write_corpus_manifest, write_table_manifest
 from rnsr.ingest.model import Element, ParsedDocument, RawTable
 from rnsr.ingest.parse import PARSER_NAME
 from rnsr.ingest.tables import build_data_table, merge_multipage
-from rnsr.ingest.validate import ProseChecker, TableValidation, validate_table
+from rnsr.ingest.validate import (
+    ProseChecker,
+    TableValidation,
+    assign_table_status,
+    validate_table,
+)
 
 
 @dataclass
 class TableReport:
     name: str
     doc_id: str
-    status: str                  # trusted | reextracted | untrusted
+    status: str                  # trusted | reextracted | untrusted | unchecked
     confidence: float
     extractor: str               # rung that produced the stored table
     attempts: list[dict]         # every (extractor, confidence) tried
@@ -48,14 +53,16 @@ class IngestReport:
     skipped_stages: list[str] = field(default_factory=list)
     scanned_pages_transcribed: int = 0
     scanned_pages_untranscribed: list[dict] = field(default_factory=list)  # visible gaps
+    parse_failed: list[dict] = field(default_factory=list)
 
     @property
     def validation_pass_rate(self) -> float:
-        """Fraction of tables not untrusted — the §9 early health metric."""
-        if not self.tables:
+        """Trusted+reextracted over checked tables; unchecked are excluded."""
+        checked = [t for t in self.tables if t.status != "unchecked"]
+        if not checked:
             return 1.0
-        ok = sum(t.status in ("trusted", "reextracted") for t in self.tables)
-        return ok / len(self.tables)
+        ok = sum(t.status in ("trusted", "reextracted") for t in checked)
+        return ok / len(checked)
 
     def to_json(self) -> str:
         return json.dumps(
@@ -68,6 +75,7 @@ class IngestReport:
                 "skipped_stages": self.skipped_stages,
                 "scanned_pages_transcribed": self.scanned_pages_transcribed,
                 "scanned_pages_untranscribed": self.scanned_pages_untranscribed,
+                "parse_failed": self.parse_failed,
             },
             indent=2,
         )
@@ -142,12 +150,10 @@ def _extract_best_table(
 
     assert best is not None
     chosen, validation = best
-    if validation.confidence < config.table_confidence_threshold:
-        status = "untrusted"
-    elif chosen.extractor == raw.extractor and len(attempts) == 1:
-        status = "trusted"
-    else:
-        status = "reextracted"
+    reextracted = not (chosen.extractor == raw.extractor and len(attempts) == 1)
+    status = assign_table_status(
+        validation, config.table_confidence_threshold,
+        first_attempt=not reextracted, reextracted=reextracted)
     return chosen, validation, status, attempts
 
 
@@ -230,6 +236,52 @@ def ingest(
     if transcriber is None:
         report.skipped_stages.append("scanned_page_transcription (no LLM client)")
 
+    # Parse first so scanned-page cost is known before any VLM spend.
+    parsed_ok: list[tuple[Path, ParsedDocument]] = []
+    seen_ids: set[str] = set()
+    for src in sources:
+        src = Path(src)
+        try:
+            parsed = parse(src)
+        except Exception as e:
+            report.parse_failed.append(
+                {"source": str(src), "error": f"{type(e).__name__}: {e}"[:300]})
+            continue
+        if parsed.doc_id in seen_ids:
+            parsed.doc_id = f"{parsed.doc_id}_{len(seen_ids)}"
+        seen_ids.add(parsed.doc_id)
+        parsed_ok.append((src, parsed))
+
+    n_scanned = sum(len(p.scanned_pages) for _, p in parsed_ok)
+    if n_scanned and transcriber is not None:
+        from rnsr.ingest.cost_estimate import estimate_transcription_usd
+
+        model = getattr(transcriber, "model", "") or config.vision_model or "vision"
+        est = estimate_transcription_usd(n_scanned, model)
+        # estimate is informational; spend is still governed
+        _ = est
+        for src, parsed in parsed_ok:
+            if not parsed.scanned_pages:
+                continue
+            transcriptions = transcriber(src, parsed.scanned_pages)
+            failed = _merge_transcriptions(parsed, transcriptions)
+            report.scanned_pages_transcribed += (
+                len(parsed.scanned_pages) - len(failed))
+            if failed:
+                report.scanned_pages_untranscribed.append(
+                    {"doc_id": parsed.doc_id, "pages": failed,
+                     "reason": "transcription failed"})
+    else:
+        for _src, parsed in parsed_ok:
+            if parsed.scanned_pages:
+                report.scanned_pages_untranscribed.append(
+                    {"doc_id": parsed.doc_id, "pages": parsed.scanned_pages,
+                     "reason": "no transcriber"})
+
+    if not parsed_ok:
+        raise RuntimeError(
+            f"all {len(report.parse_failed)} parses failed — not writing artifact")
+
     # Atomic artifact creation: build under a temp name, rename on success.
     # An interruption mid-ingest must never leave a partial corpus.db that a
     # cache later mistakes for a complete one (seen live: empty JPM corpus).
@@ -238,29 +290,7 @@ def ingest(
     corpus = CorpusDB.create(tmp_db)
     conn = corpus.conn
     try:
-        seen_ids: set[str] = set()
-        for src in sources:
-            src = Path(src)
-            parsed: ParsedDocument = parse(src)
-            if parsed.doc_id in seen_ids:
-                parsed.doc_id = f"{parsed.doc_id}_{len(seen_ids)}"
-            seen_ids.add(parsed.doc_id)
-
-            if parsed.scanned_pages:
-                if transcriber is not None:
-                    transcriptions = transcriber(src, parsed.scanned_pages)
-                    failed = _merge_transcriptions(parsed, transcriptions)
-                    report.scanned_pages_transcribed += (
-                        len(parsed.scanned_pages) - len(failed))
-                    if failed:
-                        report.scanned_pages_untranscribed.append(
-                            {"doc_id": parsed.doc_id, "pages": failed,
-                             "reason": "transcription failed"})
-                else:
-                    report.scanned_pages_untranscribed.append(
-                        {"doc_id": parsed.doc_id, "pages": parsed.scanned_pages,
-                         "reason": "no transcriber (run with --llm)"})
-
+        for src, parsed in parsed_ok:
             pages, chunks = chunk_document(
                 parsed, chunk_chars=config.chunk_chars, overlap=config.chunk_overlap
             )
@@ -306,7 +336,14 @@ def ingest(
                 ))
 
         report.n_chunks = fts.populate_fts(conn)
-        write_corpus_manifest(corpus, PARSER_NAME)
+        write_corpus_manifest(
+            corpus, PARSER_NAME, config=config,
+            extra_health={
+                "parse_failed": len(report.parse_failed),
+                "scanned_pages_total": n_scanned,
+                "scanned_pages_untranscribed": sum(
+                    len(x["pages"]) for x in report.scanned_pages_untranscribed),
+            })
         schema.finalize_corpus(conn)
         conn.commit()
         corpus.close()

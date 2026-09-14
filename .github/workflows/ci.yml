@@ -23,3 +23,5 @@ jobs:
         run: ruff check .
       - name: Tests (LLM-free; live tests excluded by default addopts)
         run: pytest --cov=rnsr -q
+      - name: Search-semantics replay
+        run: pytest tests/test_replay.py -q

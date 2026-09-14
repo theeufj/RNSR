@@ -213,6 +213,22 @@ class TestRegressionScoring:
         assert report.substantive == (1, 2)
         assert report.summary()["disagreements"][0]["field_id"] == "b"
 
+    def test_infer_expect_from_blank_gold_and_notes(self):
+        from rnsr.eval.regression import infer_expect
+
+        assert infer_expect("") == "absent"
+        assert infer_expect("Not applicable") == "absent"
+        assert infer_expect("yes", "Leave blank if never married") == "absent"
+        assert infer_expect("12 June 2014") == "value"
+
+    def test_false_positive_rate_on_absent_items(self):
+        golden = {"a": ["yes"], "b": [], "c": ["Not applicable — never married"]}
+        answers = {"a": "yes", "b": "John Smith", "c": "Not found in matter corpus"}
+        report = score_run(golden, answers, max_false_positive_rate=0.0)
+        assert report.confident_wrong == 1
+        assert report.false_positive_rate == 0.5
+        assert not report.passed
+
     def test_report_writes_comparison_and_summary(self, tmp_path):
         report = score_run({"a": ["yes"]}, {"a": "yes"}, min_accuracy=1.0)
         path = report.write(tmp_path)

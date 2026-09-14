@@ -13,8 +13,9 @@ def test_deterministic(tmp_path):
 
 def test_items_shape(tmp_path):
     items = generate_needle_set(tmp_path, n_docs=2, questions_per_doc=3)
-    assert len(items) == 6
-    assert all(i.task_class == "numeric" for i in items)
+    assert len(items) == 10  # 6 numeric + 2 absent + 2 superseded
+    assert {i.task_class for i in items} >= {"numeric", "absent", "superseded"}
+    assert all(i.expect == "absent" for i in items if i.task_class == "absent")
     assert all(i.sources[0].exists() for i in items)
 
 

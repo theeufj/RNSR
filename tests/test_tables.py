@@ -47,6 +47,7 @@ class TestBuildDataTable:
         assert cols["_page"] == "INTEGER"
         assert cols["_bbox"] == "TEXT"
         assert cols["_extractor"] == "TEXT"
+        assert cols["_row_kind"] == "TEXT"
         # text column has no shadow
         assert "segment__raw" not in cols
 
@@ -66,6 +67,19 @@ class TestBuildDataTable:
         assert page == 3
         assert json.loads(bbox) == [50.0, 100.0, 550.0, 300.0]
         assert extractor == "docling"
+
+    def test_row_kind_and_data_only_sum(self, conn):
+        built = build_data_table(conn, "doc1", 1, _financial_table())
+        assert built.n_total_rows == 1
+        kinds = [r[0] for r in conn.execute(
+            "SELECT _row_kind FROM t_doc1_001 ORDER BY rowid")]
+        assert kinds == ["data", "data", "total"]
+        data_sum = conn.execute(
+            "SELECT SUM(revenue_m) FROM t_doc1_001 WHERE _row_kind = 'data'"
+        ).fetchone()[0]
+        all_sum = conn.execute("SELECT SUM(revenue_m) FROM t_doc1_001").fetchone()[0]
+        assert data_sum == 3234
+        assert all_sum == 3234 + 3234
 
     def test_frozen_after_build(self, conn):
         build_data_table(conn, "doc1", 1, _financial_table())

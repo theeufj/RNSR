@@ -108,9 +108,10 @@ state the formula and the input line items used — not just the number.
 magnitudes (deciding values "must be cents", thousands, etc.) — if unsure, \
 grep one sample value in `doc` and read it in context before any scaling.
 - Document tables repeat amounts in line-item AND total/subtotal rows. \
-Before summing over any table(s), inspect one table's rows; sum ONLY line \
-items or ONLY total rows, never both, and where a table has both, check \
-they agree.
+Each extracted table has `_row_kind` (`data`|`total`|`subtotal`|`footnote`|`section`). \
+Aggregate with `WHERE _row_kind = 'data'` so TOTAL rows are not summed \
+into the total. Inspect one table's rows before summing; where a table \
+has both line items and totals, check they agree.
 - Reconcile against stated aggregates: if any document states the figure \
 you are computing (a demand letter's total, a summary line), compare your \
 computed value to it BEFORE answering. A mismatch means one of them is \
@@ -159,6 +160,7 @@ def compact_manifest(manifest: dict) -> dict:
             "title": t.get("title"),
             "pages": [t.get("page_start"), t.get("page_end")],
             "n_rows": t.get("n_rows"),
+            "n_total_rows": t.get("n_total_rows", 0),
             "columns": [f'{c["name"]}:{c["type"]}' for c in t.get("schema", [])
                         if not str(c.get("name", "")).endswith("__raw")],
             "confidence": t.get("confidence"),

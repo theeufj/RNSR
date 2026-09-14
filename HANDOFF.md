@@ -141,3 +141,42 @@ and a non-zero retention window in `.env`.
   ever created, modified, or deleted.
 - Ground-truth / rubric files must never be passed to this side — the
   answering process should only ever see the corpus and the questions CSV.
+
+## 9. Running a field trial
+
+The goal is a miss list you can publish, not a pile of trajectories that
+quote the matter.
+
+1. **Redact at write time** if the packet will leave the machine. In `.env`:
+
+   ```
+   RNSR_TRAJECTORY_CONTENT=redacted
+   RNSR_TRAJECTORY_KEY=<fernet key from `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`>
+   RNSR_TRAJECTORY_RETENTION_DAYS=14
+   ```
+
+   `redacted` replaces document-bearing fields with a length + digest;
+   `metadata` drops them. Encryption is at rest on the work directory.
+
+2. **Run as usual** (`answer-csv --work-dir … --output …`). Check
+   `rnsr health <corpus.db>` before spending; `--allow-degraded` if you
+   accept a degraded grade.
+
+3. **Export the packet** (no trajectories copied):
+
+   ```
+   rnsr audit-export --work-dir runs/matter --out out/trial
+   ```
+
+   That writes `out/trial/evidence/<qid>.json` (answer, verified quotes,
+   SQL, pages, status, corpus health) and `out/trial/review.csv`
+   (`qid, answer, reviewer_mark, note`).
+
+4. **Mark the review sheet** (`correct` / `wrong` plus a note) and score:
+
+   ```
+   rnsr regress --from-review out/trial/review.csv --out out/trial
+   ```
+
+   `review_misses.json` is the publishable miss list. Trajectories stay
+   under `--work-dir` and can be deleted after the review.

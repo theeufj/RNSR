@@ -1,0 +1,5 @@
+{
+  "id": "msg-fixture",
+  "content": [{"type": "text", "text": "pong"}],
+  "usage": {"input_tokens": 10, "output_tokens": 4}
+}

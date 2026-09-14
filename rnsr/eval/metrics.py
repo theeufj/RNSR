@@ -23,6 +23,7 @@ class EvalResult:
     iterations: int
     trajectory_path: str | None = None
     scored_by: str = "string"   # 'string' | 'judge'
+    expect: str = "value"       # 'value' | 'absent'
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -113,12 +114,31 @@ def summarize(results: list[EvalResult]) -> dict:
         by_class.setdefault(r.task_class, []).append(r)
     latencies = [r.latency_s for r in results]
     costs = [r.cost_usd for r in results]
+    absent = [r for r in results
+              if r.expect == "absent" or r.task_class in ("absent", "absent-clause")]
+    value_items = [r for r in results if r not in absent]
+
+    def _negative(text: str | None) -> bool:
+        if text is None:
+            return True
+        n = _normalize(text)
+        return n in ("", "no", "n/a", "na", "none", "unknown", "not found",
+                     "not_found") or n.startswith("not found")
+
+    confident_wrong = sum(
+        1 for r in absent
+        if r.predicted is not None and not _negative(r.predicted) and not r.correct
+    )
+    abstain = sum(1 for r in value_items if _negative(r.predicted))
     return {
         "n": len(results),
         "accuracy": (sum(r.correct for r in results) / len(results)) if results else 0.0,
         "accuracy_by_class": {
             c: sum(r.correct for r in rs) / len(rs) for c, rs in sorted(by_class.items())
         },
+        "confident_wrong": confident_wrong,
+        "false_positive_rate": (confident_wrong / len(absent)) if absent else 0.0,
+        "abstain_rate": (abstain / len(value_items)) if value_items else 0.0,
         "latency_s": {"p50": percentile(latencies, 0.5), "p95": percentile(latencies, 0.95)},
         "cost_usd": {"p50": percentile(costs, 0.5), "p95": percentile(costs, 0.95)},
         "sub_calls_mean": (sum(r.sub_calls for r in results) / len(results)) if results else 0,

@@ -67,6 +67,19 @@ class Settings:
     # --- table coercion (§3.2) ---
     coerce_threshold: float = 0.95      # >=95% of non-null cells must coerce
 
+    # --- corpus health gate ---
+    # Answering is refused (exit 2 / CorpusHealthError) when a finding is
+    # error-severity unless allow_degraded is set. Untranscribed scans are
+    # an error by default (max 0).
+    health_min_validation_rate: float = 0.7
+    health_max_untranscribed_pages: int = 0
+    health_max_parse_failed_rate: float = 0.05
+    allow_degraded: bool = False
+    # auto: transcribe scanned pages when a vision-capable key is present
+    # always: require a vision provider (fail if missing)
+    # never: leave scans as visible gaps
+    transcribe_scans: str = "auto"
+
     # --- derived cell index (engine-poc-plan Stage 1) ---
     # Populates `cells` at ingest so rung-0 sweeps run one indexed scan
     # instead of LIKE over every t_* table. Off -> the legacy per-table

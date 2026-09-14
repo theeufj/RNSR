@@ -90,6 +90,31 @@ def generate_needle_set(
             if t % 2 == 1:
                 story.append(PageBreak())
 
+        # Superseded / restated table: original then restated; gold is restated.
+        restated_seg = "Widgets"
+        original_v, restated_v = 111, 222
+        story += [
+            Spacer(1, 10),
+            Paragraph("Revenue ($M) by segment, fiscal 2020 (as originally reported)",
+                      styles["Heading2"]),
+            Table([["Segment", "Revenue ($M)"],
+                   [restated_seg, f"{original_v:,}"],
+                   ["Total", f"{original_v:,}"]],
+                  style=TableStyle([
+                      ("GRID", (0, 0), (-1, -1), 0.5, "black"),
+                      ("BACKGROUND", (0, 0), (-1, 0), "#dddddd"),
+                  ])),
+            Paragraph("Revenue ($M) by segment, fiscal 2020 (restated)",
+                      styles["Heading2"]),
+            Table([["Segment", "Revenue ($M)"],
+                   [restated_seg, f"{restated_v:,}"],
+                   ["Total", f"{restated_v:,}"]],
+                  style=TableStyle([
+                      ("GRID", (0, 0), (-1, -1), 0.5, "black"),
+                      ("BACKGROUND", (0, 0), (-1, 0), "#dddddd"),
+                  ])),
+        ]
+
         SimpleDocTemplate(str(pdf_path), pagesize=LETTER).build(story)
 
         for q in range(questions_per_doc):
@@ -103,4 +128,35 @@ def generate_needle_set(
                 sources=[pdf_path],
                 meta={"caption": caption},
             ))
+        planted = {(m, s, y) for m, s, y, _v, _c in needles}
+        # Absent: a (metric, segment, year) that was never planted.
+        for metric, _lo, _hi in _METRICS:
+            for year in _YEARS:
+                for seg in _SEGMENTS:
+                    if (metric, seg, year) not in planted:
+                        items.append(EvalItem(
+                            qid=f"absent-{company.lower()}",
+                            question=(f"According to {company} Corp's filing, what was the "
+                                      f"{metric} for the {seg} segment in fiscal {year}?"),
+                            gold="NOT_FOUND",
+                            task_class="absent",
+                            expect="absent",
+                            sources=[pdf_path],
+                        ))
+                        break
+                else:
+                    continue
+                break
+            else:
+                continue
+            break
+        items.append(EvalItem(
+            qid=f"superseded-{company.lower()}",
+            question=(f"According to {company} Corp's filing, what was the "
+                      f"restated Revenue ($M) for the {restated_seg} segment "
+                      f"in fiscal 2020?"),
+            gold=str(restated_v),
+            task_class="superseded",
+            sources=[pdf_path],
+        ))
     return items

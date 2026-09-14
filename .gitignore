@@ -69,6 +69,7 @@ dmypy.json
 # Benchmarks (large files)
 benchmark_results/
 *.db
+!tests/fixtures/replay/*.db
 
 # Downloaded benchmark datasets
 rnsr/benchmarks/data/lextime/

@@ -19,6 +19,12 @@ before anyone read the console. The governor is the missing outer bound:
 Wrapping happens in the Router (see governed()), so every path — root
 calls, map_prompts fan-out, judges, ingest hooks — is covered by
 construction rather than by remembering to call it.
+
+The governor is pluggable (GovernorProtocol): the in-memory Governor below
+is the default and is all a single-process deployment needs. Multi-node
+deployments that must share one rate limit or spend envelope across
+workers implement the protocol over their own backend (e.g. Redis) and
+install() it — RNSR deliberately ships no distributed infrastructure.
 """
 
 from __future__ import annotations
@@ -29,6 +35,7 @@ import time
 import weakref
 from collections import deque
 from dataclasses import dataclass, field
+from typing import Protocol, runtime_checkable
 
 from rnsr.errors import RNSRError
 from rnsr.llm.base import LLMResponse, Usage
@@ -54,6 +61,31 @@ class SpendCeilingExceeded(RNSRError):
 def is_rate_limit(exc: BaseException) -> bool:
     blob = f"{type(exc).__name__} {exc}".lower()
     return any(marker in blob for marker in _RATE_LIMIT_MARKERS)
+
+
+@runtime_checkable
+class GovernorProtocol(Protocol):
+    """What GovernedClient needs from a governor. Implement this over any
+    backend (Redis, a broker, a sidecar) to share limits across processes.
+
+    Contract, in call order around every provider request:
+      - ``acquire()`` blocks until the call may proceed; it raises
+        (SpendCeilingExceeded or an equivalent) to refuse the call outright.
+      - the call runs; on an exception that looks like provider throttling,
+        ``note_rate_limit()`` is invoked before the exception propagates.
+      - on success, ``record(usage)`` is invoked with the call's Usage.
+      - ``release()`` runs in all cases after a successful acquire.
+
+    ``snapshot()`` returns the reporting dict; run reports and the CLI
+    expect at least the keys requests, spend_usd, spend_ceiling_usd and
+    rate_limit_hits.
+    """
+
+    async def acquire(self) -> None: ...
+    def release(self) -> None: ...
+    def record(self, usage: Usage) -> None: ...
+    def note_rate_limit(self) -> None: ...
+    def snapshot(self) -> dict: ...
 
 
 @dataclass
@@ -147,39 +179,61 @@ class Governor:
         }
 
 
-_GOVERNOR = Governor()
+_GOVERNOR: GovernorProtocol = Governor()
 
 
-def configure(settings) -> Governor:
-    """Point the process governor at the current Settings. Idempotent."""
-    _GOVERNOR.max_in_flight = settings.max_in_flight_requests
-    _GOVERNOR.max_rpm = settings.max_requests_per_minute
-    _GOVERNOR.spend_ceiling_usd = settings.run_spend_ceiling_usd
+def configure(settings) -> GovernorProtocol:
+    """Point the process governor at the current Settings. Idempotent.
+
+    A custom governor installed via install() is returned untouched: its
+    limits live in its own backend, not in this process's Settings.
+    """
+    if isinstance(_GOVERNOR, Governor):
+        _GOVERNOR.max_in_flight = settings.max_in_flight_requests
+        _GOVERNOR.max_rpm = settings.max_requests_per_minute
+        _GOVERNOR.spend_ceiling_usd = settings.run_spend_ceiling_usd
     return _GOVERNOR
 
 
-def current() -> Governor:
+def current() -> GovernorProtocol:
+    return _GOVERNOR
+
+
+def install(governor: GovernorProtocol) -> GovernorProtocol:
+    """Install a custom governor (e.g. Redis-backed) process-wide.
+
+    Every client the Router wraps from this point on shares it. Call
+    before building runners; reset() returns to the in-memory default.
+    """
+    global _GOVERNOR
+    if not isinstance(governor, GovernorProtocol):
+        raise TypeError(
+            f"{type(governor).__name__} does not implement GovernorProtocol "
+            "(needs acquire/release/record/note_rate_limit/snapshot)")
+    _GOVERNOR = governor
     return _GOVERNOR
 
 
 def reset(**overrides) -> Governor:
-    """Fresh counters and gates — for tests and for long-lived services that
-    treat each job as its own spend envelope."""
+    """Fresh in-memory governor — for tests and for long-lived services that
+    treat each job as its own spend envelope. Also uninstalls any custom
+    governor."""
     global _GOVERNOR
-    _GOVERNOR = Governor(**overrides)
-    return _GOVERNOR
+    gov = Governor(**overrides)
+    _GOVERNOR = gov
+    return gov
 
 
 class GovernedClient:
     """LLMClient wrapper that meters and paces every call."""
 
-    def __init__(self, inner, governor: Governor | None = None):
+    def __init__(self, inner, governor: GovernorProtocol | None = None):
         self._inner = inner
         self._governor = governor
         self.provider = getattr(inner, "provider", "")
 
     @property
-    def governor(self) -> Governor:
+    def governor(self) -> GovernorProtocol:
         return self._governor or _GOVERNOR
 
     def __getattr__(self, name: str):     # passthrough for non-call helpers
@@ -220,7 +274,7 @@ class GovernedClient:
             usage_of=lambda r: r.usage)
 
 
-def governed(client, governor: Governor | None = None):
+def governed(client, governor: GovernorProtocol | None = None):
     """Wrap a client once; wrapping a wrapper is a no-op."""
     if isinstance(client, GovernedClient):
         return client

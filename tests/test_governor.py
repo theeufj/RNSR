@@ -8,8 +8,12 @@ import pytest
 from rnsr.config import Settings
 from rnsr.llm.governor import (
     Governor,
+    GovernorProtocol,
     SpendCeilingExceeded,
+    configure,
+    current,
     governed,
+    install,
     is_rate_limit,
     reset,
 )
@@ -130,3 +134,77 @@ class TestWiring:
         await asyncio.to_thread(run_once)
         await asyncio.to_thread(run_once)
         assert gov.requests == 2
+
+
+class RecordingGovernor:
+    """A custom GovernorProtocol implementation (what a Redis-backed one
+    looks like structurally): no inheritance from Governor required."""
+
+    def __init__(self):
+        self.events = []
+
+    async def acquire(self):
+        self.events.append("acquire")
+
+    def release(self):
+        self.events.append("release")
+
+    def record(self, usage):
+        self.events.append(("record", usage.cost_usd))
+
+    def note_rate_limit(self):
+        self.events.append("rate_limit")
+
+    def snapshot(self):
+        return {"requests": 1, "spend_usd": 0.0, "spend_ceiling_usd": 0.0,
+                "rate_limit_hits": 0}
+
+
+class TestPluggableGovernor:
+    async def test_custom_governor_receives_the_call_lifecycle(self):
+        gov = RecordingGovernor()
+        client = governed(MockLLM(default="ok"), gov)
+        await client.complete("p", model="m")
+        assert gov.events[0] == "acquire"
+        assert ("record", 0.001) in gov.events
+        assert gov.events[-1] == "release"
+
+    async def test_rate_limit_reaches_the_custom_governor(self):
+        gov = RecordingGovernor()
+        client = governed(MockLLM(default="ok", fail_times=1), gov)
+        with pytest.raises(RuntimeError):
+            await client.complete("p", model="m")
+        assert "rate_limit" in gov.events
+
+    def test_install_makes_it_process_wide(self):
+        gov = RecordingGovernor()
+        try:
+            install(gov)
+            assert current() is gov
+            # clients wrapped without an explicit governor use it
+            client = governed(MockLLM(default="ok"))
+            assert client.governor is gov
+        finally:
+            reset()
+        assert isinstance(current(), Governor)
+
+    def test_configure_leaves_a_custom_governor_untouched(self):
+        gov = RecordingGovernor()
+        try:
+            install(gov)
+            got = configure(Settings(run_spend_ceiling_usd=5.0))
+            assert got is gov                    # not replaced, not mutated
+            assert not hasattr(gov, "spend_ceiling_usd")
+        finally:
+            reset()
+
+    def test_install_rejects_incomplete_implementations(self):
+        class NotAGovernor:
+            async def acquire(self):
+                pass
+
+        with pytest.raises(TypeError, match="GovernorProtocol"):
+            install(NotAGovernor())
+
+    def test_default_governor_satisfies_the_protocol(self):
+        assert isinstance(Governor(), GovernorProtocol)

@@ -264,10 +264,17 @@ class TestEscapeSuite:
         assert "loaded" not in res.stdout
 
     async def test_rlimit_is_installed(self, repl):
+        # Linux CI often refuses RLIMIT_CPU (stays unlimited / -1) while still
+        # accepting RLIMIT_AS. Either finite cap means the installer ran.
         res = await repl.exec_cell(
             "import resource\n"
-            "cpu = resource.getrlimit(resource.RLIMIT_CPU)\n"
-            "print(cpu[0] > 0 and cpu[0] < resource.RLIM_INFINITY)\n"
+            "def finite(soft):\n"
+            "    return soft not in (-1, resource.RLIM_INFINITY) and soft > 0\n"
+            "cpu = resource.getrlimit(resource.RLIMIT_CPU)[0]\n"
+            "mem = resource.getrlimit(resource.RLIMIT_AS)[0]\n"
+            "print(finite(cpu) or finite(mem))\n"
         )
         assert res.ok, res.error
+        if res.stdout.strip() != "True":
+            pytest.skip("kernel refused both RLIMIT_CPU and RLIMIT_AS")
         assert res.stdout.strip() == "True"

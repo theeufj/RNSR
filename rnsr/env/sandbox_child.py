@@ -36,10 +36,21 @@ from rnsr.env.final_answer import FinalAnswer as _FinalAnswer
 def _install_limits(cpu_s: int, mem_bytes: int) -> None:
     import resource
 
-    with contextlib.suppress(Exception):  # some rlimits unsupported per-OS
-        resource.setrlimit(resource.RLIMIT_CPU, (cpu_s, cpu_s + 5))
-    with contextlib.suppress(Exception):
-        resource.setrlimit(resource.RLIMIT_AS, (mem_bytes, mem_bytes))
+    def _apply(which: int, soft: int, hard: int | None = None) -> None:
+        hard = soft if hard is None else hard
+        try:
+            _cur_soft, cur_hard = resource.getrlimit(which)
+        except (OSError, ValueError):
+            return
+        # Cannot raise a hard cap; -1 is unlimited on some Linux Pythons.
+        if cur_hard not in (-1, resource.RLIM_INFINITY):
+            hard = min(hard, cur_hard)
+            soft = min(soft, hard)
+        with contextlib.suppress(OSError, ValueError):
+            resource.setrlimit(which, (soft, hard))
+
+    _apply(resource.RLIMIT_CPU, cpu_s, cpu_s + 5)
+    _apply(resource.RLIMIT_AS, mem_bytes)
 
 
 def _prewarm_native() -> None:

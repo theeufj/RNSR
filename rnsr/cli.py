@@ -95,21 +95,9 @@ def ingest(
 
 
 def _make_runner(settings):
-    from rnsr.harness.loop import RootRunner
-    from rnsr.llm.router import Router
+    from rnsr.sdk import make_runner
 
-    router = Router(settings)
-    root, sub = router.resolve("root"), router.resolve("sub")
-    embed_client, embed_model = None, ""
-    try:
-        embed = router.resolve("embed")
-        embed_client, embed_model = embed.client, embed.model
-    except RuntimeError:
-        pass  # rung 4 stays dormant without an embedding provider
-    return RootRunner(root_client=root.client, root_model=root.model,
-                      sub_client=sub.client, sub_model=sub.model,
-                      embed_client=embed_client, embed_model=embed_model,
-                      settings=settings)
+    return make_runner(settings)
 
 
 @app.command()
@@ -572,7 +560,9 @@ def answer_csv(
     n_error = counts.get("error", 0)
     n_nf = sum(a.startswith(not_found) for a in answers)
     error_rate = n_error / len(qs) if qs else 0.0
-    gov = _governor.current()
+    # snapshot() is the GovernorProtocol reporting surface — a custom
+    # (e.g. Redis-backed) governor need only provide these keys
+    gov = _governor.current().snapshot()
     report = {
         "questions": len(qs),
         "answers_written": len(answers),
@@ -586,7 +576,7 @@ def answer_csv(
         "concurrency": concurrency,
         "consensus_passes": consensus,
         "contested_fields": sorted(contested),
-        "provider": gov.snapshot(),
+        "provider": gov,
         "metrics": _obs.metrics().snapshot(),
     }
     (output / "run_report.json").write_text(_json.dumps(report, indent=2))
@@ -598,17 +588,18 @@ def answer_csv(
             f"consensus: {consensus} passes, {len(contested)} field(s) "
             "contested and settled by a tie-break loop"
             + (f" ({', '.join(sorted(contested)[:8])})" if contested else ""))
-    console.print(f"provider: {gov.requests} request(s), "
-                  f"${gov.spent_usd:.4f}, {gov.rate_limit_hits} rate-limit hit(s)")
+    console.print(f"provider: {gov['requests']} request(s), "
+                  f"${gov['spend_usd']:.4f}, {gov['rate_limit_hits']} "
+                  "rate-limit hit(s)")
     if n_error:
         for i in sorted(errors)[:5]:
             if status.get(i) == "error":
                 console.print(f"[red]row {i} failed:[/red] {errors[i]}")
-    if gov.spend_ceiling_usd and gov.spent_usd >= gov.spend_ceiling_usd:
+    if gov["spend_ceiling_usd"] and gov["spend_usd"] >= gov["spend_ceiling_usd"]:
         console.print(
-            f"[red]SPEND CEILING REACHED:[/red] ${gov.spent_usd:.2f} of "
-            f"${gov.spend_ceiling_usd:.2f}. Calls were refused from that point "
-            "on, so later answers are placeholders. Raise "
+            f"[red]SPEND CEILING REACHED:[/red] ${gov['spend_usd']:.2f} of "
+            f"${gov['spend_ceiling_usd']:.2f}. Calls were refused from that "
+            "point on, so later answers are placeholders. Raise "
             "RNSR_RUN_SPEND_CEILING_USD and rerun to resume.")
         raise typer.Exit(2)
     if error_rate > max_error_rate:

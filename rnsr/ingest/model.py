@@ -60,6 +60,13 @@ class ParsedDocument:
     elements: list[Element] = field(default_factory=list)
     tables: list[RawTable] = field(default_factory=list)
     scanned_pages: list[int] = field(default_factory=list)  # no text layer; VLM candidates
+    title: str | None = None
+    doc_date: str | None = None
+    author: str | None = None
+    modified_at: str | None = None
+    content_sha256: str | None = None
+    parent_doc_id: str | None = None
+    pending_attachments: list[tuple[str, bytes]] = field(default_factory=list)
 
     def page_text(self, page: int) -> str:
         return "\n".join(e.text for e in self.elements if e.page == page and e.text)

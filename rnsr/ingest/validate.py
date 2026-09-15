@@ -26,10 +26,11 @@ import re
 from collections.abc import Callable
 from dataclasses import dataclass, field
 
-from rnsr.ingest.coerce import CoercedColumn, coerce_column, is_null_cell
+from rnsr.ingest.coerce import CoercedColumn, caption_scale, coerce_column, is_null_cell
 from rnsr.ingest.model import RawTable
 
-TOTAL_LABEL = re.compile(r"\b(total|subtotal|sum|net)\b", re.IGNORECASE)
+# "net" is not a total: "Net income" is a line item, not a checksum row.
+TOTAL_LABEL = re.compile(r"\b(total|subtotal|sum)\b", re.IGNORECASE)
 _SUBTOTAL = re.compile(r"\bsubtotal\b", re.IGNORECASE)
 FOOTNOTE_LABEL = re.compile(
     r"^\s*(\*|†|‡|§|\(\d+\)|\[\d+\]|[¹²³⁴⁵⁶⁷⁸⁹⁰])"
@@ -121,10 +122,12 @@ def _coerce_all(raw: RawTable, threshold: float,
                 overrides: dict[str, str]) -> dict[int, CoercedColumn]:
     """Coerce every column of the grid; keyed by column index."""
     out: dict[int, CoercedColumn] = {}
+    unit_scale = caption_scale(raw.caption)
     for idx in range(raw.n_cols):
         vals = [row[idx] if idx < len(row) else None for row in raw.rows]
         style = overrides.get(str(idx))
-        out[idx] = coerce_column(vals, threshold=threshold, style=style)
+        out[idx] = coerce_column(
+            vals, threshold=threshold, style=style, unit_scale=unit_scale)
     return out
 
 
@@ -323,6 +326,7 @@ def validate_table(
             retry = coerce_column(
                 [row[idx] if idx < len(row) else None for row in raw.rows],
                 threshold=coerce_threshold, style=flipped,
+                unit_scale=caption_scale(raw.caption),
             )
             if not retry.is_numeric:
                 continue

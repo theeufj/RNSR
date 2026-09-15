@@ -99,11 +99,13 @@ def build_namespace(corpus_db: str, child, init_msg: dict) -> dict:
         from rnsr.env.final_answer import FinalAnswer as _FinalAnswer
 
         report = verifier.verify(str(answer), quotes or [])
+        report["zero_quotes"] = not quotes
         if report["passed"] and quotes:
             raise _FinalAnswer(answer, is_var=False, verification=report)
 
         rejections["n"] += 1
         if rejections["n"] >= 3:   # stop the spiral; record the failure
+            report["third_strike"] = True
             raise _FinalAnswer(answer, is_var=False, verification=report)
         if not quotes:
             raise ValueError(
@@ -142,11 +144,17 @@ def build_namespace(corpus_db: str, child, init_msg: dict) -> dict:
             bad = [q["quote"] for q in report["quotes"] if not q["matched"]]
             if bad:
                 failed[qid] = bad
+        if not quotes:
+            # accepted, but the caller must see that nothing was verified
+            reports["_batch"] = {"passed": True, "quotes": [], "zero_quotes": True}
         if not failed:
             raise _FinalAnswer(dict(answers), is_var=True,
                                verification=reports or None)
         rejections["n"] += 1
         if rejections["n"] >= 3:   # stop the spiral; record the failures
+            for qid, report in reports.items():
+                if qid in failed:
+                    report["third_strike"] = True
             raise _FinalAnswer(dict(answers), is_var=True, verification=reports)
         raise ValueError(
             "FINAL_BATCH rejected — quotes do not match the source text "

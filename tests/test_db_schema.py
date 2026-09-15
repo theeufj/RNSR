@@ -17,9 +17,10 @@ def conn():
 
 
 def _seed_document(conn, doc_id="doc1", text="Alpha beta. Gamma delta epsilon."):
-    conn.execute(
-        "INSERT INTO documents VALUES (?, ?, ?, ?, ?, ?)",
-        (doc_id, f"/tmp/{doc_id}.pdf", "0" * 64, 1, "test", "2026-07-02T00:00:00"),
+    schema.insert_document(
+        conn, doc_id=doc_id, source_path=f"/tmp/{doc_id}.pdf",
+        sha256="0" * 64, n_pages=1, parser="test",
+        ingested_at="2026-07-02T00:00:00",
     )
     conn.execute(
         "INSERT INTO doc_text VALUES (?, 1, 0, ?, ?)", (doc_id, len(text), text)

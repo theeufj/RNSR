@@ -7,7 +7,7 @@
     "contains no fact about this matter. Each one exists because a measured run",
     "got the field wrong without it."
   ],
-  "extends": "golden.json",
+  "extends": ["legal_base.json", "golden.json"],
   "form": "Initiating Application",
   "conventions": [
     {

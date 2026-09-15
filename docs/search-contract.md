@@ -14,8 +14,11 @@ The gate is `rnsr replay` / `rnsr.eval.replay.replay`:
 4. Exit 2 on any set or order diff.
 
 CI runs `tests/test_replay.py` on every push. Stage 2 provider swaps
-(Tantivy behind rung 2, usearch behind rung 4) must pass the same replay
-plus the golden-matter gate before merge.
+(Tantivy behind rung 2, usearch behind rung 4) and TOC routing stay
+behind this gate. The Phase 0 loss ledger did not show material
+retrieval-bound miss mass, so those swaps are deferred; rung-4
+embeddings default on above `Settings.embed_auto_on_docs` when an embed
+provider is configured.
 
 To refresh the baseline after a *deliberate* semantics change:
 

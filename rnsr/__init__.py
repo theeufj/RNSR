@@ -17,7 +17,7 @@ signatures and worker-integration notes.
 # `dynamic = ["version"]` and hatch reads it from here at build time.
 # (Reading installed metadata instead goes stale in editable installs,
 # and this value is stamped into every corpus manifest.)
-__version__ = "1.0.0a6"
+__version__ = "1.0.0a7"
 
 __all__ = [
     "BatchAnswer",
@@ -26,6 +26,7 @@ __all__ = [
     "answer_batch",
     "answer_batch_sync",
     "answer_sync",
+    "append",
     "build_questions",
     "corpus_env",
     "fan_out",
@@ -37,7 +38,7 @@ __all__ = [
 
 _SDK_ATTRS = frozenset({
     "BatchAnswer", "answer", "answer_batch", "answer_batch_sync",
-    "answer_sync", "build_questions", "corpus_env", "fan_out",
+    "answer_sync", "append", "build_questions", "corpus_env", "fan_out",
     "make_runner", "open_corpus", "score_answers", "score_answers_sync",
 })
 

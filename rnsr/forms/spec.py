@@ -85,6 +85,20 @@ class FormField:
         return bool(_WANTS_YES_RE.search(self.title or ""))
 
 
+DEFAULT_NOT_FOUND = "Not found"
+DEFAULT_DATE_FORMAT = "YYYY-MM-DD"
+DEFAULT_ROLES_HEADING = "ROLES (authoritative — use these to keep entities straight):"
+DEFAULT_EVIDENCE_RULE = """\
+EVIDENCE RULE:
+- Answer only from the documents in this corpus.{corpus_note}
+- Blank form scaffolding is NOT evidence. Unticked checkbox labels, printed \
+lists of options with nothing selected, and empty template cells say \
+nothing — ignore them.
+- Search before concluding either way: a No or unknown claimed without a \
+search targeted at this question's own subject is a wrong answer.
+- If the documents do not establish the answer, say so instead of guessing."""
+
+
 @dataclass
 class FormSpec:
     form: str = "this form"
@@ -92,6 +106,10 @@ class FormSpec:
     fields: list[FormField] = field(default_factory=list)
     conventions: list[Convention] = field(default_factory=list)
     corpus_note: str = ""                 # e.g. "999 files across seven folders"
+    evidence_rule: str = DEFAULT_EVIDENCE_RULE
+    not_found: str = DEFAULT_NOT_FOUND
+    date_format: str = DEFAULT_DATE_FORMAT
+    roles_heading: str = DEFAULT_ROLES_HEADING
 
     def conventions_for(self, f: FormField) -> list[str]:
         return [c.text for c in self.conventions if c.applies_to(f)]
@@ -134,6 +152,10 @@ class FormSpec:
                 problems.append(f"duplicate field id {f.id!r}")
             seen.add(f.id)
         return problems
+
+
+# Domain-neutral name: a FormSpec is a TaskSpec with optional form fields.
+TaskSpec = FormSpec
 
 
 @dataclass
@@ -200,6 +222,35 @@ def parse_roles(context: str) -> dict[str, str]:
     return roles
 
 
+def _merge_spec_data(base: dict, overlay: dict) -> dict:
+    """Shallow merge; overlay keys replace. ``extends`` is not copied."""
+    merged = dict(base)
+    for key, value in overlay.items():
+        if key == "extends":
+            continue
+        merged[key] = value
+    return merged
+
+
+def _resolve_extends(path: Path, data: dict, *, _seen: set[Path] | None = None) -> dict:
+    parents = data.get("extends")
+    if not parents:
+        return {k: v for k, v in data.items() if k != "extends"}
+    if isinstance(parents, str):
+        parents = [parents]
+    seen = _seen if _seen is not None else set()
+    if path.resolve() in seen:
+        raise ValueError(f"circular spec extends involving {path}")
+    seen.add(path.resolve())
+    merged: dict = {}
+    for parent in parents:
+        parent_path = (path.parent / parent).resolve()
+        pdata = json.loads(parent_path.read_text(encoding="utf-8"))
+        pdata = _resolve_extends(parent_path, pdata, _seen=seen)
+        merged = _merge_spec_data(merged, pdata)
+    return _merge_spec_data(merged, data)
+
+
 def load_spec(path: str | Path) -> FormSpec:
     """Load a spec from JSON.
 
@@ -207,17 +258,13 @@ def load_spec(path: str | Path) -> FormSpec:
     export can be used directly, with optional "form", "corpus_note" and
     "conventions" keys layered on top.
 
-    An "extends" key names another spec (relative to this file) to inherit
-    fields and context from, so a form's conventions can live beside the
-    vendor export instead of being edited into it — the export is evidence,
-    and prompt material does not belong in it.
+    An "extends" key (string or list) names other specs relative to this
+    file. Parents merge in order; this file wins. Legal defaults live in
+    ``legal_base.json`` so a matter spec can inherit them without baking
+    prompt text into a vendor export.
     """
     path = Path(path)
-    data = json.loads(path.read_text(encoding="utf-8"))
-    if parent := data.get("extends"):
-        base = json.loads((path.parent / parent).read_text(encoding="utf-8"))
-        base.update({k: v for k, v in data.items() if k != "extends"})
-        data = base
+    data = _resolve_extends(path, json.loads(path.read_text(encoding="utf-8")))
     context = data.get("context", "")
     form_m = re.search(r"Form:\s*([^\n.]+)", context)
     return FormSpec(
@@ -233,4 +280,8 @@ def load_spec(path: str | Path) -> FormSpec:
                                 role_pattern=c.get("role_pattern", ""))
                      for c in data.get("conventions", [])],
         corpus_note=data.get("corpus_note", ""),
+        evidence_rule=data.get("evidence_rule") or DEFAULT_EVIDENCE_RULE,
+        not_found=data.get("not_found") or DEFAULT_NOT_FOUND,
+        date_format=data.get("date_format") or DEFAULT_DATE_FORMAT,
+        roles_heading=data.get("roles_heading") or DEFAULT_ROLES_HEADING,
     )

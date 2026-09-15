@@ -89,7 +89,14 @@ source text.
 FINAL with failing quotes is rejected back to you. Copy quote text exactly \
 from search hits or doc. Purely computed values (SQL aggregates, ratios) \
 may instead be returned with FINAL_VAR(variable).
+- When manifest.duplicates is present, prefer the latest version of a \
+document and cite both the current and the superseded copies.
 
+MANIFEST:
+{manifest}
+"""
+
+_FINANCIAL_ADDON = """\
 Analysis discipline for financial questions:
 - When a metric has multiple standard conventions (e.g. average vs \
 year-end denominator for turnover ratios), compute both and lead with the \
@@ -124,10 +131,9 @@ or changed most: enumerate EVERY candidate in code with its value \
 list, and include the winning value in the answer.
 - Answer every part of the question: if it asks for two components or a \
 name plus a magnitude, the answer must contain each of them.
-
-MANIFEST:
-{manifest}
 """
+
+ADDONS = {"financial": _FINANCIAL_ADDON}
 
 
 def compact_manifest(manifest: dict) -> dict:
@@ -138,6 +144,10 @@ def compact_manifest(manifest: dict) -> dict:
     turn, which dominates docdb's per-query input cost.
     """
     out = {k: v for k, v in manifest.items() if k not in ("tables",)}
+    if out.get("duplicates"):
+        out["duplicate_note"] = (
+            "Prefer the latest version of a duplicated document and cite both."
+        )
     docs = out.get("documents")
     if isinstance(docs, list) and len(docs) > 100:
         out["documents"] = {
@@ -172,7 +182,8 @@ def compact_manifest(manifest: dict) -> dict:
 
 
 def render_system(mode: str, *, manifest: dict | None = None,
-                  batch_chars: int = 200_000, provider: str = "") -> str:
+                  batch_chars: int = 200_000, provider: str = "",
+                  playbook=None) -> str:
     from rnsr.harness.prompts.variants import guardrail_for
 
     parts = [_SHARED.format(batch_chars=f"{batch_chars:,}")]
@@ -188,6 +199,20 @@ def render_system(mode: str, *, manifest: dict | None = None,
         ))
     else:
         raise ValueError(f"unknown mode: {mode}")
+    addons = None
+    extra = ""
+    if playbook is not None:
+        addons = getattr(playbook, "addons", None)
+        extra = playbook.prompt_block() if hasattr(playbook, "prompt_block") else ""
+    elif playbook is None and mode == "docdb":
+        addons = list(ADDONS)
+    if addons:
+        for name in addons:
+            block = ADDONS.get(name)
+            if block:
+                parts.append(block)
+    if extra:
+        parts.append("CORPUS PLAYBOOK:\n" + extra)
     return "\n".join(parts)
 
 

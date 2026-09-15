@@ -17,6 +17,9 @@ class TestClassifyRowKind:
         assert classify_row_kind(["(1)", None, None]) == "footnote"
         assert classify_row_kind(["Operating activities", "", ""]) == "section"
 
+    def test_net_income_is_not_a_total(self):
+        assert classify_row_kind(["Net income", "50"]) == "data"
+
 
 class TestGenerator:
     def test_writes_labels_and_pdfs(self, tmp_path):

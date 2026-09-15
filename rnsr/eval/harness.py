@@ -16,6 +16,7 @@ from pathlib import Path
 
 from rnsr.config import Settings
 from rnsr.db.artifact import CorpusDB
+from rnsr.eval.autopsy import attach_causes, build_ledger, classify_miss, write_ledger
 from rnsr.eval.datasets.base import EvalItem
 from rnsr.eval.metrics import EvalResult, judge_answer, score_answer, summarize
 from rnsr.harness.loop import EnvSpec, RootRunner
@@ -322,10 +323,11 @@ async def run_eval(
             ledger = qr.ledger
             iterations = qr.iterations
             trajectory_path = qr.trajectory_path
+            result_tier = qr.evidence.tier if getattr(qr, "evidence", None) else None
         except Exception as e:   # e.g. Docling ConversionError on one filing
             predicted, status = None, "error"
             ledger = {"spend_usd": 0.0, "sub_calls": 0}
-            iterations, trajectory_path = 0, None
+            iterations, trajectory_path, result_tier = 0, None, None
             (run_dir / "errors.log").open("a").write(
                 f"{item.qid}: {type(e).__name__}: {e}\n")
         correct, scored_by = score_answer(predicted, item.gold), "string"
@@ -348,6 +350,7 @@ async def run_eval(
             iterations=iterations,
             trajectory_path=trajectory_path,
             expect=getattr(item, "expect", "value"),
+            tier=result_tier,
         )
 
     with open(results_path, "a") as out:
@@ -368,6 +371,29 @@ async def run_eval(
             for item in todo:
                 await run_one(item)
 
+    meta_by_qid = {item.qid: item.meta for item in items}
+    from rnsr.harness.trajectory import read_trajectory
+
+    classified = []
+    for result in results:
+        records = []
+        if result.trajectory_path and Path(result.trajectory_path).exists():
+            try:
+                records = read_trajectory(result.trajectory_path)
+            except Exception:
+                records = []
+        classified.append(classify_miss(
+            result, records, meta=meta_by_qid.get(result.qid, {})))
+    attach_causes(results, classified)
+    results_path.write_text(
+        "".join(json.dumps(r.to_dict()) + "\n" for r in results))
+
     summary = summarize(results)
+    summary["autopsy"] = {
+        "cause_counts": summary["cause_counts"],
+        "cause_x_class": summary["cause_x_class"],
+    }
     (run_dir / "summary.json").write_text(json.dumps(summary, indent=2))
+    write_ledger(build_ledger(results, classified), run_dir,
+                 title=f"Loss ledger — {run_dir.name}")
     return results, summary

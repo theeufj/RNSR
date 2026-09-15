@@ -22,20 +22,41 @@ import sqlite3
 PROVENANCE_COLUMNS = ("_page", "_bbox", "_extractor", "_row_kind")
 
 # Integer stamped as PRAGMA user_version and manifest.format_version.
-ARTIFACT_FORMAT_VERSION = 1
+ARTIFACT_FORMAT_VERSION = 2
 REQUIRED_TABLES = (
     "documents", "doc_text", "chunks", "manifest", "manifest_tables",
-    "annotation_log",
+    "annotation_log", "ingest_batches",
+)
+
+DOCUMENT_COLUMNS = (
+    "doc_id", "source_path", "sha256", "n_pages", "parser", "ingested_at",
+    "title", "doc_date", "author", "modified_at", "content_sha256",
+    "parent_doc_id", "duplicate_of",
 )
 
 CORE_DDL = """
 CREATE TABLE documents (
-    doc_id      TEXT PRIMARY KEY,
-    source_path TEXT NOT NULL,
-    sha256      TEXT NOT NULL,
-    n_pages     INTEGER NOT NULL,
-    parser      TEXT NOT NULL,
-    ingested_at TEXT NOT NULL
+    doc_id          TEXT PRIMARY KEY,
+    source_path     TEXT NOT NULL,
+    sha256          TEXT NOT NULL,
+    n_pages         INTEGER NOT NULL,
+    parser          TEXT NOT NULL,
+    ingested_at     TEXT NOT NULL,
+    title           TEXT,
+    doc_date        TEXT,
+    author          TEXT,
+    modified_at     TEXT,
+    content_sha256  TEXT,
+    parent_doc_id   TEXT,
+    duplicate_of    TEXT
+);
+
+CREATE TABLE ingest_batches (
+    batch_id     INTEGER PRIMARY KEY,
+    created_at   TEXT NOT NULL,
+    kind         TEXT NOT NULL,
+    n_docs       INTEGER NOT NULL,
+    sources_json TEXT
 );
 
 -- Full retained text per page; the no-eviction substrate every other
@@ -189,10 +210,44 @@ def finalize_corpus(conn: sqlite3.Connection) -> None:
     Data tables (t_*) are frozen individually right after their bulk insert;
     this call freezes the shared text substrate. manifest/manifest_tables/
     annotation_log stay writable (annotations and re-validation metadata).
+    ``documents.duplicate_of`` stays writable so remanifest can restamp it.
     """
     for table in ("documents", "doc_text", "chunks"):
-        freeze_table(conn, table, source_columns=_table_columns(conn, table))
+        cols = _table_columns(conn, table)
+        if table == "documents":
+            cols = [c for c in cols if c != "duplicate_of"]
+        freeze_table(conn, table, source_columns=cols)
     conn.commit()
+
+
+def unfreeze_table(conn: sqlite3.Connection, table: str) -> None:
+    """Drop immutability triggers so an append/replace transaction can write."""
+    for suffix in ("__no_insert", "__no_delete", "__no_update_src"):
+        conn.execute(f"DROP TRIGGER IF EXISTS {quote_ident(table + suffix)}")
+
+
+def unfreeze_corpus(conn: sqlite3.Connection) -> None:
+    """Drop freeze triggers on the shared text substrate (not t_* tables)."""
+    for table in ("documents", "doc_text", "chunks"):
+        unfreeze_table(conn, table)
+
+
+def record_ingest_batch(conn: sqlite3.Connection, kind: str,
+                        sources: list, n_docs: int) -> None:
+    """Append one ingest_batches row (create | append | replace)."""
+    import json
+    from datetime import UTC, datetime
+
+    names = {r[0] for r in conn.execute(
+        "SELECT name FROM sqlite_master WHERE type='table'")}
+    if "ingest_batches" not in names:
+        return
+    conn.execute(
+        "INSERT INTO ingest_batches (created_at, kind, n_docs, sources_json) "
+        "VALUES (?,?,?,?)",
+        (datetime.now(UTC).isoformat(), kind, n_docs,
+         json.dumps([str(s) for s in sources])),
+    )
 
 
 def _table_columns(conn: sqlite3.Connection, table: str) -> list[str]:
@@ -249,6 +304,24 @@ def freeze_table(conn: sqlite3.Connection, table: str, source_columns: list[str]
         f"CREATE TRIGGER {quote_ident(table + '__no_update_src')} "
         f"BEFORE UPDATE OF {col_list} ON {q} "
         f"BEGIN SELECT RAISE(ABORT, {msg}); END"
+    )
+
+
+def insert_document(conn: sqlite3.Connection, *,
+                    doc_id: str, source_path: str, sha256: str,
+                    n_pages: int, parser: str, ingested_at: str,
+                    title: str | None = None, doc_date: str | None = None,
+                    author: str | None = None, modified_at: str | None = None,
+                    content_sha256: str | None = None,
+                    parent_doc_id: str | None = None,
+                    duplicate_of: str | None = None) -> None:
+    """Insert one documents row (v2 columns). Missing optionals stay NULL."""
+    conn.execute(
+        f"INSERT INTO documents ({', '.join(DOCUMENT_COLUMNS)}) "
+        f"VALUES ({', '.join('?' * len(DOCUMENT_COLUMNS))})",
+        (doc_id, source_path, sha256, n_pages, parser, ingested_at,
+         title, doc_date, author, modified_at, content_sha256,
+         parent_doc_id, duplicate_of),
     )
 
 

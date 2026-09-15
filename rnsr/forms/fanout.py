@@ -12,6 +12,7 @@ from __future__ import annotations
 import re
 
 NOT_FOUND = "Not found in matter corpus"
+DEFAULT_NOT_FOUND = NOT_FOUND
 
 _ANSWER_RE = re.compile(r"ANSWER\s*:\s*(.+)", re.I)
 _VALUE_RE = re.compile(r"VALUE\s*:\s*(.*)", re.I)
@@ -21,10 +22,10 @@ def _norm(text: str) -> str:
     return re.sub(r"\s+", " ", (text or "").strip().lower()).rstrip(".")
 
 
-def is_negative(answer: str) -> bool:
+def is_negative(answer: str, not_found: str = NOT_FOUND) -> bool:
     a = _norm(answer)
     return (a in ("", "no", "unknown", "n/a", "none", "not applicable")
-            or a.startswith(_norm(NOT_FOUND)))
+            or a.startswith(_norm(not_found)))
 
 
 def _first_token(text: str) -> str | None:
@@ -88,18 +89,20 @@ def parse_value_group_answer(text: str, members: list[dict]) -> tuple[str | None
     return value_member["id"], value, ""
 
 
-def field_value(member: dict, *, won: bool, value: str | None) -> str:
+def field_value(member: dict, *, won: bool, value: str | None,
+                not_found: str = NOT_FOUND) -> str:
     """The value one field takes, given the group's single choice."""
     if not won:
-        return NOT_FOUND if member["needs_value"] else "No"
+        return not_found if member["needs_value"] else "No"
     if member["needs_value"]:
-        return value or NOT_FOUND
+        return value or not_found
     if member["wants_yes"]:
         return "yes"
     return member["option_label"]
 
 
-def fan_out(items: list, answers: list[str]) -> tuple[dict[str, str], list[str]]:
+def fan_out(items: list, answers: list[str], *,
+            not_found: str | None = None) -> tuple[dict[str, str], list[str]]:
     """Map per-item answers to per-field values.
 
     items: QuestionItem list (or their dict form, as written to the map file).
@@ -107,13 +110,15 @@ def fan_out(items: list, answers: list[str]) -> tuple[dict[str, str], list[str]]
     """
     if len(items) != len(answers):
         raise ValueError(f"{len(answers)} answers for {len(items)} questions")
+    phrase = not_found or NOT_FOUND
     out: dict[str, str] = {}
     notes: list[str] = []
     for item, text in zip(items, answers, strict=True):
         spec = item if isinstance(item, dict) else item.__dict__
+        phrase = not_found or spec.get("not_found") or phrase
         if spec["kind"] == "standalone":
             fid = spec["field_id"]
-            out[fid] = (NOT_FOUND if is_negative(text) and spec["needs_value"]
+            out[fid] = (phrase if is_negative(text, phrase) and spec["needs_value"]
                         else (text or "").strip())
             continue
         members = spec["members"]
@@ -125,5 +130,6 @@ def fan_out(items: list, answers: list[str]) -> tuple[dict[str, str], list[str]]
         if note:
             notes.append(f"{spec.get('group')}: {note}")
         for m in members:
-            out[m["id"]] = field_value(m, won=(m["id"] == winner), value=value)
+            out[m["id"]] = field_value(
+                m, won=(m["id"] == winner), value=value, not_found=phrase)
     return out, notes

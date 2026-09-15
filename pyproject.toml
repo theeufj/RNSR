@@ -36,6 +36,7 @@ ingest = [
     "camelot-py[base]>=0.11",
     "pypdfium2>=4.30",
     "firecrawl-anydoc>=0.1.3",
+    "extract-msg>=0.50",
 ]
 eval = [
     "datasets>=2.19",
@@ -67,6 +68,9 @@ path = "rnsr/__init__.py"
 
 [tool.hatch.build.targets.wheel]
 packages = ["rnsr"]
+
+[tool.hatch.build.targets.wheel.force-include]
+"rnsr/forms/legal_base.json" = "rnsr/forms/legal_base.json"
 
 [tool.hatch.build.targets.sdist]
 exclude = ["testMatter/", "runs/", "terminals/", ".claude/", ".cursor/",

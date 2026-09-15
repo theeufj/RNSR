@@ -61,6 +61,8 @@ class Job:
     answers: list[str | None] = field(default_factory=list)
     statuses: list[str] = field(default_factory=list)
     agreement: list[float | None] = field(default_factory=list)
+    tiers: list[str | None] = field(default_factory=list)
+    contested: list[bool] = field(default_factory=list)
     error: str | None = None
 
     def public(self, *, include_answers: bool = True) -> dict:
@@ -72,10 +74,13 @@ class Job:
         }
         if include_answers and self.state == "done":
             out["results"] = [
-                {"question": q, "answer": a, "status": s, "agreement": g}
-                for q, a, s, g in zip(self.questions, self.answers,
-                                      self.statuses, self.agreement,
-                                      strict=False)
+                {"question": q, "answer": a, "status": s, "agreement": g,
+                 "tier": t, "contested": c}
+                for q, a, s, g, t, c in zip(
+                    self.questions, self.answers, self.statuses, self.agreement,
+                    self.tiers or [None] * len(self.questions),
+                    self.contested or [False] * len(self.questions),
+                    strict=False)
             ]
         return out
 
@@ -113,54 +118,23 @@ class JobStore:
 
 async def run_job(job: Job, settings: Settings, run_dir: Path) -> None:
     """Answer a job's questions with the same runner the CLI uses."""
-    from rnsr.db.artifact import CorpusDB
-    from rnsr.harness.loop import EnvSpec, RootRunner
-    from rnsr.llm.router import Router
+    from rnsr.sdk import answer_batch
 
     job.state, job.started_at = "running", time.time()
     log(_LOG, logging.INFO, "job.start", job_id=job.id,
         questions=len(job.questions), consensus=job.consensus)
     try:
-        with CorpusDB(job.corpus_db) as corpus:
-            manifest = corpus.manifest_dict()
-        env = EnvSpec(mode="docdb", corpus_db=job.corpus_db, manifest=manifest)
-        router = Router(settings)
-        root, sub = router.resolve("root"), router.resolve("sub")
-        embed_client, embed_model = None, ""
-        try:
-            embed = router.resolve("embed")
-            embed_client, embed_model = embed.client, embed.model
-        except RuntimeError:
-            pass
-        runner = RootRunner(root_client=root.client, root_model=root.model,
-                            sub_client=sub.client, sub_model=sub.model,
-                            embed_client=embed_client, embed_model=embed_model,
-                            settings=settings)
-
-        n = len(job.questions)
-        job.answers = [None] * n
-        job.statuses = ["pending"] * n
-        job.agreement = [None] * n
-        size = max(1, job.batch_size)
-        for start in range(0, n, size):
-            group = list(range(start, min(start + size, n)))
-            pairs = [(f"q{i:03d}", job.questions[i]) for i in group]
-            if job.consensus > 1:
-                cr = await runner.run_batch_consensus(
-                    pairs, env, run_dir=run_dir / job.id,
-                    query_id=f"b{group[0]:03d}", passes=job.consensus)
-                for i, (qid, _) in zip(group, pairs, strict=True):
-                    answer = cr.answers[qid]
-                    job.answers[i] = answer.value
-                    job.statuses[i] = answer.resolved_by
-                    job.agreement[i] = answer.agreement
-            else:
-                br = await runner.run_batch(pairs, env, run_dir=run_dir / job.id,
-                                            query_id=f"b{group[0]:03d}")
-                for i, (qid, _) in zip(group, pairs, strict=True):
-                    job.answers[i] = br.answers.get(qid)
-                    job.statuses[i] = (br.result.status if br.answers.get(qid)
-                                       else "unanswered")
+        results = await answer_batch(
+            job.questions, job.corpus_db,
+            batch_size=job.batch_size, consensus=job.consensus,
+            retry_solo=True, settings=settings,
+            run_dir=run_dir / job.id,
+        )
+        job.answers = [r.answer for r in results]
+        job.statuses = [r.status for r in results]
+        job.agreement = [r.agreement for r in results]
+        job.tiers = [r.tier for r in results]
+        job.contested = [r.contested for r in results]
         job.state = "done"
         metrics().incr("jobs_finished", state="done")
     except Exception as e:

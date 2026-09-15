@@ -6,6 +6,7 @@ import csv
 import json
 from pathlib import Path
 
+from rnsr.harness.evidence import from_records
 from rnsr.harness.trajectory import read_trajectory
 
 
@@ -60,6 +61,8 @@ def extract_evidence(records: list[dict], *, qid: str,
     answer = final.get("value")
     if isinstance(answer, dict) and qid in answer:
         answer = answer[qid]
+    ev = from_records(records, status=(status_row or {}).get("status") or end.get("status") or "final",
+                      health_grade=(health or {}).get("grade"), qid=qid)
     return {
         "qid": qid,
         "question": start.get("question"),
@@ -69,6 +72,8 @@ def extract_evidence(records: list[dict], *, qid: str,
         "sql": _sql_from_cells(records),
         "pages": _pages(records, verification),
         "health": health,
+        "tier": (status_row or {}).get("tier") or ev.tier,
+        "evidence": ev.to_dict(),
     }
 
 
@@ -119,13 +124,17 @@ def export_audit(work_dir: str | Path, out_dir: str | Path, *,
         review_rows.append({
             "qid": qid,
             "answer": evidence.get("answer") or "",
+            "tier": evidence.get("tier") or "",
             "reviewer_mark": "",
             "note": "",
         })
 
+    _rank = {"low": 0, "medium": 1, "high": 2}
+    review_rows.sort(key=lambda r: _rank.get(r.get("tier") or "", 3))
     review_path = out / "review.csv"
     with open(review_path, "w", newline="", encoding="utf-8") as fh:
-        w = csv.DictWriter(fh, fieldnames=["qid", "answer", "reviewer_mark", "note"])
+        w = csv.DictWriter(fh, fieldnames=["qid", "answer", "tier",
+                                           "reviewer_mark", "note"])
         w.writeheader()
         w.writerows(review_rows)
     return {"n": written, "evidence_dir": str(ev_dir), "review": str(review_path)}

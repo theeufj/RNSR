@@ -14,13 +14,14 @@ the spec, not branches in code.
 
 from rnsr.forms.enrich import build_questions, render_field_question
 from rnsr.forms.fanout import fan_out
-from rnsr.forms.spec import Convention, FormField, FormSpec, QuestionItem
+from rnsr.forms.spec import Convention, FormField, FormSpec, QuestionItem, TaskSpec
 
 __all__ = [
     "Convention",
     "FormField",
     "FormSpec",
     "QuestionItem",
+    "TaskSpec",
     "build_questions",
     "fan_out",
     "render_field_question",

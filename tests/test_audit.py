@@ -43,14 +43,14 @@ def test_export_and_score_review(tmp_path):
     assert ev["qid"] == "q000"
     assert ev["answer"] == "yes"
     review = (out / "review.csv").read_text()
-    assert "qid,answer,reviewer_mark,note" in review
+    assert "qid,answer,tier,reviewer_mark,note" in review
     assert result["n"] == 1
 
     sheet = out / "review.csv"
     sheet.write_text(
-        "qid,answer,reviewer_mark,note\n"
-        "q000,yes,wrong,should be no\n"
-        "q001,no,correct,\n"
+        "qid,answer,tier,reviewer_mark,note\n"
+        "q000,yes,low,wrong,should be no\n"
+        "q001,no,high,correct,\n"
     )
     scored = score_review(sheet)
     assert scored["misses"] == 1

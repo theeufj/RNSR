@@ -41,7 +41,8 @@ def ingest(
     sources: list[Path] = typer.Argument(..., exists=True, readable=True,
                                          help="Documents to ingest (PDF, Word, Excel, "
                                               "PowerPoint, OpenDocument, RTF, EPUB, "
-                                              "CSV, Markdown, text, email)"),
+                                              "CSV, Markdown, text, email, HTML, zip, "
+                                              "images, Outlook .msg)"),
     out: Path = typer.Option(Path("corpus.db"), "--out", "-o", help="Output artifact path"),
     report_path: Path | None = typer.Option(None, "--report", help="Write JSON report here"),
     llm: bool = typer.Option(False, "--llm/--no-llm",
@@ -50,10 +51,18 @@ def ingest(
     no_transcribe: bool = typer.Option(
         False, "--no-transcribe",
         help="Leave scanned pages untranscribed even if a vision key is set"),
+    append: bool = typer.Option(
+        False, "--append",
+        help="Add documents to an existing corpus.db (drop freeze, write, refreeze)"),
+    replace: str | None = typer.Option(
+        None, "--replace",
+        help="Delete this doc_id then append the given source(s)"),
 ) -> None:
     """Ingest documents into a corpus.db artifact (Phase A)."""
     from rnsr.config import Settings
     from rnsr.ingest.cost_estimate import resolve_transcriber
+    from rnsr.ingest.lifecycle import append as append_ingest
+    from rnsr.ingest.lifecycle import replace_document
     from rnsr.ingest.pipeline import ingest as run_ingest
 
     settings = Settings.from_env()
@@ -76,6 +85,20 @@ def ingest(
         vision = make_vision_extractor(vis.client, vis.model)
         if transcriber is None:
             transcriber = make_page_transcriber(vis.client, vis.model)
+
+    if replace:
+        stats = replace_document(
+            out, replace, sources[0], config=settings, transcriber=transcriber)
+        if len(sources) > 1:
+            stats = append_ingest(
+                sources[1:], out, config=settings, transcriber=transcriber)
+        console.print(f"replaced {replace}: {stats}")
+        return
+    if append:
+        stats = append_ingest(
+            sources, out, config=settings, transcriber=transcriber)
+        console.print(f"appended: {stats}")
+        return
 
     report = run_ingest(sources, out, config=settings,
                         prose_checker=prose_checker, vision=vision,
@@ -225,7 +248,8 @@ def eval_tables_cmd(
 @app.command("eval")
 def eval_cmd(
     benchmark: str = typer.Option(..., "--benchmark", "-b",
-                                  help="synthetic-oolong | oolong | financebench"),
+                                  help="synthetic-oolong | oolong | financebench | "
+                                       "matter | office | cuad | contractnli | legalbench"),
     system: str = typer.Option("docdb", "--system", "-s",
                                help="docdb | rlm-classic"),
     limit: int | None = typer.Option(None, "--limit", "-n"),
@@ -278,6 +302,10 @@ def eval_cmd(
         from rnsr.eval.datasets.matter_gen import generate_matter
 
         items = generate_matter(run_dir / "matter_pdfs", seed=seed)
+    elif benchmark == "office":
+        from rnsr.eval.datasets.office_gen import generate_office
+
+        items = generate_office(run_dir / "office_docs", seed=seed)
     else:
         raise typer.BadParameter(f"unknown benchmark: {benchmark}")
 
@@ -335,6 +363,11 @@ def answer_csv(
     allow_degraded: bool = typer.Option(
         False, "--allow-degraded",
         help="Answer even when corpus health is blocked; stamp health on the report"),
+    abstain_below: str = typer.Option(
+        "off", "--abstain-below",
+        help="Replace answers at or below this trust tier with 'NEEDS REVIEW' "
+             "in the answers CSV (off | medium | high). Status file keeps the "
+             "raw answer."),
 ) -> None:
     """Answer a questions CSV over a document corpus (fable-replicate contract).
 
@@ -407,16 +440,34 @@ def answer_csv(
         console.print(f"[yellow]note:[/yellow] {n_unsupported} file(s) with "
                       f"unsupported extensions skipped: {', '.join(exts)}")
 
-    from hashlib import sha256 as _sha256
+    from rnsr.ingest.fast_parse import stat_identity as _stat_id
+    from rnsr.ingest.lifecycle import append as append_ingest
+    from rnsr.ingest.lifecycle import file_index, replace_document
 
-    h = _sha256()
-    for s in files:  # stat-identity: no byte reads over the corpus
-        st = s.stat()
-        h.update(f"{s}|{st.st_size}|{st.st_mtime_ns}".encode())
     cache_dir = work_dir / "corpora"
-    corpus_path = cache_dir / f"corpus_{h.hexdigest()[:16]}.db"
-    if corpus_path.exists() and not _corpus_valid(corpus_path, len(files)):
+    corpus_path = cache_dir / "corpus.db"
+    if corpus_path.exists() and not _corpus_valid(corpus_path, 1):
         corpus_path.unlink()
+    if corpus_path.exists():
+        index = file_index(corpus_path)
+        from rnsr.ingest.parse import _sha256 as _content_sha
+
+        new_files, changed = [], []
+        for s in files:
+            rec = index.get(str(s.resolve())) or index.get(s.name)
+            if rec is None:
+                new_files.append(s)
+                continue
+            known = {rec.get("sha256"), rec.get("content_sha256")} - {None, ""}
+            if _stat_id(s) in known or _content_sha(s) in known:
+                continue
+            changed.append((rec["doc_id"], s))
+        for doc_id, src in changed:
+            console.print(f"[dim]replacing changed {src.name}[/dim]")
+            replace_document(corpus_path, doc_id, src, config=settings)
+        if new_files:
+            console.print(f"appending {len(new_files)} new document(s)")
+            append_ingest(new_files, corpus_path, config=settings)
     if not corpus_path.exists() and fast_ingest:
         cache_dir.mkdir(parents=True, exist_ok=True)
         from rnsr.ingest.cost_estimate import resolve_transcriber
@@ -493,7 +544,11 @@ def answer_csv(
         console.print(f"[yellow]corpus health {corpus_health.grade}[/yellow]")
         for f in corpus_health.findings:
             console.print(f"  [{f.severity}] {f.detail}")
-    env = EnvSpec(mode="docdb", corpus_db=str(corpus_path), manifest=manifest)
+    from rnsr.harness.playbook import discover_playbook
+
+    playbook = discover_playbook(corpus_dir, corpus_path.parent, work_dir)
+    env = EnvSpec(mode="docdb", corpus_db=str(corpus_path), manifest=manifest,
+                  playbook=playbook)
 
     runner = _make_runner(settings)
     sem = asyncio.Semaphore(concurrency)
@@ -505,6 +560,22 @@ def answer_csv(
     errors: dict[int, str] = {}
     agreements: dict[int, float] = {}     # consensus mode: share of passes agreeing
     contested: set[str] = set()           # query ids the passes disagreed on
+    tiers: dict[int, str] = {}
+    quotes_verified: dict[int, str] = {}
+    resolved_by: dict[int, str] = {}
+    neg_audits: dict[int, str] = {}
+    cite_docs: dict[int, str] = {}
+
+    def stamp_evidence(i: int, ev, *, resolved: str | None = None) -> None:
+        if ev is None:
+            return
+        tiers[i] = ev.tier
+        quotes_verified[i] = f"{ev.quotes_verified}/{ev.quotes_total}"
+        if resolved or ev.resolved_by:
+            resolved_by[i] = resolved or ev.resolved_by or ""
+        neg_audits[i] = ev.negative_audit
+        if ev.docs_cited:
+            cite_docs[i] = ", ".join(ev.docs_cited)
     if ckpt.exists():
         for line in ckpt.read_text().splitlines():
             rec = _json.loads(line)
@@ -539,6 +610,7 @@ def answer_csv(
                 res = await runner.run(q, env, run_dir=work_dir / "trajectories",
                                        query_id=f"q{i:03d}")
                 text = "" if res.answer is None else str(res.answer).strip()
+                stamp_evidence(i, res.evidence)
                 record(i, text or not_found, res.status)
             except Exception as e:
                 # the placeholder keeps the CSV contract; the status file and
@@ -563,6 +635,11 @@ def answer_csv(
                     contested.update(cr.contested_qids)
                     group_status = (cr.pass_results[0].status
                                     if cr.pass_results else "error")
+                    for i in group:
+                        ans = cr.answers.get(qid[i])
+                        if ans is not None:
+                            stamp_evidence(i, ans.evidence,
+                                           resolved=ans.resolved_by)
                 else:
                     br = await runner.run_batch(
                         [(qid[i], qs[i]) for i in group], env,
@@ -570,6 +647,8 @@ def answer_csv(
                         query_id=f"b{group[0]:03d}_{group[-1]:03d}")
                     got = br.answers
                     group_status = br.result.status
+                    for i in group:
+                        stamp_evidence(i, br.evidence.get(qid[i]))
             except Exception as e:
                 got, group_status = {}, "error"
                 group_error = f"{type(e).__name__}: {e}"[:300]
@@ -608,26 +687,39 @@ def answer_csv(
         ckpt_f.close()
         lock.release()
 
+    _TIER_RANK = {"low": 0, "medium": 1, "high": 2}
+    floor = _TIER_RANK.get((abstain_below or "off").lower())
+
+    def maybe_abstain(i: int, text: str) -> str:
+        if floor is None:
+            return text
+        if _TIER_RANK.get(tiers.get(i, "high"), 2) < floor:
+            return "NEEDS REVIEW"
+        return text
+
     output.mkdir(parents=True, exist_ok=True)
     out_path = output / "answers_chunk1.csv"
     with open(out_path, "w", newline="", encoding="utf-8") as f:
         w = _csv.writer(f)
         w.writerow([question_col, "model_answer"])
-        for q, a in zip(qs, answers, strict=True):
-            w.writerow([q, a])
+        for i, (q, a) in enumerate(zip(qs, answers, strict=True)):
+            w.writerow([q, maybe_abstain(i, a)])
 
     status_path = output / "answers_status.csv"
     with open(status_path, "w", newline="", encoding="utf-8") as f:
         w = _csv.writer(f)
         w.writerow(["row", "query_id", "status", "agreement", "contested",
-                    "error", "model_answer", "corpus_health"])
+                    "error", "model_answer", "corpus_health",
+                    "tier", "quotes_verified", "resolved_by", "negative_audit"])
         health_grade = corpus_health.grade
         for i in range(len(qs)):
             qid = f"q{i:03d}"
             w.writerow([i, qid, status.get(i, "error"),
                         "" if i not in agreements else f"{agreements[i]:.2f}",
                         "yes" if qid in contested else "",
-                        errors.get(i, ""), answers[i], health_grade])
+                        errors.get(i, ""), answers[i], health_grade,
+                        tiers.get(i, ""), quotes_verified.get(i, ""),
+                        resolved_by.get(i, ""), neg_audits.get(i, "")])
 
     counts: dict[str, int] = {}
     for i in range(len(qs)):
@@ -655,10 +747,31 @@ def answer_csv(
         "provider": gov,
         "metrics": _obs.metrics().snapshot(),
         "health": corpus_health.to_dict(),
+        "tier_counts": {t: sum(1 for v in tiers.values() if v == t)
+                        for t in ("high", "medium", "low")},
+        "abstain_below": abstain_below,
     }
     (output / "run_report.json").write_text(_json.dumps(report, indent=2))
 
+    from rnsr.eval.report_card import write_report_card
+    from rnsr.eval.xlsx_out import write_answers_xlsx
+
+    xlsx_rows = []
+    for i, (q, a) in enumerate(zip(qs, answers, strict=True)):
+        xlsx_rows.append({
+            question_col: q,
+            "value": maybe_abstain(i, a),
+            "tier": tiers.get(i, ""),
+            "doc": cite_docs.get(i, ""),
+            "page": "",
+            "quote": quotes_verified.get(i, ""),
+        })
+    xlsx_path = write_answers_xlsx(output / "answers.xlsx", xlsx_rows,
+                                   question_col=question_col)
+    write_report_card(output, report=report, health=corpus_health.to_dict())
+
     console.print(f"wrote {out_path} ({len(answers)} rows, {n_nf} not-found)")
+    console.print(f"wrote {xlsx_path} and {output / 'report.md'}")
     console.print(f"status: {counts} — details in {status_path}")
     if consensus > 1:
         console.print(
@@ -723,6 +836,7 @@ def build_questions_cmd(
     map_path = out_map or out_csv.with_suffix(".map.json")
     map_path.write_text(_json.dumps(
         {"form": spec.form, "roles": spec.roles,
+         "not_found": spec.not_found, "date_format": spec.date_format,
          "items": [asdict(i) for i in items]}, indent=1, ensure_ascii=False))
 
     n_groups = sum(1 for i in items if i.kind == "group")
@@ -748,6 +862,9 @@ def regress_cmd(
     max_false_positive_rate: float = typer.Option(
         1.0, "--max-false-positive-rate",
         help="exit 2 when confident-wrong / absent-items exceeds this"),
+    min_high_tier_accuracy: float = typer.Option(
+        0.0, "--min-high-tier-accuracy",
+        help="exit 2 when accuracy over high-tier answers is below this"),
     judge: bool = typer.Option(True, "--judge/--no-judge",
                                help="sub-LM equivalence check for string "
                                     "failures (long answers differ in wording, "
@@ -767,6 +884,7 @@ def regress_cmd(
         load_field_answers,
         load_golden,
         load_golden_notes,
+        load_status_tiers,
         score_run,
     )
     from rnsr.forms.fanout import fan_out
@@ -806,10 +924,13 @@ def regress_cmd(
     else:
         field_answers = load_field_answers(answers)
 
+    status_csv = answers.parent / "answers_status.csv"
     report = score_run(
         gold, field_answers, min_accuracy=min_accuracy,
         max_false_positive_rate=max_false_positive_rate,
+        min_high_tier_accuracy=min_high_tier_accuracy,
         notes=load_golden_notes(golden),
+        tiers=load_status_tiers(status_csv),
     )
     if judge and any(not r.agrees for r in report.results):
         from rnsr.llm.router import Router
@@ -825,6 +946,9 @@ def regress_cmd(
     console.print(f"  false-positive rate: {summary['false_positive_rate']:.1%} "
                   f"({summary['confident_wrong']} confident-wrong on absent items)")
     console.print(f"  abstain rate (value items): {summary['abstain_rate']:.1%}")
+    console.print(f"  high-tier accuracy: {summary['high_tier_accuracy']:.1%}")
+    console.print(f"  review recall: {summary['review_recall']:.1%}  "
+                  f"auto-accept: {summary['auto_accept_rate']:.1%}")
     console.print(f"  resolved by judge: {summary['scored_by_judge']}")
     for d in summary["disagreements"]:
         console.print(f"[red]DIFF[/red] {d['field_id']}\n"
@@ -906,6 +1030,37 @@ def migrate(
     console.print_json(json.dumps(result))
 
 
+@app.command()
+def autopsy(
+    run_dir: Path = typer.Argument(..., exists=True,
+                                   help="eval or answer-csv run directory"),
+    golden: Path | None = typer.Option(None, "--golden", exists=True,
+                                       help="golden JSON when results.jsonl is absent"),
+    review: Path | None = typer.Option(None, "--review", exists=True,
+                                       help="filled review.csv (gold-error marks)"),
+    out: Path | None = typer.Option(None, "--out",
+                                    help="directory for autopsy.json + loss-ledger.md"),
+) -> None:
+    """Classify every miss in a run (ingest / retrieval / reasoning / …)."""
+    import json
+
+    from rnsr.config import Settings
+    from rnsr.eval.autopsy import autopsy_run, write_ledger
+
+    settings = Settings.from_env()
+    ledger = autopsy_run(run_dir, golden=golden, review=review,
+                         key=settings.trajectory_key)
+    dest = out or run_dir
+    written = write_ledger(ledger, dest, title=f"Loss ledger — {run_dir.name}")
+    console.print_json(json.dumps({
+        "n": ledger["n"], "n_miss": ledger["n_miss"],
+        "accuracy": ledger["accuracy"],
+        "cause_counts": ledger["cause_counts"],
+        "cause_x_class": ledger["cause_x_class"],
+    }))
+    console.print(f"wrote {written['json']} and {written['md']}")
+
+
 @app.command("audit-export")
 def audit_export(
     work_dir: Path = typer.Option(..., "--work-dir", exists=True,
@@ -927,11 +1082,34 @@ def audit_export(
     console.print(f"review sheet: {result['review']}")
 
 
+@app.command("review-import")
+def review_import_cmd(
+    review: Path = typer.Argument(..., exists=True, help="filled review.csv"),
+    corpus_dir: Path | None = typer.Option(
+        None, "--corpus",
+        help="corpus directory to write golden/ and playbook.diff.json"),
+    out: Path | None = typer.Option(None, "--out", help="output directory override"),
+) -> None:
+    """Turn reviewer corrections into corpus-local golden items and playbook diffs."""
+    import json
+
+    from rnsr.eval.review_import import import_review
+
+    result = import_review(review, corpus_dir=corpus_dir, out_dir=out)
+    console.print_json(json.dumps({
+        k: result[k] for k in ("n_ok", "n_miss", "n_unmarked", "n_golden",
+                               "golden", "playbook_diff")
+    }))
+
+
 @app.command()
 def doctor(
     check_models: bool = typer.Option(
         False, "--check-models",
         help="ask the provider which models exist and fail on retired names"),
+    corpus: Path | None = typer.Option(
+        None, "--corpus", exists=True,
+        help="corpus.db: warn when rung-4 embeddings should be on"),
 ) -> None:
     """Check provider keys, model names and pricing before a real run.
 
@@ -978,6 +1156,28 @@ def doctor(
         except Exception as e:
             t.add_row(role, f"[yellow]unavailable[/yellow]: {e}", "")
     console.print(t)
+
+    if corpus is not None:
+        from rnsr.db.artifact import CorpusDB
+
+        with CorpusDB(corpus) as c:
+            n_docs = c.conn.execute("SELECT count(*) FROM documents").fetchone()[0]
+        threshold = settings.embed_auto_on_docs
+        embed_ok = True
+        try:
+            router.resolve("embed")
+        except Exception:
+            embed_ok = False
+        if n_docs >= threshold and not embed_ok:
+            console.print(
+                f"[yellow]rung-4 default-on:[/yellow] corpus has {n_docs} docs "
+                f"(threshold {threshold}) but no embed provider is configured. "
+                "Set an OpenAI/Gemini key so embeddings activate automatically."
+            )
+        elif n_docs >= threshold:
+            console.print(
+                f"rung-4 embeddings: on ({n_docs} docs ≥ {threshold})"
+            )
 
     if not check_models:
         return

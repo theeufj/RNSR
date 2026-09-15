@@ -97,6 +97,10 @@ class Settings:
     # --- search ladder (§5) ---
     expansion_max_rounds: int = 3
     rescore_candidates: int = 4000      # int8 KNN pool rescored at fp32 (rung 4)
+    # Rung-4 embeddings default-on once the corpus has this many documents
+    # and an embed provider is configured. Tantivy/usearch/TOC stay behind
+    # the replay parity gate (docs/search-contract.md; Phase 0 ledger).
+    embed_auto_on_docs: int = 200
 
     # --- misc ---
     llm_seed: int = 42

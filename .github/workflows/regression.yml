@@ -94,6 +94,14 @@ jobs:
             --min-accuracy "$MIN_ACCURACY" \
             --max-false-positive-rate 0.15
 
+      - name: Autopsy the run (report-only)
+        if: always() && steps.guard.outputs.run == 'true'
+        continue-on-error: true
+        run: |
+          rnsr autopsy runs/regression/work \
+            --golden testMatter/golden.json \
+            --out runs/regression/out
+
       - name: Upload the run for inspection
         if: always() && steps.guard.outputs.run == 'true'
         uses: actions/upload-artifact@v4
@@ -105,4 +113,6 @@ jobs:
             runs/regression/out/comparison.csv
             runs/regression/out/regression_summary.json
             runs/regression/out/run_report.json
+            runs/regression/out/autopsy.json
+            runs/regression/out/loss-ledger.md
           retention-days: 30

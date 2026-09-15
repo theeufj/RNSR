@@ -65,12 +65,20 @@ class TestEvaluate:
         assert h.grade == "blocked"
         assert h.validation_pass_rate == 0.5
 
+    def test_small_n_untrusted_does_not_block_large_dump(self):
+        h = evaluate({"n_documents": 11, "tables_total": 53,
+                      "tables_untrusted": 2, "tables_unchecked": 51})
+        assert h.validation_pass_rate == 0.0
+        assert h.grade == "ok"
+        assert any(f.code == "validation_rate" and f.severity == "info"
+                   for f in h.findings)
+
     def test_unchecked_excluded_from_pass_rate(self):
         h = evaluate({"n_documents": 1, "tables_total": 10,
                       "tables_untrusted": 0, "tables_unchecked": 8})
-        # 2 checked, 0 untrusted -> 100%; unchecked are a warn
+        # 2 checked, 0 untrusted -> 100%; unchecked are informational
         assert h.validation_pass_rate == 1.0
-        assert h.grade == "degraded"
+        assert h.grade == "ok"
         assert any(f.code == "unchecked_tables" for f in h.findings)
 
     def test_parse_fail_rate_blocks(self):

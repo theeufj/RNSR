@@ -7,7 +7,7 @@ same names re-exported from the `rnsr` package root):
 
 ```
 BatchAnswer, answer, answer_batch, answer_batch_sync, answer_sync,
-build_questions, corpus_env, fan_out, ingest, make_runner, open_corpus,
+append, build_questions, corpus_env, fan_out, ingest, make_runner, open_corpus,
 score_answers, score_answers_sync
 ```
 
@@ -23,7 +23,7 @@ without a major bump.
 
 Every `corpus.db` created by this package stamps:
 
-- `PRAGMA user_version` — integer, currently `1`
+- `PRAGMA user_version` — integer, currently `2`
 - `manifest.format_version` — the same integer as JSON
 
 `CorpusDB` refuses to open an artifact whose version does not match, and

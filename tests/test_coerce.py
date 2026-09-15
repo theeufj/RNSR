@@ -5,6 +5,7 @@ from hypothesis import strategies as st
 
 from rnsr.ingest.coerce import (
     CoercedColumn,
+    caption_scale,
     coerce_cell,
     coerce_column,
     detect_style,
@@ -46,6 +47,24 @@ class TestCoerceCell:
         assert coerce_cell("Widgets") is None
         assert coerce_cell("12 apples") is None
         assert coerce_cell("1.2.3") is None
+
+    def test_footnote_markers(self):
+        assert coerce_cell("1,234*") == 1234.0
+        assert coerce_cell("1,234(1)") == 1234.0
+        assert coerce_cell("1,234†") == 1234.0
+
+    def test_scale_suffixes(self):
+        assert coerce_cell("12k") == 12_000.0
+        assert coerce_cell("1.2bn") == 1.2e9
+        assert coerce_cell("3mm") == 3e6
+
+    def test_percent_stays_percentage_points(self):
+        assert coerce_cell("45%") == 45.0
+        assert coerce_cell("45%", unit_scale=1000) == 45.0
+
+    def test_caption_scale(self):
+        assert caption_scale("Figures in thousands") == 1e3
+        assert coerce_cell("12", unit_scale=caption_scale("in thousands")) == 12_000.0
 
     @given(st.floats(min_value=-1e12, max_value=1e12, allow_nan=False, allow_infinity=False))
     def test_roundtrip_us_formatting(self, x):

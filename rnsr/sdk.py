@@ -39,6 +39,7 @@ __all__ = [
     "answer_sync",
     "build_questions",
     "corpus_env",
+    "append",
     "fan_out",
     "ingest",
     "make_runner",
@@ -59,6 +60,13 @@ def ingest(sources, out_db, **kwargs):
     from rnsr.ingest.pipeline import ingest as _ingest
 
     return _ingest(sources, out_db, **kwargs)
+
+
+def append(sources, corpus_db, **kwargs):
+    """Add documents to an existing corpus.db (see rnsr.ingest.lifecycle)."""
+    from rnsr.ingest.lifecycle import append as _append
+
+    return _append(sources, corpus_db, **kwargs)
 
 
 def open_corpus(path: str | Path, mode: str = "ro") -> CorpusDB:
@@ -106,7 +114,26 @@ def corpus_env(corpus_db: str | Path, *,
         health = load_health(c, settings)
     enforce_health(health, settings)
     manifest["health"] = health.to_dict()
-    return EnvSpec(mode="docdb", corpus_db=str(corpus_db), manifest=manifest)
+    from rnsr.harness.playbook import discover_playbook
+
+    playbook = discover_playbook(Path(corpus_db).parent, Path(corpus_db).with_suffix(""))
+    n_docs = 0
+    try:
+        n_docs = int((manifest.get("health") or {}).get("n_documents") or 0)
+        if not n_docs:
+            docs = manifest.get("documents")
+            n_docs = len(docs) if isinstance(docs, list) else 0
+    except (TypeError, ValueError):
+        n_docs = 0
+    if n_docs >= settings.embed_auto_on_docs:
+        try:
+            from rnsr.llm.router import Router
+
+            Router(settings).resolve("embed")
+        except Exception:
+            pass
+    return EnvSpec(mode="docdb", corpus_db=str(corpus_db), manifest=manifest,
+                   playbook=playbook)
 
 
 async def answer(
@@ -150,6 +177,8 @@ class BatchAnswer:
     agreement: float | None = None
     contested: bool = False
     health: dict | None = None          # corpus health snapshot, if gated
+    evidence: dict | None = None
+    tier: str | None = None
 
 
 async def answer_batch(
@@ -196,16 +225,20 @@ async def answer_batch(
                     cr = await runner.run_batch_consensus(
                         pairs, env, run_dir=run_dir, query_id=group_id,
                         passes=consensus)
-                    status = (cr.pass_results[0].status
-                              if cr.pass_results else "error")
+                    group_status = (cr.pass_results[0].status
+                                    if cr.pass_results else "error")
                     for i in group:
                         got = cr.answers.get(qids[i])
                         if got is None or got.value is None:
                             continue
+                        ev = got.evidence
                         out[i] = BatchAnswer(
-                            question=qs[i], answer=got.value, status=status,
+                            question=qs[i], answer=got.value,
+                            status=group_status if got.value else "unanswered",
                             agreement=got.agreement, contested=got.contested,
-                            health=health)
+                            health=health,
+                            evidence=ev.to_dict() if ev else None,
+                            tier=ev.tier if ev else None)
                 else:
                     br = await runner.run_batch(pairs, env, run_dir=run_dir,
                                                 query_id=group_id)
@@ -213,9 +246,13 @@ async def answer_batch(
                         text = br.answers.get(qids[i])
                         if text is None:
                             continue
-                        out[i] = BatchAnswer(question=qs[i], answer=text,
-                                             status=br.result.status,
-                                             health=health)
+                        ev = br.evidence.get(qids[i])
+                        out[i] = BatchAnswer(
+                            question=qs[i], answer=text,
+                            status=br.result.status,
+                            health=health,
+                            evidence=ev.to_dict() if ev else None,
+                            tier=ev.tier if ev else None)
             except Exception as e:  # a failed group must not sink the run
                 error = f"{type(e).__name__}: {e}"[:300]
                 for i in group:
@@ -230,9 +267,13 @@ async def answer_batch(
                 res = await runner.run(qs[i], env, run_dir=run_dir,
                                        query_id=qids[i])
                 text = "" if res.answer is None else str(res.answer).strip()
-                out[i] = BatchAnswer(question=qs[i], answer=text or None,
-                                     status=res.status if text else "unanswered",
-                                     health=health)
+                ev = res.evidence
+                out[i] = BatchAnswer(
+                    question=qs[i], answer=text or None,
+                    status=res.status if text else "unanswered",
+                    health=health,
+                    evidence=ev.to_dict() if ev else None,
+                    tier=ev.tier if ev else None)
             except Exception as e:
                 out[i] = BatchAnswer(question=qs[i], answer=None,
                                      status="error",
@@ -309,8 +350,10 @@ async def score_answers(
     *,
     min_accuracy: float = 0.0,
     max_false_positive_rate: float = 1.0,
+    min_high_tier_accuracy: float = 0.0,
     judge: bool = False,
     settings: Settings | None = None,
+    tiers: dict[str, str] | None = None,
 ):
     """Score field answers against a golden set (the `rnsr regress` core).
 
@@ -328,6 +371,8 @@ async def score_answers(
     report = score_run(
         golden, field_answers, min_accuracy=min_accuracy,
         max_false_positive_rate=max_false_positive_rate,
+        min_high_tier_accuracy=min_high_tier_accuracy,
+        tiers=tiers,
     )
     if judge and any(not r.agrees for r in report.results):
         from rnsr.llm.router import Router

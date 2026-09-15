@@ -24,6 +24,9 @@ class EvalResult:
     trajectory_path: str | None = None
     scored_by: str = "string"   # 'string' | 'judge'
     expect: str = "value"       # 'value' | 'absent'
+    cause: str | None = None    # miss cause from rnsr.eval.autopsy; None if correct
+    tier: str | None = None     # trust tier from AnswerEvidence; None if unknown
+    retrieval_hit: bool | None = None  # gold doc appeared in any search/open
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -130,6 +133,14 @@ def summarize(results: list[EvalResult]) -> dict:
         if r.predicted is not None and not _negative(r.predicted) and not r.correct
     )
     abstain = sum(1 for r in value_items if _negative(r.predicted))
+    misses = [r for r in results if not r.correct]
+    cause_counts: dict[str, int] = {}
+    cause_x_class: dict[str, dict[str, int]] = {}
+    for r in misses:
+        cause = r.cause or "unclassified"
+        cause_counts[cause] = cause_counts.get(cause, 0) + 1
+        bucket = cause_x_class.setdefault(r.task_class, {})
+        bucket[cause] = bucket.get(cause, 0) + 1
     return {
         "n": len(results),
         "accuracy": (sum(r.correct for r in results) / len(results)) if results else 0.0,
@@ -150,6 +161,27 @@ def summarize(results: list[EvalResult]) -> dict:
             s: sum(r.scored_by == s for r in results)
             for s in sorted({r.scored_by for r in results})
         },
+        "cause_counts": dict(sorted(cause_counts.items())),
+        "cause_x_class": {c: dict(sorted(v.items()))
+                          for c, v in sorted(cause_x_class.items())},
+        "accuracy_by_tier": {
+            t: (sum(r.correct for r in results if r.tier == t)
+                / max(1, sum(1 for r in results if r.tier == t)))
+            for t in sorted({r.tier for r in results if r.tier})
+        },
+        "review_recall": (
+            (sum(1 for r in misses if r.tier in ("low", "medium")) / len(misses))
+            if misses else 1.0
+        ),
+        "auto_accept_rate": (
+            (sum(1 for r in results if r.tier == "high") / len(results))
+            if results else 0.0
+        ),
+        "retrieval_recall": (
+            (sum(1 for r in results if r.retrieval_hit)
+             / max(1, sum(1 for r in results if r.retrieval_hit is not None)))
+            if any(r.retrieval_hit is not None for r in results) else None
+        ),
     }
 
 

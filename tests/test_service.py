@@ -163,16 +163,12 @@ class TestRunJob:
                                           monkeypatch):
         """The service must answer through the same loop as the CLI, batching
         included — otherwise the validated accuracy path is not what ships."""
-        import rnsr.llm.router as router_mod
         from rnsr.harness.loop import BatchQueryResult, QueryResult
         from rnsr.service import Job, run_job
 
         seen = {}
 
         class FakeRunner:
-            def __init__(self, **kwargs):
-                pass
-
             async def run_batch(self, questions, env, run_dir=None, query_id=None):
                 seen["questions"] = questions
                 seen["corpus_db"] = env.corpus_db
@@ -182,14 +178,7 @@ class TestRunJob:
                                        ledger={"spend_usd": 0.0, "sub_calls": 0},
                                        trajectory_path="", iterations=1))
 
-        class FakeResolved:
-            client, model = object(), "m"
-
-        monkeypatch.setattr(router_mod.Router, "__init__",
-                            lambda self, settings=None: None)
-        monkeypatch.setattr(router_mod.Router, "resolve",
-                            lambda self, role: FakeResolved())
-        monkeypatch.setattr("rnsr.harness.loop.RootRunner", FakeRunner)
+        monkeypatch.setattr("rnsr.sdk.make_runner", lambda settings=None: FakeRunner())
 
         job = Job(id="j1", questions=["a?", "b?"], corpus_db=str(corpus_db))
         await run_job(job, Settings(), tmp_path / "runs")
@@ -197,6 +186,7 @@ class TestRunJob:
         assert job.answers == ["7714", "7714"]
         assert [q for _, q in seen["questions"]] == ["a?", "b?"]
         assert seen["corpus_db"] == str(corpus_db)
+        assert job.tiers == [None, None]
 
     async def test_missing_corpus_marks_job_failed(self, tmp_path):
         from rnsr.service import Job, run_job

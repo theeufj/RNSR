@@ -1,5 +1,27 @@
 # Changelog
 
+## 1.0.0a7
+
+Job-grade accuracy program.
+
+- **Autopsy + office-gen.** Misses classified by cause; `rnsr eval --benchmark office`;
+  loss ledger and report-only CI autopsy.
+- **Per-answer trust tiers.** `AnswerEvidence` on results, status CSV, and the
+  service. Hidden-failure paths (zero-quote FINAL_BATCH, 3rd-strike, recovery)
+  are tier-capped. Batch third-strike applies only to failed fields.
+  Unchecked tables no longer degrade corpus health; small-n validation
+  failures no longer block a large dump. Calibration metrics and `--abstain-below`.
+- **Office ingest fidelity.** Sheet/slide as page + caption; eml/msg/html/zip/image
+  dispatch; document metadata + content sha256; exact/near-dup detection;
+  footnote/scale coercion; `net` is not a total row.
+- **Corpus lifecycle.** `rnsr ingest --append` / `sdk.append`, `--replace`,
+  per-file answer-csv cache.
+- **Domain-neutral TaskSpec + playbook.** Legal text lives in `legal_base.json`;
+  financial analysis is a playbook addon; `answers.xlsx` and `report.md`.
+- **Review loop.** `rnsr review-import` writes corpus-local golden and playbook diffs.
+- **Retrieval.** Per-question retrieval-recall; rung-4 default-on above a corpus
+  size. Tantivy/usearch/TOC stay behind the replay gate.
+
 ## 1.0.0a6
 
 Trust-hardening program.

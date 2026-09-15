@@ -5,9 +5,11 @@ CSV parse through firecrawl-anydoc's document model (pure Rust, no ML, no
 external services). Tables arrive as canonical grids with header-row
 counts and merged-cell spans, so they flow into the same RawTable ->
 typed-SQL-table -> checksum-validation path as PDF tables (§3.3); layout
-tables (positioning scaffolding) are kept as text only. Office formats
-have no pages, so every element lands on page 1 — provenance stays exact
-through char offsets into the canonical string (§1 commitment 4).
+tables (positioning scaffolding) are kept as text only. Spreadsheet
+sheets and slides keep their native index as ``page`` and the sheet/slide
+name as the table caption so same-header sheets are not merged. Word
+documents stay on page 1 — provenance is then the char offset into the
+canonical string (§1 commitment 4).
 
 PDFs deliberately stay with Docling (quality) / pdfium (scale): anydoc's
 PDF path is markdown-only, with no document-model tables, no bboxes, and
@@ -25,6 +27,12 @@ from rnsr.ingest.model import Element, ParsedDocument, RawTable
 from rnsr.ingest.parse import _sha256, make_doc_id, render_table_text
 
 OFFICE_PARSER_NAME = "anydoc"
+
+# Formats that have a native page/sheet/slide identity we must preserve.
+_PAGED_OFFICE = frozenset({
+    ".xls", ".xlsx", ".xlsm", ".xlsb", ".ods",
+    ".ppt", ".pptx", ".pptm", ".ppsx", ".ppsm", ".odp",
+})
 
 # Everything anydoc converts, minus PDF (which keeps its own two tiers).
 OFFICE_EXTENSIONS = frozenset({
@@ -126,39 +134,54 @@ def parse_office(path: str | Path, doc_id: str | None = None) -> ParsedDocument:
         doc_id=doc_id or make_doc_id(path),
         source_path=str(path),
         sha256=_sha256(path),
+        content_sha256=_sha256(path),
         n_pages=1,
         parser=OFFICE_PARSER_NAME,
+        title=getattr(doc, "title", None) or None,
+        author=getattr(doc, "author", None) or None,
     )
+
+    paged = path.suffix.lower() in _PAGED_OFFICE
+    page = 1
+    caption: str | None = None
+    emitted_table = False
 
     for block in doc.blocks:
         if block.kind == "heading":
             text = _inline_text(block.content)
             if text.strip():
+                if paged and emitted_table:
+                    page += 1
+                    emitted_table = False
+                caption = text.strip()
                 parsed.elements.append(
-                    Element("heading", text, 1, heading_level=block.level or 1))
+                    Element("heading", text, page, heading_level=block.level or 1))
         elif block.kind == "paragraph":
             text = _inline_text(block.content)
             if text.strip():
-                parsed.elements.append(Element("text", text, 1))
+                parsed.elements.append(Element("text", text, page))
         elif block.kind == "list":
             for item in block.list.items:
                 text = _item_text(item)
                 if text.strip():
-                    parsed.elements.append(Element("list", text, 1))
+                    parsed.elements.append(Element("list", text, page))
         elif block.kind == "table":
             header, rows = _grid(block.table)
             if not header:
                 continue
             parsed.elements.append(
-                Element("table", render_table_text(header, rows), 1))
+                Element("table", render_table_text(header, rows), page))
             if block.table.kind == "data" and rows:
                 parsed.tables.append(RawTable(
-                    page=1, header=header, rows=rows,
-                    extractor=OFFICE_PARSER_NAME))
+                    page=page, header=header, rows=rows,
+                    extractor=OFFICE_PARSER_NAME, caption=caption))
+                emitted_table = True
         elif block.kind in ("block_quote", "code_block"):
             text = _block_text(block)
             if text.strip():
-                parsed.elements.append(Element("text", text, 1))
+                parsed.elements.append(Element("text", text, page))
+
+    parsed.n_pages = page
 
     # Footnote/endnote bodies stay retained text (§1.4), tagged by id.
     for note in doc.notes:

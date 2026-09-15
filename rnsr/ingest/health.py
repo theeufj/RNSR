@@ -118,19 +118,29 @@ def evaluate(counters: dict[str, int | float],
 
     checked = tables_total - tables_unchecked
     if checked and rate < settings.health_min_validation_rate:
-        findings.append(Finding(
-            "validation_rate", "error",
+        # Small-n: two form tables failing a checksum must not block a
+        # 50-table legal dump. Error when the failure is the corpus (every
+        # table was checked) or the sample is large enough to trust.
+        detail = (
             f"table validation pass rate {rate:.1%} is below "
             f"{settings.health_min_validation_rate:.1%} "
-            f"({tables_untrusted} untrusted of {checked} checked)"))
+            f"({tables_untrusted} untrusted of {checked} checked)")
+        if checked >= 5 or tables_total <= checked:
+            findings.append(Finding("validation_rate", "error", detail))
+        else:
+            findings.append(Finding("validation_rate", "info",
+                                    detail + f" among {tables_total} tables"))
     elif tables_untrusted:
         findings.append(Finding(
             "untrusted_tables", "warn",
             f"{tables_untrusted} table(s) flagged untrusted"))
 
     if tables_unchecked:
+        # Info, not warn: unchecked tables are excluded from the pass rate
+        # and do not mean the corpus is damaged. A warn here made every
+        # office dump "degraded" and capped all answers at medium.
         findings.append(Finding(
-            "unchecked_tables", "warn",
+            "unchecked_tables", "info",
             f"{tables_unchecked} table(s) had no arithmetic/prose evidence "
             "and were not counted in the pass rate"))
 

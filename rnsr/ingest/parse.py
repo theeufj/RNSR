@@ -105,10 +105,12 @@ def parse_pdf(path: str | Path, doc_id: str | None = None, *, ocr: bool = False)
     result = converter.convert(path)
     doc = result.document
 
+    digest = _sha256(path)
     parsed = ParsedDocument(
         doc_id=doc_id or make_doc_id(path),
         source_path=str(path),
-        sha256=_sha256(path),
+        sha256=digest,
+        content_sha256=digest,
         n_pages=len(doc.pages) or 1,
         parser=PARSER_NAME,
     )

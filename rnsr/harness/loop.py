@@ -20,6 +20,7 @@ from rnsr.config import Settings
 from rnsr.env.sandbox import SandboxedRepl
 from rnsr.errors import SandboxError
 from rnsr.harness.budget import BudgetLedger
+from rnsr.harness.evidence import AnswerEvidence, from_final
 from rnsr.harness.prompts.base import (
     render_batch_task,
     render_system,
@@ -45,6 +46,7 @@ class EnvSpec:
     context: str | None = None      # classic: the flat string
     corpus_db: str | None = None    # docdb: artifact path
     manifest: dict | None = None    # docdb: rendered into the system prompt
+    playbook: object | None = None  # rnsr.harness.playbook.Playbook | None
 
 
 @dataclass
@@ -57,6 +59,7 @@ class QueryResult:
     iterations: int
     breached_cap: str | None = None
     health: dict | None = None          # corpus health snapshot, if gated
+    evidence: AnswerEvidence | None = None
 
 
 @dataclass
@@ -70,6 +73,7 @@ class BatchQueryResult:
 
     answers: dict[str, str | None]
     result: QueryResult
+    evidence: dict[str, AnswerEvidence] = field(default_factory=dict)
 
 
 @dataclass
@@ -80,10 +84,15 @@ class ConsensusAnswer:
     resolved_by: str            # 'unanimous' | 'majority' | 'tiebreak' | 'unresolved'
     agreement: float            # share of passes that produced the chosen value
     votes: list[str | None] = field(default_factory=list)
+    evidence: AnswerEvidence | None = None
 
     @property
     def contested(self) -> bool:
         return self.resolved_by in ("tiebreak", "unresolved")
+
+    @property
+    def tier(self) -> str | None:
+        return self.evidence.tier if self.evidence else None
 
 
 @dataclass
@@ -224,7 +233,8 @@ class RootRunner:
 
         system = render_system(env.mode, manifest=env.manifest,
                                batch_chars=s.sub_call_char_budget,
-                               provider=getattr(self.root_client, "provider", ""))
+                               provider=getattr(self.root_client, "provider", ""),
+                               playbook=env.playbook)
         sandbox = SandboxedRepl(rpc_handlers=self._rpc_handlers(ledger, trajectory),
                                 fs_guard=s.sandbox_fs_guard)
         turns: list[tuple[str, str]] = []
@@ -234,6 +244,20 @@ class RootRunner:
         completeness_checked = False
         negatives_audited = False
         budget_warned = False
+        pushbacks = 0
+        negative_audit = "none"
+        health_grade = ((env.manifest or {}).get("health") or {}).get("grade")
+
+        def _signals(**extra) -> AnswerEvidence:
+            return from_final(
+                extra.pop("final", final),
+                status=extra.get("status", "final"),
+                pushbacks=pushbacks,
+                negative_audit=negative_audit,
+                budget_warned=budget_warned,
+                health_grade=health_grade,
+                qid=extra.get("qid"),
+            )
 
         try:
             await sandbox.start(mode=env.mode, context=env.context,
@@ -249,7 +273,9 @@ class RootRunner:
                         sandbox, self, question, turns, trajectory
                     )
                     return self._finish(result, "recovered" if result else "budget_exhausted",
-                                        ledger, trajectory, turns, breached=cap)
+                                        ledger, trajectory, turns, breached=cap,
+                                        evidence=_signals(final=result,
+                                                          status="recovered" if result else "budget_exhausted"))
 
                 final_hint = ("FINAL_BATCH({...}) with every question id"
                               if batch_qids else "FINAL(...)/FINAL_VAR(...)")
@@ -264,7 +290,9 @@ class RootRunner:
                     return self._finish(result,
                                         "recovered" if result else "budget_exhausted",
                                         ledger, trajectory, turns,
-                                        breached="root_timeout")
+                                        breached="root_timeout",
+                                        evidence=_signals(final=result,
+                                                          status="recovered" if result else "budget_exhausted"))
                 ledger.add_usage(resp.usage)
                 ledger.root_iters += 1
                 code = self._extract_code(resp.text)
@@ -316,14 +344,28 @@ class RootRunner:
                     # probe for questions answered No/unknown/NOT_FOUND —
                     # lazy loops declare documented facts missing (seen
                     # live: verbatim values marked not-found after two
-                    # shallow iterations).
-                    if (gap is None and batch_questions and env.corpus_db
-                            and not negatives_audited):
+                    # shallow iterations). Solo negatives used to skip this.
+                    if (gap is None and env.corpus_db and not negatives_audited):
                         negatives_audited = True
-                        gap = self._audit_negatives(
-                            cell.final, batch_questions, env.corpus_db,
-                            trajectory)
+                        if batch_questions:
+                            gap = self._audit_negatives(
+                                cell.final, batch_questions, env.corpus_db,
+                                trajectory)
+                        else:
+                            wrapped = {
+                                "value": {query_id: cell.final.get("value")},
+                                "verification": {
+                                    query_id: cell.final.get("verification") or {},
+                                },
+                            }
+                            gap = self._audit_negatives(
+                                wrapped, [(query_id, question)], env.corpus_db,
+                                trajectory)
+                        negative_audit = "flagged" if gap else "probed"
+                    elif gap is None and negative_audit == "flagged":
+                        negative_audit = "survived"
                     if gap:
+                        pushbacks += 1
                         trajectory.event("completeness_pushback", gap=gap)
                         log(_LOG, logging.INFO, "final.pushback",
                             query_id=query_id, gap=gap[:200])
@@ -375,12 +417,14 @@ class RootRunner:
                 turns.append((code, observation))
 
             trajectory.event("final", **final)
-            return self._finish(final, "final", ledger, trajectory, turns)
+            return self._finish(final, "final", ledger, trajectory, turns,
+                                evidence=_signals(final=final, status="final"))
         except Exception as e:
             trajectory.event("error", error=f"{type(e).__name__}: {e}")
             log(_LOG, logging.ERROR, "query.error", query_id=query_id,
                 error=f"{type(e).__name__}: {e}"[:300])
-            return self._finish(None, "error", ledger, trajectory, turns)
+            return self._finish(None, "error", ledger, trajectory, turns,
+                                evidence=_signals(final=None, status="error"))
         finally:
             await sandbox.close()
             trajectory.close()
@@ -405,11 +449,21 @@ class RootRunner:
                                   batch_questions=questions)
         parsed = _coerce_batch(result.answer) or {}
         answers: dict[str, str | None] = {}
+        evidence: dict[str, AnswerEvidence] = {}
+        parent = result.evidence
         for qid in qids:
             value = parsed.get(qid)
             text = "" if value is None else str(value).strip()
             answers[qid] = text or None
-        return BatchQueryResult(answers=answers, result=result)
+            evidence[qid] = from_final(
+                result.final, status=result.status, qid=qid,
+                pushbacks=parent.pushbacks if parent else 0,
+                negative_audit=parent.negative_audit if parent else "none",
+                budget_warned=parent.budget_warned if parent else False,
+                health_grade=parent.health_grade if parent else None,
+                agreement=None,
+            )
+        return BatchQueryResult(answers=answers, result=result, evidence=evidence)
 
     async def run_batch_consensus(
         self, questions: list[tuple[str, str]], env: EnvSpec, *,
@@ -465,8 +519,21 @@ class RootRunner:
                 resolved = "majority"
             else:
                 resolved = "split"
+            winner = next((pr for pr in pass_results
+                           if _vote_key(pr.answers.get(qid)) == best_key), None)
+            ev = (winner.evidence.get(qid) if winner else None)
+            if ev is not None:
+                ev = from_final(
+                    {"value": chosen, "is_var": False,
+                     "verification": (winner.result.final or {}).get("verification")},
+                    status=winner.result.status, qid=qid,
+                    pushbacks=ev.pushbacks, negative_audit=ev.negative_audit,
+                    budget_warned=ev.budget_warned, health_grade=ev.health_grade,
+                    agreement=agreement, resolved_by=resolved, votes=votes,
+                )
             answers[qid] = ConsensusAnswer(value=chosen, resolved_by=resolved,
-                                           agreement=agreement, votes=votes)
+                                           agreement=agreement, votes=votes,
+                                           evidence=ev)
 
         contested = [qid for qid, a in answers.items()
                      if a.resolved_by == "split" or a.value is None]
@@ -489,11 +556,24 @@ class RootRunner:
                 tiebreak_results[qid] = result
                 text = "" if result.answer is None else str(result.answer).strip()
                 prior = answers[qid]
+                tb_ev = result.evidence
+                if tb_ev is not None:
+                    tb_ev = from_final(
+                        result.final, status=result.status,
+                        pushbacks=tb_ev.pushbacks,
+                        negative_audit=tb_ev.negative_audit,
+                        budget_warned=tb_ev.budget_warned,
+                        health_grade=tb_ev.health_grade,
+                        agreement=prior.agreement,
+                        resolved_by="tiebreak" if text else "unresolved",
+                        votes=[*prior.votes, text or None],
+                    )
                 answers[qid] = ConsensusAnswer(
                     value=text or prior.value,
                     resolved_by="tiebreak" if text else "unresolved",
                     agreement=prior.agreement,
-                    votes=[*prior.votes, text or None])
+                    votes=[*prior.votes, text or None],
+                    evidence=tb_ev or prior.evidence)
             metrics().incr("consensus_tiebreaks", len(contested))
 
         return ConsensusBatchResult(
@@ -656,7 +736,8 @@ class RootRunner:
 
     def _finish(self, final: dict | None, status: str, ledger: BudgetLedger,
                 trajectory: TrajectoryWriter, turns: list,
-                breached: str | None = None) -> QueryResult:
+                breached: str | None = None,
+                evidence: AnswerEvidence | None = None) -> QueryResult:
         snapshot = ledger.snapshot()
         trajectory.event("end", status=status, **snapshot)
         # .jsonl or .jsonl.enc, depending on trajectory encryption
@@ -670,6 +751,8 @@ class RootRunner:
         m.observe("query_latency_s", snapshot["wall_s"])
         m.observe("query_spend_usd", snapshot["spend_usd"])
         m.observe("root_iters", snapshot["root_iters"])
+        if evidence is None:
+            evidence = from_final(final, status=status)
         return QueryResult(
             answer=final.get("value") if final else None,
             status=status,
@@ -678,6 +761,7 @@ class RootRunner:
             trajectory_path=str(trajectory.path),
             iterations=ledger.root_iters,
             breached_cap=breached,
+            evidence=evidence,
         )
 
 

@@ -15,7 +15,7 @@ import sqlite3
 from dataclasses import dataclass
 
 from rnsr.db import schema
-from rnsr.ingest.coerce import coerce_column
+from rnsr.ingest.coerce import caption_scale, coerce_column
 from rnsr.ingest.model import RawTable
 from rnsr.ingest.validate import classify_row_kind
 
@@ -48,6 +48,7 @@ def merge_multipage(tables: list[RawTable]) -> list[RawTable]:
         if (
             prev is not None
             and headers_match(prev.header, t.header)
+            and (prev.caption or "") == (t.caption or "")
             and t.page in (prev_last_page, prev_last_page + 1)
         ):
             prev.row_pages = [prev.row_page(i) for i in range(len(prev.rows))] + [
@@ -176,13 +177,16 @@ def build_data_table(
     raw_columns: list[list[str | None] | None] = []
 
     overrides = style_overrides or {}
+    unit_scale = caption_scale(raw.caption)
     for idx, name in enumerate(col_names):
         raw_vals = [row[idx] if idx < len(row) else None for row in raw.rows]
         override = overrides.get(name)
         if override == "text":
             coerced = coerce_column(raw_vals, threshold=2.0)  # unreachable -> TEXT
         else:
-            coerced = coerce_column(raw_vals, threshold=coerce_threshold, style=override)
+            coerced = coerce_column(
+                raw_vals, threshold=coerce_threshold, style=override,
+                unit_scale=unit_scale)
         if coerced.is_numeric:
             columns.append((name, coerced.sql_type))
             columns.append((f"{name}__raw", "TEXT"))

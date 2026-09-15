@@ -88,3 +88,13 @@ class TestScannedIngest:
         report = ingest([scanned_pdf], tmp_path / "fail.db", transcriber=transcriber)
         assert report.scanned_pages_transcribed == 0
         assert report.scanned_pages_untranscribed[0]["reason"] == "transcription failed"
+
+    def test_empty_transcription_is_a_visible_gap(self, scanned_pdf, tmp_path):
+        pytest.importorskip("docling")
+        from rnsr.ingest.pipeline import ingest
+
+        mock = MockLLM(default='{"blocks": [{"kind": "text", "text": "   "}]}')
+        transcriber = make_page_transcriber(mock, "mock-vision")
+        report = ingest([scanned_pdf], tmp_path / "empty.db", transcriber=transcriber)
+        assert report.scanned_pages_transcribed == 0
+        assert report.scanned_pages_untranscribed[0]["reason"] == "transcription failed"

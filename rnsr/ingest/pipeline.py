@@ -18,6 +18,7 @@ from rnsr.db import fts, schema
 from rnsr.db.artifact import CorpusDB
 from rnsr.ingest.chunk import chunk_document
 from rnsr.ingest.dispatch import parse_any
+from rnsr.ingest.expand import expand_document
 from rnsr.ingest.fallback import VisionExtractor, reextract
 from rnsr.ingest.manifest import write_corpus_manifest, write_table_manifest
 from rnsr.ingest.model import Element, ParsedDocument, RawTable
@@ -87,11 +88,15 @@ def _merge_transcriptions(parsed: ParsedDocument,
     that failed to transcribe. Elements/tables are stamped extractor=vision
     and flow through the normal checksum-validation path (§3.3)."""
     failed: list[int] = []
+    touched: set[int] = set()
     for page in sorted(transcriptions):
         t = transcriptions[page]
+        touched.add(page)
         if t is None:
             failed.append(page)
             continue
+        before = sum(len((e.text or "").strip())
+                     for e in parsed.elements if e.page == page)
         for block in t.get("blocks", []):
             text = str(block.get("text", "")).strip()
             if not text:
@@ -106,6 +111,14 @@ def _merge_transcriptions(parsed: ParsedDocument,
             if header and rows:
                 parsed.tables.append(RawTable(page=page, header=header, rows=rows,
                                               extractor="vision"))
+        after = sum(len((e.text or "").strip())
+                    for e in parsed.elements if e.page == page)
+        # Empty / whitespace "success" is a silent gap — same as no transcriber.
+        if after <= before:
+            failed.append(page)
+    for page in parsed.scanned_pages:
+        if page not in touched and page not in failed:
+            failed.append(page)
     return failed
 
 
@@ -247,10 +260,8 @@ def ingest(
             report.parse_failed.append(
                 {"source": str(src), "error": f"{type(e).__name__}: {e}"[:300]})
             continue
-        if parsed.doc_id in seen_ids:
-            parsed.doc_id = f"{parsed.doc_id}_{len(seen_ids)}"
-        seen_ids.add(parsed.doc_id)
-        parsed_ok.append((src, parsed))
+        for child in expand_document(parsed, parse, seen_ids):
+            parsed_ok.append((src, child))
 
     n_scanned = sum(len(p.scanned_pages) for _, p in parsed_ok)
     if n_scanned and transcriber is not None:
@@ -296,10 +307,27 @@ def ingest(
             )
             page_texts = {p.page: p.text for p in pages}
 
-            conn.execute(
-                "INSERT INTO documents VALUES (?,?,?,?,?,?)",
-                (parsed.doc_id, parsed.source_path, parsed.sha256, parsed.n_pages,
-                 parsed.parser, datetime.now(UTC).isoformat()),
+            modified = parsed.modified_at
+            if not modified:
+                try:
+                    modified = datetime.fromtimestamp(
+                        src.stat().st_mtime, UTC).isoformat()
+                except OSError:
+                    modified = None
+            schema.insert_document(
+                conn,
+                doc_id=parsed.doc_id,
+                source_path=parsed.source_path,
+                sha256=parsed.sha256,
+                n_pages=parsed.n_pages,
+                parser=parsed.parser,
+                ingested_at=datetime.now(UTC).isoformat(),
+                title=parsed.title,
+                doc_date=parsed.doc_date,
+                author=parsed.author,
+                modified_at=modified,
+                content_sha256=parsed.content_sha256 or parsed.sha256,
+                parent_doc_id=parsed.parent_doc_id,
             )
             conn.executemany(
                 "INSERT INTO doc_text VALUES (?,?,?,?,?)",
@@ -336,6 +364,8 @@ def ingest(
                 ))
 
         report.n_chunks = fts.populate_fts(conn)
+        schema.record_ingest_batch(
+            conn, "create", sources, n_docs=len(parsed_ok))
         write_corpus_manifest(
             corpus, PARSER_NAME, config=config,
             extra_health={

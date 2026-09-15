@@ -361,6 +361,29 @@ class TestBatchFinalVerified:
         finally:
             await repl.close()
 
+    async def test_batch_third_strike_only_on_failed_fields(self, corpus):
+        from rnsr.env.sandbox import SandboxedRepl
+
+        repl = SandboxedRepl()
+        await repl.start(mode="docdb", corpus_db=str(corpus))
+        cell = (
+            "FINAL_BATCH({'q1': '3234', 'q2': 'nope'}, "
+            "quotes={'q1': ['Net revenue was $3,234 million'], "
+            "'q2': ['this quote is fabricated']})"
+        )
+        try:
+            assert not (await repl.exec_cell(cell)).ok
+            assert not (await repl.exec_cell(cell)).ok
+            r3 = await repl.exec_cell(cell)
+            assert r3.final is not None
+            ver = r3.final["verification"]
+            assert ver["q1"]["passed"]
+            assert not ver["q1"].get("third_strike")
+            assert not ver["q2"]["passed"]
+            assert ver["q2"].get("third_strike") is True
+        finally:
+            await repl.close()
+
 
 class TestSchemaMap:
     """schema_map proposes column correspondences; never applies them (§9)."""

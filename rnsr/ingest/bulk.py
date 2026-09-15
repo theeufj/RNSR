@@ -22,6 +22,7 @@ from rnsr.config import Settings
 from rnsr.db import fts, schema
 from rnsr.ingest.chunk import chunk_document
 from rnsr.ingest.dispatch import parse_any_fast
+from rnsr.ingest.expand import expand_document
 from rnsr.ingest.fast_parse import parse_pdf_fast
 from rnsr.ingest.fast_parse import stat_identity as _file_sha
 from rnsr.ingest.manifest import write_corpus_manifest, write_table_manifest
@@ -90,11 +91,21 @@ def ingest_bulk(
                 parsed, chunk_chars=config.chunk_chars,
                 overlap=config.chunk_overlap)
             page_texts = {p.page: p.text for p in pages}
-            conn.execute(
-                "INSERT INTO documents VALUES (?,?,?,?,?,?)",
-                (parsed.doc_id, parsed.source_path, parsed.sha256,
-                 parsed.n_pages, parsed.parser,
-                 datetime.now(UTC).isoformat()))
+            schema.insert_document(
+                conn,
+                doc_id=parsed.doc_id,
+                source_path=parsed.source_path,
+                sha256=parsed.sha256,
+                n_pages=parsed.n_pages,
+                parser=parsed.parser,
+                ingested_at=datetime.now(UTC).isoformat(),
+                title=parsed.title,
+                doc_date=parsed.doc_date,
+                author=parsed.author,
+                modified_at=parsed.modified_at,
+                content_sha256=parsed.content_sha256 or parsed.sha256,
+                parent_doc_id=parsed.parent_doc_id,
+            )
             conn.executemany(
                 "INSERT INTO doc_text VALUES (?,?,?,?,?)",
                 [(parsed.doc_id, p.page, p.char_start, p.char_end, p.text)
@@ -150,10 +161,11 @@ def ingest_bulk(
             parsed_ok: list[tuple[Path, ParsedDocument]] = []
 
             def _accept(src: Path, parsed: ParsedDocument) -> None:
-                parsed_ok.append((src, parsed))
-                if transcriber is None:
-                    # crash-safe: committed rows survive a later parse failure
-                    write_parsed(src, parsed)
+                for child in expand_document(parsed, parse):
+                    parsed_ok.append((src, child))
+                    if transcriber is None:
+                        # crash-safe: committed rows survive a later parse failure
+                        write_parsed(src, child)
 
             if workers > 1 and pending:
                 progress(f"parsing with {workers} workers")
@@ -215,6 +227,8 @@ def ingest_bulk(
                     "scanned_pages_total": n_scanned_total,
                     "scanned_pages_untranscribed": n_scanned_gap,
                 })
+            schema.record_ingest_batch(
+                corpus.conn, "create", sources, n_docs=n_new)
             schema.finalize_corpus(corpus.conn)
             corpus.conn.commit()
             corpus.close()

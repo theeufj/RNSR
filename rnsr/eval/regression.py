@@ -91,6 +91,7 @@ class FieldResult:
     scored_by: str = "string"
     note: str = ""
     expect: str = "value"
+    tier: str = ""
 
 
 @dataclass
@@ -98,6 +99,7 @@ class RegressionReport:
     results: list[FieldResult] = field(default_factory=list)
     min_accuracy: float = 0.0
     max_false_positive_rate: float = 1.0
+    min_high_tier_accuracy: float = 0.0
 
     @property
     def total(self) -> int:
@@ -114,7 +116,32 @@ class RegressionReport:
     @property
     def passed(self) -> bool:
         return (self.accuracy >= self.min_accuracy
-                and self.false_positive_rate <= self.max_false_positive_rate)
+                and self.false_positive_rate <= self.max_false_positive_rate
+                and self.high_tier_accuracy >= self.min_high_tier_accuracy)
+
+    @property
+    def high_tier_results(self) -> list[FieldResult]:
+        return [r for r in self.results if r.tier == "high"]
+
+    @property
+    def high_tier_accuracy(self) -> float:
+        rows = self.high_tier_results
+        if not rows:
+            return 1.0 if not any(r.tier for r in self.results) else 0.0
+        return sum(r.agrees for r in rows) / len(rows)
+
+    @property
+    def review_recall(self) -> float:
+        misses = [r for r in self.results if not r.agrees]
+        if not misses:
+            return 1.0
+        return sum(1 for r in misses if r.tier in ("low", "medium")) / len(misses)
+
+    @property
+    def auto_accept_rate(self) -> float:
+        if not self.results:
+            return 0.0
+        return sum(1 for r in self.results if r.tier == "high") / len(self.results)
 
     @property
     def absent_results(self) -> list[FieldResult]:
@@ -164,6 +191,10 @@ class RegressionReport:
             "confident_wrong": self.confident_wrong,
             "false_positive_rate": round(self.false_positive_rate, 4),
             "abstain_rate": round(self.abstain_rate, 4),
+            "high_tier_accuracy": round(self.high_tier_accuracy, 4),
+            "min_high_tier_accuracy": self.min_high_tier_accuracy,
+            "review_recall": round(self.review_recall, 4),
+            "auto_accept_rate": round(self.auto_accept_rate, 4),
             "passed": self.passed,
             "disagreements": [
                 {"field_id": r.field_id, "golden": r.golden[:200],
@@ -177,10 +208,10 @@ class RegressionReport:
         out.mkdir(parents=True, exist_ok=True)
         with open(out / "comparison.csv", "w", newline="", encoding="utf-8") as f:
             w = csv.writer(f)
-            w.writerow(["field_id", "verdict", "scored_by", "golden", "answer"])
+            w.writerow(["field_id", "verdict", "scored_by", "tier", "golden", "answer"])
             for r in self.results:
                 w.writerow([r.field_id, "OK" if r.agrees else "DIFF",
-                            r.scored_by, r.golden, r.answer])
+                            r.scored_by, r.tier, r.golden, r.answer])
         (out / "regression_summary.json").write_text(
             json.dumps(self.summary(), indent=2))
         return out / "regression_summary.json"
@@ -210,6 +241,20 @@ def load_golden_notes(path: str | Path) -> dict[str, str]:
     return out
 
 
+def load_status_tiers(path: str | Path) -> dict[str, str]:
+    """query_id / field_id -> tier, from answers_status.csv."""
+    path = Path(path)
+    if not path.exists():
+        return {}
+    out: dict[str, str] = {}
+    with open(path, newline="", encoding="utf-8") as f:
+        for row in csv.DictReader(f):
+            qid = row.get("query_id") or row.get("qid") or row.get("field_id") or ""
+            if qid and row.get("tier"):
+                out[qid] = row["tier"]
+    return out
+
+
 def load_field_answers(path: str | Path) -> dict[str, str]:
     """field_id -> answer, from a two-column CSV (id, answer)."""
     with open(path, newline="", encoding="utf-8") as f:
@@ -224,12 +269,16 @@ def load_field_answers(path: str | Path) -> dict[str, str]:
 def score_run(golden: dict[str, list[str]], answers: dict[str, str], *,
               min_accuracy: float = 0.0,
               max_false_positive_rate: float = 1.0,
-              notes: dict[str, str] | None = None) -> RegressionReport:
+              min_high_tier_accuracy: float = 0.0,
+              notes: dict[str, str] | None = None,
+              tiers: dict[str, str] | None = None) -> RegressionReport:
     """String-only scoring (free, deterministic). Judge separately."""
     report = RegressionReport(
         min_accuracy=min_accuracy,
-        max_false_positive_rate=max_false_positive_rate)
+        max_false_positive_rate=max_false_positive_rate,
+        min_high_tier_accuracy=min_high_tier_accuracy)
     notes = notes or {}
+    tiers = tiers or {}
     for field_id, gold in golden.items():
         answer = answers.get(field_id, "")
         expect = infer_expect(gold, notes.get(field_id, ""))
@@ -239,6 +288,7 @@ def score_run(golden: dict[str, list[str]], answers: dict[str, str], *,
             answer=answer,
             agrees=string_agrees(gold, answer),
             expect=expect,
+            tier=tiers.get(field_id, ""),
         ))
     return report
 

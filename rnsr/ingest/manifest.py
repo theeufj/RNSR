@@ -48,10 +48,19 @@ def write_corpus_manifest(
     extra_health: dict | None = None,
 ) -> None:
     conn = corpus.conn
+    from rnsr.ingest.dedup import detect_duplicates
+
+    dup_groups = detect_duplicates(conn)
+    doc_cols = {r[1] for r in conn.execute("PRAGMA table_info(documents)")}
+    select = ["doc_id", "source_path", "n_pages", "parser"]
+    for extra in ("title", "doc_date", "author", "parent_doc_id",
+                  "duplicate_of", "content_sha256"):
+        if extra in doc_cols:
+            select.append(extra)
     docs = [
         dict(r)
         for r in conn.execute(
-            "SELECT doc_id, source_path, n_pages, parser FROM documents ORDER BY doc_id"
+            f"SELECT {', '.join(select)} FROM documents ORDER BY doc_id"
         )
     ]
     n_chunks, total_chars = conn.execute(
@@ -66,6 +75,8 @@ def write_corpus_manifest(
         "chunk_stats", {"n_chunks": n_chunks, "total_chars": total_chars}
     )
     corpus.manifest_set("untrusted_tables", untrusted)
+    if dup_groups:
+        corpus.manifest_set("duplicates", dup_groups)
     corpus.manifest_set("versions", {"rnsr": __version__, "parser": parser})
     from rnsr.db.schema import ARTIFACT_FORMAT_VERSION
 

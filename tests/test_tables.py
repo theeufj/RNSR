@@ -155,6 +155,15 @@ class TestMultipageMerge:
         parts = [self._fragment(1, [["A", "1"]]), self._fragment(5, [["B", "2"]])]
         assert len(merge_multipage(parts)) == 2
 
+    def test_different_captions_not_merged(self):
+        parts = [
+            RawTable(page=1, header=["Item", "Amount"], rows=[["A", "1"]],
+                     caption="Q1", extractor="anydoc"),
+            RawTable(page=2, header=["Item", "Amount"], rows=[["B", "2"]],
+                     caption="Q2", extractor="anydoc"),
+        ]
+        assert len(merge_multipage(parts)) == 2
+
     def test_header_match_normalizes_whitespace_case(self):
         assert headers_match(["Net  Revenue"], ["net revenue"])
         assert not headers_match(["Revenue"], ["Revenue", "Extra"])

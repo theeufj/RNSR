@@ -51,8 +51,7 @@ name, a document kind) and read the specific documents that matter."""
 
 def _roles_block(spec: FormSpec) -> str:
     roles = spec.roles
-    lines = ["MATTER ROLES (authoritative - use these to keep the parties "
-             "straight):",
+    lines = [spec.roles_heading or "ROLES:",
              f"- The form being completed is: {spec.form}"]
     if applicant := roles.get("applicant_1"):
         lines.append(
@@ -103,15 +102,19 @@ def _evidence_rule(spec: FormSpec) -> str:
     note = f" {spec.corpus_note}" if spec.corpus_note else ""
     if spec.corpus_note:
         note += _LARGE_CORPUS_NOTE
-    return EVIDENCE_RULE.format(corpus_note=note)
+    rule = spec.evidence_rule or EVIDENCE_RULE
+    if "{corpus_note}" in rule:
+        return rule.format(corpus_note=note)
+    return (rule + ("\n" + note.strip() if note else "")).strip()
 
 
-def _answer_format(f: FormField) -> str:
+def _answer_format(f: FormField, spec: FormSpec | None = None) -> str:
+    date_fmt = spec.date_format if spec else "YYYY-MM-DD"
     if f.field_type in ("checkbox", "radio button"):
         return ("ANSWER FORMAT: reply with exactly one word - Yes or No. If "
                 "the documents do not establish it, reply No.")
     if f.field_type == "date":
-        return ("ANSWER FORMAT: reply with the date in DD/MM/YYYY format and "
+        return (f"ANSWER FORMAT: reply with the date in {date_fmt} format and "
                 "nothing else. If the documents do not establish it, reply "
                 "with exactly: unknown")
     return ("ANSWER FORMAT: reply with the requested value only, with no "
@@ -129,7 +132,7 @@ def render_field_question(f: FormField, spec: FormSpec) -> str:
     if f.notes:
         parts.append(f"FIELD DETAILS: {f.notes}")
     parts.append(_evidence_rule(spec))
-    parts.append(_answer_format(f))
+    parts.append(_answer_format(f, spec))
     return "\n\n".join(parts)
 
 
@@ -151,7 +154,7 @@ def render_group_question(members: list[FormField], spec: FormSpec) -> str:
     for i, m in enumerate(members, 1):
         extra = ""
         if m.needs_value:
-            shape = ("a date in DD/MM/YYYY format" if m.field_type == "date"
+            shape = (f"a date in {spec.date_format} format" if m.field_type == "date"
                      else "the value itself")
             extra = f"  (choosing this option also requires {shape})"
         lines.append(f"  [{i}] option_id: {m.id}\n"
@@ -183,7 +186,7 @@ def render_value_group_question(members: list[FormField], spec: FormSpec) -> str
     lead = members[0]
     question = (lead.group_question or "").replace(
         "{{person}}", lead.subject or "this party")
-    shape = ("the date in DD/MM/YYYY format"
+    shape = (f"the date in {spec.date_format} format"
              if value_member.field_type == "date" else "the value itself")
     parts = [_roles_block(spec)]
     if lead.subject:

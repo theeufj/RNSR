@@ -15,15 +15,30 @@ from pathlib import Path
 from rnsr.ingest.fast_parse import parse_pdf_fast, stat_identity
 from rnsr.ingest.model import ParsedDocument
 from rnsr.ingest.office import OFFICE_EXTENSIONS, parse_office
-from rnsr.ingest.textlike import parse_eml, parse_markdown, parse_text
+from rnsr.ingest.textlike import (
+    parse_eml,
+    parse_html,
+    parse_image,
+    parse_markdown,
+    parse_msg,
+    parse_text,
+    parse_zip,
+)
 
 PDF_EXTENSIONS = frozenset({".pdf"})
 MARKDOWN_EXTENSIONS = frozenset({".md", ".markdown"})
 TEXT_EXTENSIONS = frozenset({".txt"})
 EML_EXTENSIONS = frozenset({".eml"})
+MSG_EXTENSIONS = frozenset({".msg"})
+HTML_EXTENSIONS = frozenset({".html", ".htm"})
+ZIP_EXTENSIONS = frozenset({".zip"})
+IMAGE_EXTENSIONS = frozenset({".png", ".jpg", ".jpeg", ".tif", ".tiff", ".webp"})
 
-SUPPORTED_EXTENSIONS = (PDF_EXTENSIONS | OFFICE_EXTENSIONS | MARKDOWN_EXTENSIONS
-                        | TEXT_EXTENSIONS | EML_EXTENSIONS)
+SUPPORTED_EXTENSIONS = (
+    PDF_EXTENSIONS | OFFICE_EXTENSIONS | MARKDOWN_EXTENSIONS
+    | TEXT_EXTENSIONS | EML_EXTENSIONS | MSG_EXTENSIONS | HTML_EXTENSIONS
+    | ZIP_EXTENSIONS | IMAGE_EXTENSIONS
+)
 
 
 def is_ingestable(path: str | Path) -> bool:
@@ -38,6 +53,14 @@ def _parse_non_pdf(path: Path) -> ParsedDocument:
         return parse_markdown(path)
     if ext in EML_EXTENSIONS:
         return parse_eml(path)
+    if ext in MSG_EXTENSIONS:
+        return parse_msg(path)
+    if ext in HTML_EXTENSIONS:
+        return parse_html(path)
+    if ext in ZIP_EXTENSIONS:
+        return parse_zip(path)
+    if ext in IMAGE_EXTENSIONS:
+        return parse_image(path)
     if ext in TEXT_EXTENSIONS:
         return parse_text(path)
     raise ValueError(
@@ -60,7 +83,12 @@ def parse_any_fast(path: str | Path) -> ParsedDocument:
     ingest's resume check (no byte reads over the corpus)."""
     path = Path(path)
     if path.suffix.lower() in PDF_EXTENSIONS:
-        return parse_pdf_fast(path)
+        parsed = parse_pdf_fast(path)
+        from rnsr.ingest.parse import _sha256
+
+        parsed.content_sha256 = _sha256(path)
+        return parsed
     parsed = _parse_non_pdf(path)
+    parsed.content_sha256 = parsed.content_sha256 or parsed.sha256
     parsed.sha256 = stat_identity(path)
     return parsed

@@ -87,6 +87,23 @@ class TestSpecParsing:
         assert spec.roles["applicant_1"] == "Sarah Jane Mitchell"
         assert spec.fields[0].golden == ["yes"]
 
+    def test_legal_base_via_extends(self, tmp_path):
+        from pathlib import Path
+
+        legal = Path("testMatter/legal_base.json")
+        if not legal.exists():
+            pytest.skip("testMatter legal_base not present")
+        path = tmp_path / "child.json"
+        path.write_text(json.dumps({
+            "extends": str(legal.resolve()),
+            "form": "Initiating Application",
+            "fields": [],
+        }))
+        spec = load_spec(path)
+        assert spec.not_found == "Not found in matter corpus"
+        assert spec.date_format == "DD/MM/YYYY"
+        assert "Australian" in spec.evidence_rule
+
 
 class TestEnrichment:
     def test_group_becomes_one_single_choice_question(self):
@@ -131,7 +148,7 @@ class TestEnrichment:
                      'of marriage"] are alternative answers'})
         na.option_label = "Date of marriage - not applicable"
         date_field.option_label = "Date of marriage"
-        spec = FormSpec(fields=[date_field, na])
+        spec = FormSpec(fields=[date_field, na], date_format="DD/MM/YYYY")
         item = build_questions(spec)[0]
         assert item.mode == "value"
         assert "DD/MM/YYYY" in item.question

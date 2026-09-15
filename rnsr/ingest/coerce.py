@@ -22,6 +22,17 @@ NULL_TOKENS = frozenset({"", "-", "–", "—", "n/a", "na", "n.a.", "nm", "n.m.
 
 _CURRENCY = "$€£¥₹"
 _MINUS_CHARS = "−–—"  # unicode minus/dashes used as negative signs
+# Trailing footnote only when a digit precedes it, so "(1,234)" stays a value.
+_FOOTNOTE = re.compile(
+    r"(?<=\d)(?:\*+|†|‡|§|\(\d{1,3}\)|\[\d{1,3}\]|[¹²³⁴⁵⁶⁷⁸⁹⁰]+)\s*$"
+)
+_SCALE_SUFFIX = re.compile(r"\s*(?P<sfx>bn|mm|k|m|b)\s*$", re.I)
+_SCALE = {"k": 1e3, "m": 1e6, "mm": 1e6, "b": 1e9, "bn": 1e9}
+_CAPTION_SCALE = (
+    (re.compile(r"\bin thousands\b|\(?000s\)?", re.I), 1e3),
+    (re.compile(r"\bin millions\b|\(?\$?m\)", re.I), 1e6),
+    (re.compile(r"\bin billions\b", re.I), 1e9),
+)
 
 # Unambiguous separator-style evidence.
 _US_PATTERN = re.compile(r"^\d{1,3}(,\d{3})+(\.\d+)?$")           # 1,234.56
@@ -57,12 +68,24 @@ def is_null_cell(raw: str | None) -> bool:
     return raw is None or raw.strip().lower() in NULL_TOKENS
 
 
-def _clean(raw: str) -> tuple[str, set[str], bool]:
-    """Strip decoration, returning (bare numeric text, features, negative)."""
+def caption_scale(caption: str | None) -> float:
+    """Unit multiplier implied by a table caption ('in thousands' → 1000)."""
+    if not caption:
+        return 1.0
+    for pat, factor in _CAPTION_SCALE:
+        if pat.search(caption):
+            return factor
+    return 1.0
+
+
+def _clean(raw: str) -> tuple[str, set[str], bool, float]:
+    """Strip decoration: (bare numeric text, features, negative, scale)."""
     s = raw.strip()
     features: set[str] = set()
     negative = False
+    scale = 1.0
 
+    s = _FOOTNOTE.sub("", s).strip()
     if s.startswith("(") and s.endswith(")"):
         s = s[1:-1].strip()
         features.add("parens_negative")
@@ -70,6 +93,14 @@ def _clean(raw: str) -> tuple[str, set[str], bool]:
     if s.endswith("%"):
         s = s[:-1].strip()
         features.add("percent")
+    m = _SCALE_SUFFIX.search(s)
+    if m and not (m.group("sfx").lower() == "m" and "," in s):
+        # '1.2bn' / '12k'; do not treat the 'm' in a currency-less '1,234' as millions
+        token = m.group("sfx").lower()
+        if re.search(r"\d", s[: m.start()]):
+            scale = _SCALE[token]
+            s = s[: m.start()].strip()
+            features.add("scale")
     for ch in _MINUS_CHARS:
         if s.startswith(ch):
             s = "-" + s[1:]
@@ -84,7 +115,7 @@ def _clean(raw: str) -> tuple[str, set[str], bool]:
         if s.startswith("-"):  # currency before sign, e.g. "$-5"
             negative = True
             s = s[1:].strip()
-    return s, features, negative
+    return s, features, negative, scale
 
 
 def detect_style(raw_values: list[str | None]) -> str:
@@ -97,7 +128,7 @@ def detect_style(raw_values: list[str | None]) -> str:
     for raw in raw_values:
         if is_null_cell(raw):
             continue
-        s, _, _ = _clean(raw)  # type: ignore[arg-type]
+        s, _, _, _ = _clean(raw)  # type: ignore[arg-type]
         if _EU_STRONG.match(s) or (re.match(r"^\d+,\d{1,2}$", s) and not _US_PATTERN.match(s)):
             eu += 1
         elif _US_PATTERN.match(s) or re.match(r"^\d+\.\d+$", s):
@@ -105,13 +136,18 @@ def detect_style(raw_values: list[str | None]) -> str:
     return "eu" if eu > us else "us"
 
 
-def coerce_cell(raw: str, style: str = "us") -> float | None:
-    """Coerce one cell to a float, or None if it does not parse as a number."""
-    s, _, negative = _clean(raw)
+def coerce_cell(raw: str, style: str = "us", *, unit_scale: float = 1.0) -> float | None:
+    """Coerce one cell to a float, or None if it does not parse as a number.
+
+    Percents stay in percentage points (45% → 45), not fractions. Scale
+    suffixes (1.2bn) and caption unit_scale ('in thousands') multiply the
+    value so SQL totals match the document's implied units.
+    """
+    s, features, negative, scale = _clean(raw)
     s = s.replace(".", "").replace(",", ".") if style == "eu" else s.replace(",", "")
     if not s or not re.fullmatch(r"\d+(\.\d+)?", s):
         return None
-    value = float(s)
+    value = float(s) * scale * (unit_scale if "percent" not in features else 1.0)
     return -value if negative else value
 
 
@@ -119,6 +155,7 @@ def coerce_column(
     raw_values: list[str | None],
     threshold: float = 0.95,
     style: str | None = None,
+    unit_scale: float = 1.0,
 ) -> CoercedColumn:
     """Apply the >=threshold rule to a whole column (§3.2).
 
@@ -136,8 +173,8 @@ def coerce_column(
     for i, raw in enumerate(raw_values):
         if is_null_cell(raw):
             continue
-        _, feats, _ = _clean(raw)  # type: ignore[arg-type]
-        value = coerce_cell(raw, style)  # type: ignore[arg-type]
+        _, feats, _, _ = _clean(raw)  # type: ignore[arg-type]
+        value = coerce_cell(raw, style, unit_scale=unit_scale)  # type: ignore[arg-type]
         if value is not None:
             coerced[i] = value
             features |= feats

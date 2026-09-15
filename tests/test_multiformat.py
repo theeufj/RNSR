@@ -119,6 +119,25 @@ class TestOfficeParser:
         assert parsed.tables[0].header == ["Segment", "Revenue"]
         assert parsed.tables[0].rows == [["Widgets", "1234"], ["Gadgets", "2000"]]
 
+    def test_xlsx_sheets_keep_page_and_caption(self, tmp_path):
+        pytest.importorskip("anydoc")
+        from rnsr.eval.datasets.office_gen import write_xlsx
+        from rnsr.ingest.office import parse_office
+        from rnsr.ingest.tables import merge_multipage
+
+        path = tmp_path / "budget.xlsx"
+        write_xlsx(path, {
+            "Q1": [["Revenue", "Cost"], [10, 4]],
+            "Q2": [["Revenue", "Cost"], [12, 5]],
+            "Q3": [["Revenue", "Cost"], [14, 6]],
+            "Q4": [["Revenue", "Cost"], [16, 7]],
+        })
+        parsed = parse_office(path)
+        assert parsed.n_pages >= 4
+        captions = {t.caption for t in parsed.tables}
+        assert {"Q1", "Q2", "Q3", "Q4"} <= captions
+        assert len(merge_multipage(parsed.tables)) == len(parsed.tables)
+
     def test_rtf_text(self, tmp_path):
         pytest.importorskip("anydoc")
         from rnsr.ingest.office import parse_office
@@ -192,15 +211,57 @@ class TestTextlikeParsers:
         assert "Hello there" in texts
         assert "bad()" not in texts
 
+    def test_html_file(self, tmp_path):
+        from rnsr.ingest.textlike import parse_html
+
+        f = tmp_path / "page.html"
+        f.write_text("<html><body><h1>Hello</h1><p>World</p></body></html>")
+        parsed = parse_html(f)
+        assert parsed.parser == "html"
+        assert any("Hello" in e.text or "World" in e.text for e in parsed.elements)
+
+    def test_zip_members_queued(self, tmp_path):
+        from rnsr.ingest.textlike import parse_zip
+
+        inner = tmp_path / "inner.txt"
+        inner.write_text("secret token zebra")
+        zpath = tmp_path / "pack.zip"
+        with zipfile.ZipFile(zpath, "w") as zf:
+            zf.write(inner, arcname="inner.txt")
+        parsed = parse_zip(zpath)
+        assert parsed.pending_attachments
+        assert parsed.pending_attachments[0][0] == "inner.txt"
+
+    def test_eml_attachment_becomes_child_doc(self, tmp_path):
+        from rnsr.ingest.dispatch import parse_any
+        from rnsr.ingest.expand import expand_document
+
+        msg_path = make_eml(tmp_path / "mail.eml")
+        # replace with a real text attachment
+        from email.message import EmailMessage
+        msg = EmailMessage()
+        msg["Subject"] = "Invoice"
+        msg["From"] = "a@b.test"
+        msg.set_content("See attached.")
+        msg.add_attachment(b"Widget unit price: $47\n", maintype="text",
+                           subtype="plain", filename="invoice_widget.txt")
+        msg_path.write_bytes(bytes(msg))
+        docs = expand_document(parse_any(msg_path), parse_any)
+        assert len(docs) == 2
+        child = next(d for d in docs if d.parent_doc_id)
+        assert child.parent_doc_id == docs[0].doc_id
+        assert "47" in " ".join(e.text for e in child.elements)
+
 
 # --- dispatch ----------------------------------------------------------------
 
 
 class TestDispatch:
     def test_is_ingestable(self):
-        for name in ("a.pdf", "a.docx", "a.XLSX", "a.md", "a.eml", "a.txt", "a.csv"):
+        for name in ("a.pdf", "a.docx", "a.XLSX", "a.md", "a.eml", "a.txt",
+                     "a.csv", "a.html", "a.zip", "a.png", "a.msg"):
             assert is_ingestable(name), name
-        for name in ("a.exe", "a.png", "a.db", "a"):
+        for name in ("a.exe", "a.db", "a"):
             assert not is_ingestable(name), name
 
     def test_routes_by_extension(self, tmp_path):

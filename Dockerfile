@@ -2,15 +2,17 @@
 #
 # Two things this image exists to guarantee, beyond "it runs somewhere":
 #
-#  1. A non-root user. The sandbox audit hook (rnsr/env/fsguard.py) confines
-#     model-written code to the corpus, but defence in depth means the process
-#     it escapes into should own nothing worth taking. Run one container per
-#     tenant and the filesystem boundary is the kernel's, not Python's.
+#  1. A non-root service plus bubblewrap for each generated-code child.
+#     The host/container runtime must permit unprivileged user namespaces;
+#     otherwise answering fails closed. Run one container per tenant.
 #  2. No provider keys baked in. Keys arrive at runtime (env or secret mount)
 #     and are dropped from the sandbox child's environment on spawn.
 #
 # Build:  docker build -t rnsr:latest .
-# Serve:  docker run --rm -p 8000:8000 -e ANTHROPIC_API_KEY=... \
+# Serve:  docker run --rm -p 127.0.0.1:8000:8000 -e ANTHROPIC_API_KEY \
+#           --security-opt seccomp=deploy/seccomp-bubblewrap.json \
+#           -e RNSR_SERVICE_TOKEN -e RNSR_SERVICE_CORPUS_ROOT=/data/corpora \
+#           -v "$PWD/corpora:/data/corpora:ro" \
 #           -v "$PWD/runs:/data/runs" rnsr:latest
 # CLI:    docker run --rm -e ANTHROPIC_API_KEY=... -v "$PWD:/work" \
 #           rnsr:latest rnsr answer-csv --corpus /work/matter ...
@@ -27,7 +29,7 @@ ENV PYTHONUNBUFFERED=1 \
 # and the layout-ML tier is deliberately out of this image — a service that
 # answers questions should not carry an ML ingest stack it may never use.
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends tini \
+    && apt-get install -y --no-install-recommends tini bubblewrap \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app

@@ -11,11 +11,15 @@ Environment variables (see .env.example) override defaults via
 
 from __future__ import annotations
 
+import math
 import os
+import warnings
 from dataclasses import dataclass, field, fields
 from pathlib import Path
+from typing import Literal, get_type_hints
 
 from dotenv import load_dotenv
+from pydantic import TypeAdapter
 
 _ENV_PREFIX = "RNSR_"
 
@@ -23,7 +27,7 @@ _ENV_PREFIX = "RNSR_"
 @dataclass
 class Settings:
     # --- model roles (resolved to (provider, model) by rnsr.llm.router) ---
-    provider: str = "auto"          # openai | anthropic | gemini | auto
+    provider: Literal["openai", "anthropic", "gemini", "auto"] = "auto"
     root_model: str = ""            # empty -> provider default
     sub_model: str = ""
     embed_model: str = ""
@@ -48,14 +52,13 @@ class Settings:
     # forensic record; 'redacted' replaces document-bearing values with a
     # length + digest; 'metadata' drops them. A Fernet key encrypts each line
     # at rest (needs the 'secure' extra).
-    trajectory_content: str = "full"
-    trajectory_key: str = ""
+    trajectory_content: Literal["full", "redacted", "metadata"] = "full"
+    trajectory_key: str = field(default="", repr=False)
     trajectory_retention_days: float = 0.0    # 0 keeps trajectories forever
 
     # --- containment ---
-    # Confines model-written code to the corpus artifact (rnsr.env.fsguard).
-    # Only turn this off to debug the guard itself: matter documents are
-    # untrusted input, and the cell that reads them can also write code.
+    # Supplementary Python audit hook. OS isolation is always required,
+    # including when this switch is disabled for guard debugging.
     sandbox_fs_guard: bool = True
 
     # --- ingestion validation (§3.3) ---
@@ -78,7 +81,7 @@ class Settings:
     # auto: transcribe scanned pages when a vision-capable key is present
     # always: require a vision provider (fail if missing)
     # never: leave scans as visible gaps
-    transcribe_scans: str = "auto"
+    transcribe_scans: Literal["auto", "always", "never"] = "auto"
 
     # --- derived cell index (engine-poc-plan Stage 1) ---
     # Populates `cells` at ingest so rung-0 sweeps run one indexed scan
@@ -102,40 +105,58 @@ class Settings:
     # the replay parity gate (docs/search-contract.md; Phase 0 ledger).
     embed_auto_on_docs: int = 200
 
+    # HTTP deployments are one authorization scope per process. Both are
+    # required by create_app; the liveness endpoint alone is public.
+    service_token: str = field(default="", repr=False)
+    service_corpus_root: Path | None = None
+    service_max_jobs: int = 200
+
     # --- misc ---
     llm_seed: int = 42
     run_dir: Path = field(default_factory=lambda: Path("runs"))
     log_level: str = "INFO"
-    log_format: str = "text"        # text for terminals, json for log shippers
+    log_format: Literal["text", "json"] = "text"
+
+    def __post_init__(self) -> None:
+        hints = get_type_hints(type(self))
+        for f in fields(self):
+            value = TypeAdapter(hints[f.name]).validate_python(getattr(self, f.name))
+            setattr(self, f.name, value)
+            if (isinstance(value, (int, float)) and not isinstance(value, bool)
+                    and (not math.isfinite(value) or value < 0)):
+                raise ValueError(f"{f.name} must be finite and non-negative")
+        for name in ("max_wall_s", "cell_timeout_s", "sub_concurrency", "chunk_chars",
+                     "sub_call_char_budget", "annotate_batch_size", "rescore_candidates",
+                     "service_max_jobs"):
+            if getattr(self, name) <= 0:
+                raise ValueError(f"{name} must be positive")
+        if self.chunk_overlap >= self.chunk_chars:
+            raise ValueError("chunk_overlap must be smaller than chunk_chars")
+        for name in ("table_confidence_threshold", "coerce_threshold",
+                     "health_min_validation_rate", "health_max_parse_failed_rate"):
+            if getattr(self, name) > 1:
+                raise ValueError(f"{name} must be between 0 and 1")
 
     @classmethod
     def from_env(cls, dotenv_path: str | Path | None = None) -> Settings:
         """Build Settings from environment, loading .env if present.
 
-        Numeric/str fields map to RNSR_<UPPER_NAME>; provider also accepts
-        the legacy LLM_PROVIDER name.
+        Fields map to RNSR_<UPPER_NAME> using their resolved type annotations.
+        LLM_PROVIDER is deprecated and will be removed in version 2.0.
         """
         load_dotenv(dotenv_path or Path(".env"), override=False)
         kwargs: dict = {}
+        hints = get_type_hints(cls)
         for f in fields(cls):
             raw = os.environ.get(_ENV_PREFIX + f.name.upper())
             if raw is None or raw == "":
                 continue
-            if f.type in ("int",):
-                kwargs[f.name] = int(raw)
-            elif f.type in ("float",):
-                kwargs[f.name] = float(raw)
-            elif f.type in ("bool",):
-                # every non-empty string is truthy, so a bare cast would make
-                # RNSR_SANDBOX_FS_GUARD=false silently enable the guard's
-                # opposite of what the operator asked for
-                kwargs[f.name] = raw.strip().lower() in ("1", "true", "yes", "on")
-            elif f.name == "run_dir":
-                kwargs[f.name] = Path(raw)
-            else:
-                kwargs[f.name] = raw
+            kwargs[f.name] = TypeAdapter(hints[f.name]).validate_python(raw)
         if "provider" not in kwargs:
             legacy = os.environ.get("LLM_PROVIDER")
             if legacy:
+                warnings.warn("LLM_PROVIDER is deprecated; use RNSR_PROVIDER. "
+                              "Compatibility ends in version 2.0.",
+                              DeprecationWarning, stacklevel=2)
                 kwargs["provider"] = legacy
         return cls(**kwargs)

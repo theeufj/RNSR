@@ -8,6 +8,8 @@ import math
 import re
 from dataclasses import asdict, dataclass
 
+from rnsr.answer_semantics import is_negative, needs_review
+
 
 @dataclass
 class EvalResult:
@@ -35,11 +37,11 @@ class EvalResult:
 _NUM = re.compile(r"-?[\d,]+(?:\.\d+)?")
 
 
-def _normalize(text: str) -> str:
+def normalize_answer(text: str) -> str:
     return re.sub(r"\s+", " ", str(text).strip().lower()).strip(" .")
 
 
-def _as_number(text: str) -> float | None:
+def as_number(text: str) -> float | None:
     m = _NUM.search(str(text).replace(",", ""))
     try:
         return float(m.group()) if m else None
@@ -56,18 +58,18 @@ def score_answer(predicted: object, gold: str, *, numeric_rel_tol: float = 0.01)
     """
     if predicted is None:
         return False
-    p, g = _normalize(str(predicted)), _normalize(gold)
+    p, g = normalize_answer(str(predicted)), normalize_answer(gold)
     if p == g:
         return True
-    gn = _as_number(g)
+    gn = as_number(g)
     if gn is not None:
-        pn = _as_number(p)
+        pn = as_number(p)
         if pn is None:
             return False
         if gn == 0:
             return pn == 0
         return abs(pn - gn) / abs(gn) <= numeric_rel_tol
-    return (g in p or p in g) and len(p) < 4 * len(g)
+    return bool(p and g) and (g in p or p in g) and len(p) < 4 * len(g)
 
 
 _JUDGE_PROMPT = """\
@@ -121,18 +123,11 @@ def summarize(results: list[EvalResult]) -> dict:
               if r.expect == "absent" or r.task_class in ("absent", "absent-clause")]
     value_items = [r for r in results if r not in absent]
 
-    def _negative(text: str | None) -> bool:
-        if text is None:
-            return True
-        n = _normalize(text)
-        return n in ("", "no", "n/a", "na", "none", "unknown", "not found",
-                     "not_found") or n.startswith("not found")
-
     confident_wrong = sum(
         1 for r in absent
-        if r.predicted is not None and not _negative(r.predicted) and not r.correct
+        if r.predicted is not None and not is_negative(r.predicted) and not r.correct
     )
-    abstain = sum(1 for r in value_items if _negative(r.predicted))
+    abstain = sum(1 for r in value_items if is_negative(r.predicted))
     misses = [r for r in results if not r.correct]
     cause_counts: dict[str, int] = {}
     cause_x_class: dict[str, dict[str, int]] = {}
@@ -170,7 +165,7 @@ def summarize(results: list[EvalResult]) -> dict:
             for t in sorted({r.tier for r in results if r.tier})
         },
         "review_recall": (
-            (sum(1 for r in misses if r.tier in ("low", "medium")) / len(misses))
+            (sum(1 for r in misses if needs_review(r.tier)) / len(misses))
             if misses else 1.0
         ),
         "auto_accept_rate": (

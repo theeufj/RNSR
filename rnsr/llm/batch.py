@@ -9,6 +9,7 @@ semaphore, the retry policy, and cost/count accounting via callbacks.
 from __future__ import annotations
 
 import asyncio
+import time
 from collections.abc import Callable
 
 from tenacity import (
@@ -18,7 +19,9 @@ from tenacity import (
     wait_exponential,
 )
 
+from rnsr.errors import BudgetExhausted
 from rnsr.llm.base import LLMClient, LLMResponse, Usage
+from rnsr.llm.governor import SpendCeilingExceeded
 
 # Called after every completed sub-call; the harness BudgetLedger hooks in here.
 UsageCallback = Callable[[Usage], None]
@@ -42,6 +45,8 @@ async def map_prompts(
     concurrency: int = 16,
     attempts: int = 4,
     on_usage: UsageCallback | None = None,
+    on_attempt: Callable[[], None] | None = None,
+    deadline: float | None = None,
 ) -> list[LLMResponse | None]:
     """Run all prompts concurrently under a semaphore; order-preserving.
 
@@ -49,6 +54,8 @@ async def map_prompts(
     whole batch — callers decide whether partial coverage is acceptable
     (semantic_annotate reports it; verify paths treat None as failure).
     """
+    if concurrency < 1 or attempts < 1:
+        raise ValueError("concurrency and attempts must be positive")
     sem = asyncio.Semaphore(concurrency)
 
     async def one(prompt: str) -> LLMResponse | None:
@@ -61,14 +68,27 @@ async def map_prompts(
                     reraise=True,
                 ):
                     with attempt:
+                        if on_attempt:
+                            on_attempt()
                         resp = await client.complete(
                             prompt, model=model, system=system, max_tokens=max_tokens
                         )
                         if on_usage:
                             on_usage(resp.usage)
                         return resp
+            except (BudgetExhausted, SpendCeilingExceeded):
+                raise
             except Exception:
                 return None
         return None
 
-    return list(await asyncio.gather(*(one(p) for p in prompts)))
+    tasks = [asyncio.create_task(one(p)) for p in prompts]
+    try:
+        async with asyncio.timeout(None if deadline is None else max(0, deadline - time.monotonic())):
+            return list(await asyncio.gather(*tasks))
+    finally:
+        # A budget failure in one prompt must stop siblings and their retries.
+        for task in tasks:
+            if not task.done():
+                task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)

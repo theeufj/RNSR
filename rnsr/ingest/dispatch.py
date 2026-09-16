@@ -1,8 +1,7 @@
 """Extension-based parser dispatch for multi-format ingest.
 
 Two tiers mirroring the PDF split: `parse_any` (quality: Docling for
-PDFs) and `parse_any_fast` (scale: pdfium for PDFs, stat-based identity
-for resume matching). Non-PDF formats use the same parser in both tiers —
+PDFs) and `parse_any_fast` (scale: pdfium for PDFs). Non-PDF formats use the same parser in both tiers —
 office parsing is milliseconds per document, so there is nothing to trade
 away at scale. Both entry points are module-level functions, picklable
 for bulk ingest's process pool.
@@ -79,16 +78,10 @@ def parse_any(path: str | Path) -> ParsedDocument:
 
 
 def parse_any_fast(path: str | Path) -> ParsedDocument:
-    """Scale tier: pdfium for PDFs; identity is stat-based to match bulk
-    ingest's resume check (no byte reads over the corpus)."""
+    """Scale tier: fast PDF extraction with the same content identity contract."""
     path = Path(path)
-    if path.suffix.lower() in PDF_EXTENSIONS:
-        parsed = parse_pdf_fast(path)
-        from rnsr.ingest.parse import _sha256
-
-        parsed.content_sha256 = _sha256(path)
-        return parsed
-    parsed = _parse_non_pdf(path)
+    parsed = (parse_pdf_fast(path) if path.suffix.lower() in PDF_EXTENSIONS
+              else _parse_non_pdf(path))
     parsed.content_sha256 = parsed.content_sha256 or parsed.sha256
-    parsed.sha256 = stat_identity(path)
+    parsed.source_identity = stat_identity(path)
     return parsed

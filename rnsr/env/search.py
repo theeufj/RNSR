@@ -14,15 +14,31 @@ import contextlib
 import json
 import re
 import sqlite3
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from typing import Literal, NotRequired, TypedDict
 
-_TOKEN = re.compile(r"[A-Za-z][A-Za-z0-9_-]{2,}")
+from rnsr.db.schema import PROVENANCE_COLUMNS, quote_ident
+from rnsr.harness.prompts.search import render_expansion, render_sweep
+
+TOKEN = re.compile(r"[A-Za-z][A-Za-z0-9_-]{2,}")
 _NUMBER = re.compile(r"-?\d[\d,]*(?:\.\d+)?")
-_STOP = frozenset(["the", "and", "for", "was", "were", "with", "what", "which", "how", "many", "much", "does", "did"])
+STOP_WORDS = frozenset(["the", "and", "for", "was", "were", "with", "what", "which", "how", "many", "much", "does", "did"])
 
 
-def _terms(query: str) -> list[str]:
-    return [t for t in _TOKEN.findall(query) if t.lower() not in _STOP][:12]
+def terms(query: str) -> list[str]:
+    return [t for t in TOKEN.findall(query) if t.lower() not in STOP_WORDS][:12]
+
+
+class SearchHit(TypedDict):
+    rung: int
+    kind: Literal["sql", "chunk", "estimate"]
+    text: str
+    score: float | None
+    provenance: dict
+    doc_id: NotRequired[str]
+    table: NotRequired[str]
+    rows: NotRequired[dict]
+    page: NotRequired[int | None]
 
 
 @dataclass
@@ -33,10 +49,18 @@ class Ladder:
     rpc: object                    # Child.rpc for rungs 3/5
     expansion_max_rounds: int = 3
     sweep_chunk_batch: int = 20    # chunks per rung-5 sub-call
+    enable_embeddings: bool = True
+    rebuild_cells: bool = False  # public replay/validation seam
+    _cell_relation: str | None = field(default=None, init=False, repr=False)
+    _embedding_store: object | None = field(default=None, init=False, repr=False)
 
     # --- public entry --------------------------------------------------------
 
-    def search(self, query: str, rung: int | None = None, k: int = 10) -> list[dict]:
+    def search(self, query: str, rung: int | None = None, k: int = 10) -> list[SearchHit]:
+        if isinstance(k, bool) or not isinstance(k, int) or not 0 <= k <= 1000:
+            raise ValueError("k must be an integer between 0 and 1000")
+        if k == 0:
+            return []
         if rung is not None:
             return self._run_rung(rung, query, k)
         for r in (0, 1, 2, 3, 4):
@@ -50,7 +74,7 @@ class Ladder:
                 return hits
         n_chunks = self.conn.execute("SELECT count(*) FROM chunks").fetchone()[0]
         return [{
-            "rung": 5, "kind": "estimate",
+            "rung": 5, "kind": "estimate", "text": "", "score": None, "provenance": {},
             "estimated_sub_calls": -(-n_chunks // self.sweep_chunk_batch),
             "note": ("rungs 0-4 found nothing. The exhaustive sweep is "
                      "available via search(query, rung=5) at the estimated "
@@ -64,6 +88,9 @@ class Ladder:
         if fn is None:
             raise ValueError(f"no such rung: {rung} (0,1,2,3,4,5)")
         hits = fn(query, k)
+        for hit in hits:
+            hit.setdefault("score", None)
+            hit.setdefault("provenance", {})
         self._log(rung, query, len(hits))
         return hits
 
@@ -76,31 +103,43 @@ class Ladder:
     # --- rung 0: manifest-guided SQL ----------------------------------------
 
     def _rung0_sql(self, query: str, k: int) -> list[dict]:
-        terms = [t.lower() for t in _terms(query)]
+        query_terms = [t.lower() for t in terms(query)]
         numbers = [n.replace(",", "") for n in _NUMBER.findall(query)]
-        if self._cells_ready():
-            return self._rung0_cells(terms, numbers, k)
-        return self._rung0_scan(terms, numbers, k)
+        return self._rung0_cells(query_terms, numbers, k)
 
     def _cells_ready(self) -> bool:
-        """Does this artifact carry the populated derived cell index?
+        """Whether the source carries its optional persisted derived index."""
+        return bool(self.conn.execute("SELECT 1 FROM cells LIMIT 1").fetchone())
 
-        Cached: presence is fixed for the connection's lifetime. Artifacts
-        ingested before Stage 1 (or with cells_index off) fall back to the
-        legacy per-table sweep — both paths stay live (engine-poc-plan).
-        """
-        ready = getattr(self, "_cells_ok", None)
-        if ready is None:
-            try:
-                ready = bool(self.conn.execute(
-                    "SELECT 1 FROM cells LIMIT 1").fetchone())
-            except sqlite3.Error:
-                ready = False
-            self._cells_ok = ready
-        return ready
+    def _cell_source(self) -> str:
+        if self._cell_relation is not None:
+            return self._cell_relation
+        if not self.rebuild_cells and self._cells_ready():
+            self._cell_relation = "main.cells"
+            return self._cell_relation
+        # Old/opt-out artifacts get a private derived projection, not a
+        # second search algorithm. TEMP tables are writable on a ro handle.
+        self.conn.execute("CREATE TEMP TABLE IF NOT EXISTS search_cells ("
+                          "table_name TEXT,row_idx INTEGER,text_value TEXT,num_value REAL)")
+        self.conn.execute("DELETE FROM temp.search_cells")
+        for table in self.manifest.get("tables", []):
+            name = table["table_name"]
+            for col in table.get("schema", []):
+                if col.get("annotation"):
+                    continue
+                value = quote_ident(col["name"])
+                raw = quote_ident(col.get("raw_col") or col["name"])
+                rows = self.conn.execute(
+                    f"SELECT rowid,{value},{raw} FROM {quote_ident(name)}")
+                self.conn.executemany("INSERT INTO temp.search_cells VALUES (?,?,?,?)", [
+                    (name, rid, None if text is None else str(text).lower(),
+                     val if col.get("raw_col") is not None else None)
+                    for rid, val, text in rows if val is not None or text is not None])
+        self._cell_relation = "temp.search_cells"
+        return self._cell_relation
 
     def _routed_tables(self, terms: list[str], numbers: list[str]) -> list[str]:
-        """Legacy rung-0 routing gate: probe only trusted tables whose
+        """Rung-0 routing gate: probe only trusted tables whose
         column names or caption overlap the query, or any trusted table
         when the query carries numbers.
 
@@ -125,7 +164,7 @@ class Ladder:
     def _rung0_cells(self, terms: list[str], numbers: list[str],
                      k: int) -> list[dict]:
         """One scan of the derived cells index instead of LIKE over every
-        routed t_* table — with legacy hit semantics preserved exactly:
+        routed t_* table — with stable hit semantics:
 
         - routing gate as in the legacy path (_routed_tables);
         - text probes match text cells only (num_value IS NULL), the way
@@ -154,7 +193,7 @@ class Ladder:
             "  SELECT table_name, row_idx,"
             "         ROW_NUMBER() OVER (PARTITION BY table_name"
             "                            ORDER BY row_idx) AS rn"
-            "  FROM (SELECT DISTINCT table_name, row_idx FROM cells"
+            f"  FROM (SELECT DISTINCT table_name, row_idx FROM {self._cell_source()}"
             "        WHERE (" + " OR ".join(clauses) + ")"
             "        AND table_name IN ("
             + ",".join("?" * len(routed)) + "))"
@@ -166,7 +205,7 @@ class Ladder:
         for table, row_idx in located:
             try:
                 cur = self.conn.execute(
-                    f'SELECT rowid, * FROM "{table}" WHERE rowid = ?',
+                    f"SELECT rowid, * FROM {quote_ident(table)} WHERE rowid = ?",
                     (row_idx,))
             except sqlite3.Error:
                 continue
@@ -182,7 +221,7 @@ class Ladder:
 
     def _sql_hit(self, name: str, record: dict) -> dict:
         data_cols = {k: v for k, v in record.items()
-                     if k not in ("rowid", "_page", "_bbox", "_extractor")
+                     if k != "rowid" and k not in PROVENANCE_COLUMNS
                      and not k.endswith("__raw")}
         return {
             "rung": 0, "kind": "sql", "table": name, "rows": record,
@@ -195,51 +234,11 @@ class Ladder:
                            "_bbox": record.get("_bbox")},
         }
 
-    def _rung0_scan(self, terms: list[str], numbers: list[str],
-                    k: int) -> list[dict]:
-        """Legacy sweep: manifest-routed LIKE over each t_* table."""
-        hits: list[dict] = []
-        for table in self.manifest.get("tables", []):
-            if table.get("status") == "untrusted":
-                continue
-            name = table["table_name"]
-            schema = table.get("schema", [])
-            col_names = {c["name"] for c in schema}
-            # route to tables whose column names/caption overlap the query
-            caption = (table.get("title") or "").lower()
-            overlap = [t for t in terms
-                       if any(t in c for c in col_names) or t in caption]
-            if not overlap and not numbers:
-                continue
-            clauses, params = [], []
-            for c in schema:
-                if c["type"] == "TEXT":
-                    for t in terms:
-                        clauses.append(f'lower("{c["name"]}") LIKE ?')
-                        params.append(f"%{t}%")
-                elif numbers:
-                    for n in numbers:
-                        clauses.append(f'"{c["name"]}" = ?')
-                        params.append(float(n))
-            if not clauses:
-                continue
-            sql = (f'SELECT rowid, * FROM "{name}" WHERE '
-                   + " OR ".join(clauses) + f" LIMIT {int(k)}")
-            try:
-                cur = self.conn.execute(sql, params)
-            except sqlite3.Error:
-                continue
-            cols = [d[0] for d in cur.description]
-            for row in cur.fetchall():
-                record = dict(zip(cols, row, strict=True))
-                hits.append(self._sql_hit(name, record))
-        return hits[:k]
-
     # --- rung 1: grep with priors -------------------------------------------
 
-    def _rung1_grep(self, query: str, k: int, terms: list[str] | None = None) -> list[dict]:
+    def _rung1_grep(self, query: str, k: int, expanded_terms: list[str] | None = None) -> list[dict]:
         hits: list[dict] = []
-        for term in (terms or _terms(query)):
+        for term in (expanded_terms or terms(query)):
             try:
                 pattern = re.compile(re.escape(term), re.IGNORECASE)
             except re.error:
@@ -271,8 +270,8 @@ class Ladder:
     def _rung2_fts(self, query: str, k: int) -> list[dict]:
         from rnsr.db import fts
 
-        terms = _terms(query)
-        match_query = " OR ".join(terms) if terms else query
+        query_terms = terms(query)
+        match_query = " OR ".join(query_terms) if query_terms else query
         return [{
             "rung": 2, "kind": "chunk", "doc_id": h["doc_id"], "page": h["page"],
             "text": h["text"], "score": h["score"],
@@ -284,19 +283,12 @@ class Ladder:
     # --- rung 3: sub-LM expansion loop ---------------------------------------
 
     def _rung3_expand(self, query: str, k: int) -> list[dict]:
-        tried: set[str] = {t.lower() for t in _terms(query)}
+        tried: set[str] = {t.lower() for t in terms(query)}
         frontier = list(tried)
         for _ in range(self.expansion_max_rounds):
             near_misses = self._rung2_fts(" ".join(frontier), 5)
             context = "\n".join(h["text"][:300] for h in near_misses[:5])
-            prompt = (
-                f"Search query: {query}\n"
-                f"Terms already tried: {', '.join(sorted(tried))}\n"
-                f"Nearby text from the corpus:\n{context}\n\n"
-                "Propose up to 5 NEW search terms (synonyms, abbreviations, "
-                "formatting variants) likely to find the answer in this "
-                "corpus. Return one term per line, nothing else."
-            )
+            prompt = render_expansion(query, tried, context)
             reply = self.rpc({"op": "llm_batch", "prompts": [prompt],
                               "model": "sub"})["results"][0]
             new_terms = [t.strip().strip("-• ").lower()
@@ -305,7 +297,7 @@ class Ladder:
             if not new_terms:
                 break
             tried.update(new_terms)
-            hits = self._rung1_grep(query, k, terms=new_terms)
+            hits = self._rung1_grep(query, k, expanded_terms=new_terms)
             if hits:
                 for h in hits:
                     h["rung"] = 3
@@ -324,7 +316,11 @@ class Ladder:
         def embed(texts: list[str]) -> list[list[float]]:
             return self.rpc({"op": "embed", "texts": texts})["vectors"]
 
-        store = EmbeddingStore(self.conn)
+        if not self.enable_embeddings:
+            return []
+        if self._embedding_store is None:
+            self._embedding_store = EmbeddingStore(self.conn, cache_conn=sqlite3.connect(""))
+        store = self._embedding_store
         if not store.ready():
             stats = store.ensure(embed, model="role:embed")
             self._log(4, f"(built cache: {stats})", 0)
@@ -347,7 +343,8 @@ class Ladder:
 
     def _rung5_sweep(self, query: str, k: int) -> list[dict]:
         rows = self.conn.execute(
-            "SELECT chunk_id, doc_id, page, text FROM chunks ORDER BY chunk_id"
+            "SELECT chunk_id, doc_id, page, text, char_start, char_end "
+            "FROM chunks ORDER BY chunk_id"
         ).fetchall()
         prompts = []
         groups: list[list] = []
@@ -357,12 +354,7 @@ class Ladder:
             numbered = "\n\n".join(
                 f"[{c[0]}] (doc={c[1]}, page={c[2]})\n{c[3]}" for c in group
             )
-            prompts.append(
-                f"Question: {query}\n\nChunks:\n{numbered}\n\n"
-                "List the chunk ids (the numbers in brackets) that contain "
-                "information answering the question, one per line. If none "
-                "do, reply NONE."
-            )
+            prompts.append(render_sweep(query, numbered))
         replies = self.rpc({"op": "llm_batch", "prompts": prompts,
                             "model": "sub"})["results"]
         chunk_by_id = {c[0]: c for c in rows}
@@ -374,10 +366,7 @@ class Ladder:
                     hits.append({
                         "rung": 5, "kind": "chunk", "doc_id": c[1], "page": c[2],
                         "text": c[3],
-                        "provenance": {"doc_id": c[1], "chunk_id": c[0]},
+                        "provenance": {"doc_id": c[1], "chunk_id": c[0],
+                                       "char_start": c[4], "char_end": c[5]},
                     })
         return hits[:k]
-
-
-def _dumps(obj) -> str:
-    return json.dumps(obj, default=repr)

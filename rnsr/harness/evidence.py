@@ -10,6 +10,9 @@ is a deterministic function of that record, documented in
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
+from typing import Literal
+
+from rnsr.answer_semantics import QueryStatus, Resolution, TrustTier
 
 TIERS = ("high", "medium", "low")
 SOURCES = ("final", "final_var", "recovered")
@@ -46,21 +49,21 @@ class AnswerEvidence:
     quotes_verified: int = 0
     third_strike: bool = False
     zero_quotes: bool = False
-    negative_audit: str = "none"          # none | probed | flagged | survived
+    negative_audit: Literal["none", "probed", "flagged", "survived"] = "none"          # none | probed | flagged | survived
     pushbacks: int = 0
-    source: str = "final"                 # final | final_var | recovered
+    source: Literal["final", "final_var", "recovered"] = "final"                 # final | final_var | recovered
     rungs_used: list[int] = field(default_factory=list)
     docs_cited: list[str] = field(default_factory=list)
     cited_table_statuses: list[str] = field(default_factory=list)
     agreement: float | None = None
-    resolved_by: str | None = None
+    resolved_by: Resolution | None = None
     votes: list[str | None] = field(default_factory=list)
     health_grade: str | None = None
     budget_warned: bool = False
-    status: str = "final"
+    status: QueryStatus = "final"
 
     @property
-    def tier(self) -> str:
+    def tier(self) -> TrustTier:
         return assign_tier(self)
 
     def to_dict(self) -> dict:
@@ -68,12 +71,8 @@ class AnswerEvidence:
         d["tier"] = self.tier
         return d
 
-    def cap_source(self, source: str) -> AnswerEvidence:
-        self.source = source
-        return self
 
-
-def assign_tier(ev: AnswerEvidence) -> str:
+def assign_tier(ev: AnswerEvidence) -> TrustTier:
     """Transparent rules. Order is load-bearing: low checks first.
 
     See docs/trust-tiers.md. Never calls a model.
@@ -202,8 +201,6 @@ def from_records(records: list[dict], *,
         if r.get("kind") == "search_rung" and r.get("rung") is not None:
             rungs.append(int(r["rung"]))
     recovered = any(r.get("kind") == "recovery" for r in records)
-    if recovered and status == "recovered":
-        pass
     return from_final(
         {"value": final.get("value"),
          "is_var": final.get("is_var"),

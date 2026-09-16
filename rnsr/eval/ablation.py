@@ -11,7 +11,9 @@ from __future__ import annotations
 import sqlite3
 from pathlib import Path
 
-from rnsr.env.embeddings import EmbeddingStore, Quantizer
+from rnsr.env.embeddings import EmbeddingStore
+
+MIN_RECALL_AT_50 = 0.99
 
 
 def run_ablation(
@@ -20,13 +22,12 @@ def run_ablation(
     queries: list[str],
     *,
     ks: tuple[int, ...] = (10, 50),
-    quantizer: Quantizer | None = None,
     rescore_pool: int = 4000,
 ) -> dict:
     """embed_fn: list[str] -> list[list[float]] (sync)."""
     conn = sqlite3.connect(corpus_db)
     try:
-        store = EmbeddingStore(conn, quantizer=quantizer, rescore_pool=rescore_pool)
+        store = EmbeddingStore(conn, rescore_pool=rescore_pool)
         build = store.ensure(embed_fn, model="ablation")
 
         recalls: dict[int, list[float]] = {k: [] for k in ks}
@@ -45,7 +46,7 @@ def run_ablation(
                        for k, v in recalls.items()},
         }
         r50 = report["recall"].get("@50")
-        report["accepts"] = r50 is not None and r50 >= 0.99
+        report["accepts"] = r50 is not None and r50 >= MIN_RECALL_AT_50
         return report
     finally:
         conn.close()

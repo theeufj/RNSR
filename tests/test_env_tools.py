@@ -268,7 +268,7 @@ class TestVerifiedFinal:
         try:
             res = await repl.exec_cell("FINAL('3234')")
             assert not res.ok
-            assert "requires 1-3 short verbatim quotes" in res.error
+            assert "requires supporting source quotes" in res.error
         finally:
             await repl.close()
 
@@ -290,7 +290,7 @@ class TestVerifiedFinal:
         finally:
             await repl.close()
 
-    async def test_final_var_still_unverified(self, corpus):
+    async def test_final_var_requires_supporting_quotes(self, corpus):
         from rnsr.env.sandbox import SandboxedRepl
 
         repl = SandboxedRepl()
@@ -299,12 +299,14 @@ class TestVerifiedFinal:
             res = await repl.exec_cell(
                 "total = db.execute('SELECT sum(revenue_m) FROM t_acme_001 "
                 "WHERE segment != \\'Total\\'').fetchone()[0]\nFINAL_VAR(total)")
-            assert res.final["value"] == 3234
-            assert res.final["verification"] is None
+            assert not res.ok and res.final is None
+            checked = await repl.exec_cell("FINAL_VAR(total, quotes=['Net revenue was $3,234 million'])")
+            assert checked.final["value"] == 3234
+            assert checked.final["verification"]["passed"]
         finally:
             await repl.close()
 
-    async def test_third_final_attempt_accepted_with_failed_verification(self, corpus):
+    async def test_repeated_fabricated_quotes_never_accepted(self, corpus):
         from rnsr.env.sandbox import SandboxedRepl
 
         repl = SandboxedRepl()
@@ -314,8 +316,7 @@ class TestVerifiedFinal:
             r2 = await repl.exec_cell("FINAL('x', quotes=['fabricated two'])")
             assert not r1.ok and not r2.ok
             r3 = await repl.exec_cell("FINAL('x', quotes=['fabricated three'])")
-            assert r3.final is not None
-            assert r3.final["verification"]["passed"] is False
+            assert not r3.ok and r3.final is None
         finally:
             await repl.close()
 
@@ -361,7 +362,7 @@ class TestBatchFinalVerified:
         finally:
             await repl.close()
 
-    async def test_batch_third_strike_only_on_failed_fields(self, corpus):
+    async def test_repeated_batch_with_failed_field_never_accepted(self, corpus):
         from rnsr.env.sandbox import SandboxedRepl
 
         repl = SandboxedRepl()
@@ -375,12 +376,7 @@ class TestBatchFinalVerified:
             assert not (await repl.exec_cell(cell)).ok
             assert not (await repl.exec_cell(cell)).ok
             r3 = await repl.exec_cell(cell)
-            assert r3.final is not None
-            ver = r3.final["verification"]
-            assert ver["q1"]["passed"]
-            assert not ver["q1"].get("third_strike")
-            assert not ver["q2"]["passed"]
-            assert ver["q2"].get("third_strike") is True
+            assert not r3.ok and r3.final is None
         finally:
             await repl.close()
 
@@ -499,3 +495,225 @@ class TestAnnotateVotes:
         # same prompt with different votes is a distinct annotation, not a noop
         second = annotator.annotate("t_acme_001", "k1", "classify", votes=3)
         assert second.get("noop") is None
+
+
+class TestParentAnnotationBoundary:
+    @pytest.mark.parametrize('column', ['rowid', 'oid', '_rowid_', '_page', 'revenue_m', 'SEGMENT'])
+    def test_source_and_implicit_columns_cannot_be_annotation_targets(self, env, column):
+        conn, _, _ = env
+        annotator = Annotator(conn, FakeRpc(TestAnnotate._label_responder))
+        with pytest.raises(ValueError, match='cannot overwrite'):
+            annotator.annotate('t_acme_001', column, 'classify')
+
+    @pytest.mark.parametrize('predicate', [
+        '1; DROP TABLE doc_text',
+        'randomblob(1000000000) IS NOT NULL',
+        "load_extension('/tmp/untrusted') IS NULL",
+    ])
+    def test_where_is_readonly_and_disallows_unbounded_functions(self, env, predicate):
+        conn, _, _ = env
+        annotator = Annotator(conn, FakeRpc(TestAnnotate._label_responder))
+        with pytest.raises(sqlite3.Error):
+            annotator.annotate('t_acme_001', 'class_label', 'classify', where=predicate)
+        assert conn.execute('SELECT count(*) FROM doc_text').fetchone()[0] > 0
+        assert conn.execute('SELECT count(*) FROM annotation_log').fetchone()[0] == 0
+
+    async def test_annotation_rpc_persists_only_declared_column(self, corpus):
+        from rnsr.env.sandbox import SandboxedRepl
+
+        async def label(req):
+            return TestAnnotate._label_responder(req)
+
+        async with SandboxedRepl(rpc_handlers={'llm_batch': label}) as repl:
+            await repl.start(mode='docdb', corpus_db=str(corpus))
+            result = await repl.exec_cell(
+                "semantic_annotate('t_acme_001', 'category', 'classify')\n"
+                "print(db.execute('SELECT count(category) FROM t_acme_001').fetchone()[0])\n"
+                "print(any(c['name'] == 'category' for c in manifest['tables'][0]['schema']))")
+            assert result.ok, result.error
+            assert result.stdout == '3\nTrue\n'
+
+    async def test_timed_out_annotation_cancels_provider_and_no_write(self, corpus):
+        import asyncio
+
+        from rnsr.env.sandbox import SandboxedRepl
+        from rnsr.errors import SandboxError
+
+        stopped = asyncio.Event()
+        async def delayed(req):
+            try:
+                await asyncio.sleep(30)
+            finally:
+                stopped.set()
+
+        async with SandboxedRepl(rpc_handlers={'llm_batch': delayed}) as repl:
+            await repl.start(mode='docdb', corpus_db=str(corpus))
+            with pytest.raises(SandboxError, match='wall-clock'):
+                await repl.exec_cell(
+                    "semantic_annotate('t_acme_001', 'later', 'classify')", timeout=0.1)
+            await asyncio.wait_for(stopped.wait(), timeout=3)
+        with sqlite3.connect(corpus) as conn:
+            assert conn.execute('SELECT count(*) FROM annotation_log').fetchone()[0] == 0
+            assert 'later' not in {r[1] for r in conn.execute('PRAGMA table_info(t_acme_001)')}
+
+
+class TestFinalQuoteParity:
+    async def test_batch_requires_quotes_for_each_value_field(self, corpus):
+        from rnsr.env.sandbox import SandboxedRepl
+
+        async with SandboxedRepl() as repl:
+            await repl.start(mode='docdb', corpus_db=str(corpus))
+            unquoted = await repl.exec_cell("FINAL_BATCH({'q1': 'Mallory Smith', 'q2': '123 Somewhere St'})")
+            assert not unquoted.ok and unquoted.final is None
+            partial = await repl.exec_cell(
+                "FINAL_BATCH({'q1': '3234', 'q2': 'Invented Address'}, "
+                "quotes={'q1': ['Net revenue was $3,234 million']})")
+            assert not partial.ok and partial.final is None
+
+    def test_repeated_quote_misses_normalize_corpus_only_once(self):
+        class CountingDocs(dict):
+            reads = 0
+            def __getitem__(self, key):
+                self.reads += 1
+                return super().__getitem__(key)
+        documents = CountingDocs({f'doc-{i}': f'Retained document number {i}.' for i in range(200)})
+        verifier = Verifier(documents)
+        try:
+            report = verifier.verify('x', ['absent one', 'absent two', 'absent three'])
+            assert not report['passed']
+            assert documents.reads == 200
+            verifier.verify('y', ['another missing quote'])
+            assert documents.reads == 200
+        finally:
+            verifier.close()
+
+
+def test_quote_unicode_casefold_offsets_remain_source_offsets():
+    original = 'ΟΔΟΣ İstanbul Straße'
+    verifier = Verifier({'unicode': original})
+    try:
+        report = verifier.verify('street', ['οδός'.replace('ό', 'ο'), 'İstanbul', 'STRASSE'])
+        assert report['passed']
+        last = report['quotes'][-1]
+        assert original[last['char_start']:last['char_end']] == 'Straße'
+    finally:
+        verifier.close()
+
+
+class TestConcurrentSourceChanges:
+    def test_replacement_during_annotation_cannot_receive_old_labels(self, corpus):
+        from rnsr.ingest.lifecycle import replace_document
+
+        def replacement(path):
+            parsed = _corpus_parse(path)
+            parsed.tables[0].rows = [['Replacement', '$90'], ['Total', '$90']]
+            parsed.elements[1].text = 'Replacement source. Revenue is $90.'
+            return parsed
+
+        def replace_then_label(request):
+            replace_document(corpus, 'acme', corpus.parent / 'replacement.pdf', parse=replacement)
+            return TestAnnotate._label_responder(request)
+
+        with sqlite3.connect(corpus) as conn:
+            annotator = Annotator(conn, replace_then_label)
+            with pytest.raises(ValueError, match='source changed'):
+                annotator.annotate('t_acme_001', 'stale_label', 'classify')
+            assert conn.execute('SELECT segment FROM t_acme_001 ORDER BY rowid').fetchall() == [
+                ('Replacement',), ('Total',)]
+            assert 'stale_label' not in {r[1] for r in conn.execute('PRAGMA table_info(t_acme_001)')}
+            assert conn.execute('SELECT count(*) FROM annotation_log').fetchone()[0] == 0
+
+    async def test_previous_verified_quote_rejected_after_replacement(self, corpus):
+        from rnsr.env.sandbox import SandboxedRepl
+        from rnsr.ingest.lifecycle import replace_document
+
+        def replacement(path):
+            parsed = _corpus_parse(path)
+            parsed.elements[1].text = 'All retained text has been replaced.'
+            return parsed
+
+        async with SandboxedRepl() as repl:
+            await repl.start(mode='docdb', corpus_db=str(corpus))
+            cell = "FINAL('3234', quotes=['Net revenue was $3,234 million'])"
+            assert (await repl.exec_cell(cell)).final['verification']['passed']
+            replace_document(corpus, 'acme', corpus.parent / 'replacement.pdf', parse=replacement)
+            result = await repl.exec_cell(cell)
+            assert not result.ok and result.final is None
+            assert 'source changed' in result.error
+
+
+class TestParentWorkLimits:
+    @pytest.mark.parametrize('where', [
+        "1 UNION ALL SELECT rowid, segment, revenue_m FROM t_acme_001",
+        "EXISTS (SELECT 1 FROM t_acme_001)",
+        "EXISTS (WITH RECURSIVE n(x) AS (SELECT 1 UNION ALL SELECT x+1 FROM n) SELECT 1 FROM n)",
+    ])
+    def test_annotation_predicate_cannot_expand_rows_or_run_subqueries(self, env, where):
+        conn, _, _ = env
+        with pytest.raises((sqlite3.Error, ValueError)):
+            Annotator(conn, FakeRpc()).annotate('t_acme_001', 'label', 'classify', where=where)
+
+    def test_final_field_limit_boundary(self):
+        from rnsr.env.finalize import MAX_FINAL_FIELDS, validate_final
+
+        answers = {str(i): 'No' for i in range(MAX_FINAL_FIELDS)}
+        assert len(validate_final(answers, {}, None, batch=True)) == MAX_FINAL_FIELDS
+        answers['overflow'] = 'No'
+        with pytest.raises(ValueError, match='fields'):
+            validate_final(answers, {}, None, batch=True)
+
+    def test_final_quote_work_limit_boundaries(self):
+        from rnsr.env.finalize import MAX_QUOTE_CHARS, MAX_TOTAL_QUOTE_CHARS, validate_final
+
+        class MatchingVerifier:
+            def verify(self, answer, quotes):
+                return {'passed': True, 'answer': answer, 'quotes': quotes}
+        verifier = MatchingVerifier()
+        assert validate_final('v', ['x' * MAX_QUOTE_CHARS], verifier)['passed']
+        with pytest.raises(ValueError, match='short source quotes'):
+            validate_final('v', ['x' * (MAX_QUOTE_CHARS + 1)], verifier)
+        count = MAX_TOTAL_QUOTE_CHARS // MAX_QUOTE_CHARS
+        answers = {str(i): 'v' for i in range(count)}
+        quotes = {str(i): ['x' * MAX_QUOTE_CHARS] for i in range(count)}
+        assert len(validate_final(answers, quotes, verifier, batch=True)) == count
+        answers['extra'] = 'v'
+        quotes['extra'] = ['x']
+        with pytest.raises(ValueError, match='quote characters'):
+            validate_final(answers, quotes, verifier, batch=True)
+
+    def test_verifier_deadline_rolls_back_partial_index(self, monkeypatch):
+        import time
+
+        class SlowDocs(dict):
+            def __getitem__(self, key):
+                time.sleep(0.02)
+                return super().__getitem__(key)
+        verifier = Verifier(SlowDocs({'one': 'One source', 'two': 'Two source'}))
+        try:
+            verifier.set_deadline(time.monotonic() + 0.01)
+            with pytest.raises(TimeoutError, match='wall-clock'):
+                verifier.verify('v', ['Two source'])
+            verifier.set_deadline(None)
+            assert verifier.verify('v', ['Two source'])['passed']
+        finally:
+            verifier.close()
+
+    async def test_parent_verification_uses_remaining_cell_deadline(self, corpus):
+        import time
+
+        from rnsr.env.sandbox import SandboxedRepl
+        from rnsr.errors import SandboxError
+
+        async with SandboxedRepl() as repl:
+            await repl.start(mode='docdb', corpus_db=str(corpus))
+            original = repl._verifier._doc
+            class SlowDoc:
+                def __iter__(self):
+                    return iter(original)
+                def __getitem__(self, key):
+                    time.sleep(0.08)
+                    return original[key]
+            repl._verifier._doc = SlowDoc()
+            with pytest.raises(SandboxError, match='verification exceeded'):
+                await repl.exec_cell(
+                    "FINAL('3234', quotes=['Net revenue was $3,234 million'])", timeout=0.05)

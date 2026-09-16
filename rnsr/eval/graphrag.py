@@ -42,7 +42,7 @@ Relations: {relations}
 Sample source excerpts:
 {samples}"""
 
-_ANSWER_PROMPT = """\
+ANSWER_PROMPT = """\
 Answer the question using the community summaries and source excerpts
 below, drawn from a knowledge graph over the document corpus. If they do
 not contain the answer, say so plainly rather than guessing.
@@ -81,9 +81,11 @@ def _parse_extraction(text: str) -> dict | None:
         obj = json.loads(m.group())
     except json.JSONDecodeError:
         return None
-    if not isinstance(obj.get("entities"), list):
+    if not isinstance(obj, dict) or not isinstance(obj.get("entities"), list):
         return None
     obj.setdefault("relations", [])
+    if not isinstance(obj["relations"], list):
+        return None
     return obj
 
 
@@ -203,9 +205,9 @@ def graph_retrieve(conn: sqlite3.Connection, question: str, *,
                    k_chunks: int = 12, k_summaries: int = 6
                    ) -> tuple[list[str], list[tuple[str, str]]]:
     """Entity-match the question -> (community summaries, linked chunks)."""
-    from rnsr.env.search import _terms
+    from rnsr.env.search import terms
 
-    terms = [t.lower() for t in _terms(question)]
+    terms = [t.lower() for t in terms(question)]
     if not terms:
         terms = [question.lower()[:30]]
     clauses = " OR ".join("lower(name) LIKE ?" for _ in terms)

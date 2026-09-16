@@ -24,7 +24,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from rnsr.ingest.model import Element, ParsedDocument, RawTable
-from rnsr.ingest.parse import _sha256, make_doc_id, render_table_text
+from rnsr.ingest.parse import content_sha256, make_doc_id, render_table_text
 
 OFFICE_PARSER_NAME = "anydoc"
 
@@ -130,11 +130,12 @@ def parse_office(path: str | Path, doc_id: str | None = None) -> ParsedDocument:
     fmt = anydoc.format_from_bytes(data) or anydoc.format_from_path(str(path))
     doc = anydoc.to_document(data, fmt)
 
+    digest = content_sha256(path)
     parsed = ParsedDocument(
         doc_id=doc_id or make_doc_id(path),
         source_path=str(path),
-        sha256=_sha256(path),
-        content_sha256=_sha256(path),
+        sha256=digest,
+        content_sha256=digest,
         n_pages=1,
         parser=OFFICE_PARSER_NAME,
         title=getattr(doc, "title", None) or None,

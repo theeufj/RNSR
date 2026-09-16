@@ -22,16 +22,16 @@ import sqlite3
 PROVENANCE_COLUMNS = ("_page", "_bbox", "_extractor", "_row_kind")
 
 # Integer stamped as PRAGMA user_version and manifest.format_version.
-ARTIFACT_FORMAT_VERSION = 2
+ARTIFACT_FORMAT_VERSION = 3
 REQUIRED_TABLES = (
     "documents", "doc_text", "chunks", "manifest", "manifest_tables",
-    "annotation_log", "ingest_batches",
+    "annotation_log", "ingest_batches", "cells",
 )
 
 DOCUMENT_COLUMNS = (
     "doc_id", "source_path", "sha256", "n_pages", "parser", "ingested_at",
     "title", "doc_date", "author", "modified_at", "content_sha256",
-    "parent_doc_id", "duplicate_of",
+    "parent_doc_id", "duplicate_of", "source_identity",
 )
 
 CORE_DDL = """
@@ -47,8 +47,11 @@ CREATE TABLE documents (
     author          TEXT,
     modified_at     TEXT,
     content_sha256  TEXT,
-    parent_doc_id   TEXT,
-    duplicate_of    TEXT
+    parent_doc_id   TEXT REFERENCES documents(doc_id) ON DELETE CASCADE,
+    duplicate_of    TEXT REFERENCES documents(doc_id) ON DELETE SET NULL,
+    source_identity TEXT,
+    CHECK (parent_doc_id IS NULL OR parent_doc_id != doc_id),
+    CHECK (duplicate_of IS NULL OR duplicate_of != doc_id)
 );
 
 CREATE TABLE ingest_batches (
@@ -62,7 +65,7 @@ CREATE TABLE ingest_batches (
 -- Full retained text per page; the no-eviction substrate every other
 -- representation (chunks, FTS, tables, embeddings) resolves back to.
 CREATE TABLE doc_text (
-    doc_id     TEXT NOT NULL REFERENCES documents(doc_id),
+    doc_id     TEXT NOT NULL REFERENCES documents(doc_id) ON DELETE CASCADE,
     page       INTEGER NOT NULL,
     char_start INTEGER NOT NULL,
     char_end   INTEGER NOT NULL,
@@ -72,7 +75,7 @@ CREATE TABLE doc_text (
 
 CREATE TABLE chunks (
     chunk_id     INTEGER PRIMARY KEY,
-    doc_id       TEXT NOT NULL REFERENCES documents(doc_id),
+    doc_id       TEXT NOT NULL REFERENCES documents(doc_id) ON DELETE CASCADE,
     page         INTEGER,
     char_start   INTEGER NOT NULL,
     char_end     INTEGER NOT NULL,
@@ -94,17 +97,22 @@ CREATE TABLE manifest (
 
 CREATE TABLE manifest_tables (
     table_name  TEXT PRIMARY KEY,
-    doc_id      TEXT NOT NULL REFERENCES documents(doc_id),
+    doc_id      TEXT NOT NULL REFERENCES documents(doc_id) ON DELETE CASCADE,
     title       TEXT,
     page_start  INTEGER,
     page_end    INTEGER,
     n_rows      INTEGER NOT NULL,
     n_cols      INTEGER NOT NULL,
-    schema_json TEXT NOT NULL,       -- [{name, type, coercion_rule, raw_col}]
+    schema_json TEXT NOT NULL CHECK (json_valid(schema_json) AND
+        json_type(schema_json) IS 'object' AND
+        json_type(schema_json, '$.columns') IS 'array' AND
+        json_type(schema_json, '$.n_total_rows') IS 'integer' AND
+        json_type(schema_json, '$.n_data_rows') IS 'integer'),
     confidence  REAL NOT NULL,
     checks_json TEXT NOT NULL,       -- {arithmetic:…, structural:…, prose:…}
     status      TEXT NOT NULL CHECK (status IN ('trusted','reextracted','untrusted','unchecked')),
-    extractor   TEXT NOT NULL
+    extractor   TEXT NOT NULL,
+    UNIQUE (table_name, doc_id)
 );
 
 CREATE TABLE annotation_log (
@@ -133,17 +141,22 @@ CREATE UNIQUE INDEX annotation_idempotency
 CELLS_DDL = (
     """
     CREATE TABLE IF NOT EXISTS cells (
-        doc_id     TEXT NOT NULL,
+        doc_id     TEXT NOT NULL REFERENCES documents(doc_id) ON DELETE CASCADE
+                   DEFERRABLE INITIALLY DEFERRED,
         table_name TEXT NOT NULL,
         row_idx    INTEGER NOT NULL,      -- rowid in the source t_* table
         col_name   TEXT NOT NULL,
         text_value TEXT,
-        num_value  REAL
+        num_value  REAL,
+        UNIQUE (table_name, row_idx, col_name),
+        FOREIGN KEY (table_name, doc_id) REFERENCES manifest_tables(table_name, doc_id)
+            ON DELETE CASCADE DEFERRABLE INITIALLY DEFERRED
     )
     """,
     "CREATE INDEX IF NOT EXISTS cells_num ON cells(num_value) "
     "WHERE num_value IS NOT NULL",
     "CREATE INDEX IF NOT EXISTS cells_table ON cells(table_name)",
+    "CREATE INDEX IF NOT EXISTS cells_document ON cells(doc_id)",
 )
 
 # Default read mmap: the OS page cache serves DB pages, shared across every
@@ -162,6 +175,7 @@ def apply_read_pragmas(conn: sqlite3.Connection,
     """Per-connection read tuning; safe on rw connections too."""
     import os
 
+    conn.execute("PRAGMA foreign_keys=ON")
     if mmap_bytes is None:
         raw = os.environ.get("RNSR_DB_MMAP_BYTES", "")
         mmap_bytes = int(raw) if raw.strip().isdigit() else DEFAULT_MMAP_BYTES
@@ -193,6 +207,7 @@ def sanitize_column_name(raw: str, taken: set[str] | None = None) -> str:
 
 def create_corpus_db(conn: sqlite3.Connection) -> None:
     """Create the core schema in an empty database (unfrozen — ingestion writes next)."""
+    conn.execute("PRAGMA foreign_keys=ON")
     conn.execute("PRAGMA journal_mode=WAL")
     conn.executescript(CORE_DDL)
     ensure_cells_table(conn)
@@ -205,19 +220,20 @@ def create_corpus_db(conn: sqlite3.Connection) -> None:
 
 
 def finalize_corpus(conn: sqlite3.Connection) -> None:
-    """Freeze source tables once ingestion is complete.
+    """Freeze source tables once ingestion is complete; the caller commits.
 
     Data tables (t_*) are frozen individually right after their bulk insert;
     this call freezes the shared text substrate. manifest/manifest_tables/
     annotation_log stay writable (annotations and re-validation metadata).
     ``documents.duplicate_of`` stays writable so remanifest can restamp it.
     """
+    if not conn.in_transaction:
+        conn.execute("BEGIN IMMEDIATE")
     for table in ("documents", "doc_text", "chunks"):
         cols = _table_columns(conn, table)
         if table == "documents":
             cols = [c for c in cols if c != "duplicate_of"]
         freeze_table(conn, table, source_columns=cols)
-    conn.commit()
 
 
 def unfreeze_table(conn: sqlite3.Connection, table: str) -> None:
@@ -227,7 +243,9 @@ def unfreeze_table(conn: sqlite3.Connection, table: str) -> None:
 
 
 def unfreeze_corpus(conn: sqlite3.Connection) -> None:
-    """Drop freeze triggers on the shared text substrate (not t_* tables)."""
+    """Unfreeze transactionally; callers must commit only after refreezing."""
+    if not conn.in_transaction:
+        conn.execute("BEGIN IMMEDIATE")
     for table in ("documents", "doc_text", "chunks"):
         unfreeze_table(conn, table)
 
@@ -238,10 +256,6 @@ def record_ingest_batch(conn: sqlite3.Connection, kind: str,
     import json
     from datetime import UTC, datetime
 
-    names = {r[0] for r in conn.execute(
-        "SELECT name FROM sqlite_master WHERE type='table'")}
-    if "ingest_batches" not in names:
-        return
     conn.execute(
         "INSERT INTO ingest_batches (created_at, kind, n_docs, sources_json) "
         "VALUES (?,?,?,?)",
@@ -290,7 +304,7 @@ def freeze_table(conn: sqlite3.Connection, table: str, source_columns: list[str]
     `source_columns`, so annotation writes remain possible.
     """
     q = quote_ident(table)
-    msg = f"'{table} is immutable source data (see docdb-rlm-design-spec.md §2)'"
+    msg = "'" + (table + " is immutable source data (see docdb-rlm-design-spec.md §2)").replace("'", "''") + "'"
     conn.execute(
         f"CREATE TRIGGER {quote_ident(table + '__no_insert')} BEFORE INSERT ON {q} "
         f"BEGIN SELECT RAISE(ABORT, {msg}); END"
@@ -314,20 +328,84 @@ def insert_document(conn: sqlite3.Connection, *,
                     author: str | None = None, modified_at: str | None = None,
                     content_sha256: str | None = None,
                     parent_doc_id: str | None = None,
-                    duplicate_of: str | None = None) -> None:
-    """Insert one documents row (v2 columns). Missing optionals stay NULL."""
+                    duplicate_of: str | None = None,
+                    source_identity: str | None = None) -> None:
+    """Insert one document; content digests and filesystem identity are distinct."""
     conn.execute(
         f"INSERT INTO documents ({', '.join(DOCUMENT_COLUMNS)}) "
         f"VALUES ({', '.join('?' * len(DOCUMENT_COLUMNS))})",
         (doc_id, source_path, sha256, n_pages, parser, ingested_at,
          title, doc_date, author, modified_at, content_sha256,
-         parent_doc_id, duplicate_of),
+         parent_doc_id, duplicate_of, source_identity),
     )
 
 
 def add_annotation_column(conn: sqlite3.Connection, table: str, column: str) -> bool:
     """Add a writable annotation column if absent. Returns True if added."""
-    if column in _table_columns(conn, table):
+    if column.casefold() in {c.casefold() for c in _table_columns(conn, table)}:
         return False
-    conn.execute(f"ALTER TABLE {quote_ident(table)} ADD COLUMN {quote_ident(column)}")
+    if not conn.in_transaction:
+        conn.execute("BEGIN IMMEDIATE")
+    conn.execute(f"ALTER TABLE {quote_ident(table)} ADD COLUMN {quote_ident(column)} TEXT")
+    from rnsr.db.metadata import ColumnSchema, decode_table_schema
+
+    row = conn.execute("SELECT schema_json FROM manifest_tables WHERE table_name=?",
+                       (table,)).fetchone()
+    if row:
+        meta = decode_table_schema(row[0])
+        meta.columns.append(ColumnSchema(name=column, type="TEXT", annotation=True))
+        conn.execute("UPDATE manifest_tables SET schema_json=? WHERE table_name=?",
+                     (meta.model_dump_json(), table))
     return True
+
+
+def validate_frozen(conn: sqlite3.Connection) -> None:
+    """Reject incomplete artifacts before executing generated code against them."""
+    from rnsr.errors import ArtifactVersionError
+
+    tables = ["documents", "doc_text", "chunks"] + [r[0] for r in conn.execute(
+        "SELECT table_name FROM manifest_tables")]
+    triggers = {r[0]: r[1] for r in conn.execute(
+        "SELECT name, tbl_name FROM sqlite_master WHERE type='trigger'")}
+    missing = [table + suffix for table in tables
+               for suffix in ("__no_insert", "__no_delete", "__no_update_src")
+               if triggers.get(table + suffix) != table]
+    if missing:
+        raise ArtifactVersionError("Corpus is not frozen; rebuild or migrate it. "
+                                   f"Missing immutability triggers: {missing}")
+
+
+def validate_integrity(conn: sqlite3.Connection) -> None:
+    """Check SQL references plus physical-table references SQLite cannot declare."""
+    from rnsr.db.metadata import decode_table_schema
+
+    violations = list(conn.execute("PRAGMA foreign_key_check"))
+    if violations:
+        raise sqlite3.IntegrityError(f"Corpus foreign-key violations: {violations[:5]}")
+    existing = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+    for table, raw in conn.execute("SELECT table_name, schema_json FROM manifest_tables"):
+        if table not in existing:
+            raise sqlite3.IntegrityError(f"Missing source table: {table}")
+        meta = decode_table_schema(raw)
+        columns = set(_table_columns(conn, table))
+        if any(c.name not in columns or (c.raw_col and c.raw_col not in columns)
+               for c in meta.columns):
+            raise sqlite3.IntegrityError(f"Source columns disagree with metadata: {table}")
+        stale = conn.execute(
+            f"SELECT 1 FROM cells c LEFT JOIN {quote_ident(table)} t ON t.rowid=c.row_idx "
+            "WHERE c.table_name=? AND t.rowid IS NULL LIMIT 1", (table,)).fetchone()
+        if stale:
+            raise sqlite3.IntegrityError(f"Dangling cell reference: {table}")
+        indexed_columns = {r[0] for r in conn.execute(
+            "SELECT DISTINCT col_name FROM cells WHERE table_name=?", (table,))}
+        if not indexed_columns.issubset(columns):
+            raise sqlite3.IntegrityError(f"Dangling cell column: {table}")
+
+
+def checkpoint_for_publish(conn: sqlite3.Connection) -> None:
+    """Make an artifact self-contained before renaming away from its WAL path."""
+    if conn.in_transaction:
+        raise sqlite3.ProgrammingError("commit the artifact before publishing")
+    busy, _, _ = conn.execute("PRAGMA wal_checkpoint(TRUNCATE)").fetchone()
+    if busy:
+        raise sqlite3.OperationalError("artifact checkpoint is busy; retry publication")

@@ -126,7 +126,8 @@ class TestRung0Parity:
         # instead of stopping on a weak table hit (both paths agree)
         conn, ladder = _ladder(corpus)
         assert ladder.search("gadgets", rung=0) == []
-        ladder._cells_ok = False
+        ladder = Ladder(conn=conn, doc=ladder.doc, manifest=ladder.manifest,
+                        rpc=lambda _: {}, rebuild_cells=True)
         assert ladder.search("gadgets", rung=0) == []
         conn.close()
 

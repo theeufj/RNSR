@@ -8,19 +8,21 @@ of what the model does.
 
 from __future__ import annotations
 
+import ast
 import asyncio
-import json
 import logging
 import re
 import uuid
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 
+from rnsr.answer_semantics import QueryStatus, Resolution, coerce_batch, comparison_key, is_negative
 from rnsr.config import Settings
 from rnsr.env.sandbox import SandboxedRepl
 from rnsr.errors import SandboxError
 from rnsr.harness.budget import BudgetLedger
 from rnsr.harness.evidence import AnswerEvidence, from_final
+from rnsr.harness.negative_audit import audit_negatives
 from rnsr.harness.prompts.base import (
     render_batch_task,
     render_system,
@@ -52,7 +54,7 @@ class EnvSpec:
 @dataclass
 class QueryResult:
     answer: object
-    status: str                     # 'final' | 'recovered' | 'budget_exhausted' | 'error'
+    status: QueryStatus             # 'final' | 'recovered' | 'budget_exhausted' | 'error'
     final: dict | None
     ledger: dict
     trajectory_path: str
@@ -60,6 +62,7 @@ class QueryResult:
     breached_cap: str | None = None
     health: dict | None = None          # corpus health snapshot, if gated
     evidence: AnswerEvidence | None = None
+    raw_answer: object = None
 
 
 @dataclass
@@ -81,14 +84,14 @@ class ConsensusAnswer:
     """One field's answer after independent passes voted on it."""
 
     value: str | None
-    resolved_by: str            # 'unanimous' | 'majority' | 'tiebreak' | 'unresolved'
+    resolved_by: Resolution     # 'unanimous' | 'majority' | 'tiebreak' | 'unresolved'
     agreement: float            # share of passes that produced the chosen value
     votes: list[str | None] = field(default_factory=list)
     evidence: AnswerEvidence | None = None
 
     @property
     def contested(self) -> bool:
-        return self.resolved_by in ("tiebreak", "unresolved")
+        return self.resolved_by in ("split", "tiebreak", "unresolved") or self.value is None
 
     @property
     def tier(self) -> str | None:
@@ -111,8 +114,7 @@ def _vote_key(answer: str | None) -> str | None:
     different punctuation or casing must not read as a disagreement."""
     if answer is None:
         return None
-    text = re.sub(r"[^\w\s/@.:$%-]", " ", answer.strip().lower())
-    return re.sub(r"\s+", " ", text).strip(" .") or None
+    return comparison_key(answer) or None
 
 
 def scale_budgets(s: Settings, n_questions: int) -> Settings:
@@ -134,28 +136,10 @@ def scale_budgets(s: Settings, n_questions: int) -> Settings:
     )
 
 
-def _coerce_batch(value: object) -> dict | None:
-    """Lenient parse of a batch-final value into a qid -> answer dict."""
-    if isinstance(value, dict):
-        return value
-    if isinstance(value, str):
-        start, end = value.find("{"), value.rfind("}")
-        if start != -1 and end > start:
-            try:
-                out = json.loads(value[start:end + 1])
-            except json.JSONDecodeError:
-                return None
-            if isinstance(out, dict):
-                return out
-    return None
 
 
-def _is_negative(answer: str) -> bool:
-    """Does this batch answer claim the corpus establishes nothing?"""
-    a = re.sub(r"\s+", " ", answer.strip().lower()).strip(".!")
-    return (a in ("", "no", "unknown", "n/a", "none", "not applicable",
-                  "not_applicable")
-            or a.startswith(("not_found", "not found")))
+_coerce_batch = coerce_batch
+_is_negative = is_negative  # historical import compatibility
 
 
 @dataclass
@@ -174,11 +158,18 @@ class RootRunner:
         blocks = _CODE_BLOCK.findall(text)
         if blocks:
             return "\n\n".join(b.strip() for b in blocks)
-        # a bare-code reply (no fence) still gets executed if it looks like code
         stripped = text.strip()
-        if stripped and not stripped.split()[0][0].isupper():
-            return stripped
-        return None
+        try:
+            tree = ast.parse(stripped)
+        except SyntaxError:
+            return None
+        # Bare prose can parse as an identifier or a quoted string. Execute
+        # statements/calls, never those ambiguous expression-only replies.
+        if not tree.body or any(isinstance(node, ast.Expr) and
+                                isinstance(node.value, (ast.Name, ast.Constant))
+                                for node in tree.body):
+            return None
+        return stripped
 
     def _rpc_handlers(self, ledger: BudgetLedger, trajectory: TrajectoryWriter) -> dict:
         async def llm_batch(request: dict) -> dict:
@@ -192,7 +183,9 @@ class RootRunner:
             responses = await map_prompts(
                 self.sub_client, prompts, model=self.sub_model,
                 concurrency=self.settings.sub_concurrency,
-                on_usage=lambda u: ledger.add_usage(u, sub_call=True),
+                on_usage=ledger.add_usage,
+                on_attempt=ledger.reserve_sub_call,
+                deadline=ledger._t0 + ledger.max_wall_s,
             )
             trajectory.event("sub_batch", n=len(prompts),
                              failed=sum(r is None for r in responses))
@@ -235,6 +228,9 @@ class RootRunner:
                                batch_chars=s.sub_call_char_budget,
                                provider=getattr(self.root_client, "provider", ""),
                                playbook=env.playbook)
+        n_documents = len((env.manifest or {}).get("documents") or [])
+        init_extra = {"enable_embeddings": self.embed_client is not None
+                      and n_documents >= s.embed_auto_on_docs}
         sandbox = SandboxedRepl(rpc_handlers=self._rpc_handlers(ledger, trajectory),
                                 fs_guard=s.sandbox_fs_guard)
         turns: list[tuple[str, str]] = []
@@ -261,7 +257,7 @@ class RootRunner:
 
         try:
             await sandbox.start(mode=env.mode, context=env.context,
-                                corpus_db=env.corpus_db)
+                                corpus_db=env.corpus_db, init_extra=init_extra)
             while final is None:
                 cap = ledger.breached()
                 if cap:
@@ -270,7 +266,7 @@ class RootRunner:
                         query_id=query_id, cap=cap, **ledger.snapshot())
                     metrics().incr("budget_breaches", cap=cap)
                     result = await recover_variable(
-                        sandbox, self, question, turns, trajectory
+                        sandbox, self, question, turns, trajectory, ledger
                     )
                     return self._finish(result, "recovered" if result else "budget_exhausted",
                                         ledger, trajectory, turns, breached=cap,
@@ -285,7 +281,7 @@ class RootRunner:
                     trajectory.event("budget_breached", cap="root_timeout",
                                      **ledger.snapshot())
                     result = await recover_variable(
-                        sandbox, self, question, turns, trajectory
+                        sandbox, self, question, turns, trajectory, ledger
                     )
                     return self._finish(result,
                                         "recovered" if result else "budget_exhausted",
@@ -316,7 +312,7 @@ class RootRunner:
                         query_id=query_id, error=str(e)[:200])
                     metrics().incr("sandbox_restarts")
                     await sandbox.start(mode=env.mode, context=env.context,
-                                        corpus_db=env.corpus_db)
+                                        corpus_db=env.corpus_db, init_extra=init_extra)
                     turns.append((code, (
                         f"[harness] {e} The sandbox was restarted: db/doc/"
                         "manifest and tools are reloaded, but YOUR VARIABLES "
@@ -335,7 +331,6 @@ class RootRunner:
                     if not completeness_checked:
                         completeness_checked = True
                         if batch_qids:
-                            # structural, free: every qid answered?
                             gap = self._batch_gap(cell.final, batch_qids)
                         else:
                             gap = await self._completeness_gap(
@@ -348,7 +343,7 @@ class RootRunner:
                     if (gap is None and env.corpus_db and not negatives_audited):
                         negatives_audited = True
                         if batch_questions:
-                            gap = self._audit_negatives(
+                            gap = audit_negatives(
                                 cell.final, batch_questions, env.corpus_db,
                                 trajectory)
                         else:
@@ -358,7 +353,7 @@ class RootRunner:
                                     query_id: cell.final.get("verification") or {},
                                 },
                             }
-                            gap = self._audit_negatives(
+                            gap = audit_negatives(
                                 wrapped, [(query_id, question)], env.corpus_db,
                                 trajectory)
                         negative_audit = "flagged" if gap else "probed"
@@ -368,7 +363,7 @@ class RootRunner:
                         pushbacks += 1
                         trajectory.event("completeness_pushback", gap=gap)
                         log(_LOG, logging.INFO, "final.pushback",
-                            query_id=query_id, gap=gap[:200])
+                            query_id=query_id, batch_size=len(batch_qids or [query_id]))
                         metrics().incr("final_pushbacks")
                         fname = "FINAL_BATCH" if batch_qids else "FINAL"
                         turns.append((code, (
@@ -447,7 +442,7 @@ class RootRunner:
         result = await runner.run(render_batch_task(questions), env,
                                   run_dir=run_dir, query_id=query_id,
                                   batch_questions=questions)
-        parsed = _coerce_batch(result.answer) or {}
+        parsed = coerce_batch(result.answer) or {}
         answers: dict[str, str | None] = {}
         evidence: dict[str, AnswerEvidence] = {}
         parent = result.evidence
@@ -535,8 +530,7 @@ class RootRunner:
                                            agreement=agreement, votes=votes,
                                            evidence=ev)
 
-        contested = [qid for qid, a in answers.items()
-                     if a.resolved_by == "split" or a.value is None]
+        contested = [qid for qid, a in answers.items() if a.contested]
         metrics().incr("consensus_fields", len(qids))
         metrics().incr("consensus_contested", len(contested))
         log(_LOG, logging.INFO, "consensus.voted", query_id=base_id,
@@ -582,89 +576,13 @@ class RootRunner:
             tiebreak_results=tiebreak_results)
 
     @staticmethod
-    def _audit_negatives(final: dict, questions: list[tuple[str, str]],
-                         corpus_db: str, trajectory: TrajectoryWriter) -> str | None:
-        """Mechanical audit of negative batch answers against the corpus.
-
-        For each question answered No/unknown/NOT_FOUND without verified
-        quotes, run one free FTS probe (AND of its most distinctive terms).
-        Hits mean the corpus contains text where the question's terms
-        co-occur — the model must read those passages before its negative
-        stands. One shot per loop; a resubmission is accepted, so a
-        genuine negative costs at most one extra iteration.
-        """
-        import itertools
-        import sqlite3
-
-        from rnsr.db import fts
-        from rnsr.env.search import _STOP, _TOKEN
-
-        answers = _coerce_batch(final.get("value")) or {}
-        verification = final.get("verification") or {}
-        negatives = [
-            (qid, text) for qid, text in questions
-            if _is_negative(str(answers.get(qid, "")))
-            and not (verification.get(qid) or {}).get("passed")
-        ]
-        if not negatives:
-            return None
-        # Batched questions share heavy boilerplate (role maps, evidence
-        # rules), so probe each question's DISTINCTIVE adjacent word pairs
-        # — its field labels ("date of birth", "lawyer's code") — as FTS
-        # phrases. A phrase hit means the corpus literally contains the
-        # question's own wording, which is strong evidence a negative is
-        # premature; loose single-term co-occurrence flagged legitimate
-        # negatives and churned loops (seen live).
-        def bigrams(text: str) -> list[tuple[str, str]]:
-            toks = [t.lower() for t in _TOKEN.findall(text)]
-            return [(a, b) for a, b in itertools.pairwise(toks)
-                    if a not in _STOP and b not in _STOP]
-
-        all_bigrams = {qid: bigrams(text) for qid, text in questions}
-        flagged: list[str] = []
-        try:
-            conn = sqlite3.connect(f"file:{corpus_db}?mode=ro", uri=True)
-        except sqlite3.Error:
-            return None
-        try:
-            for qid, _text in negatives:
-                others = [set(bg) for o, bg in all_bigrams.items() if o != qid]
-                distinctive = [
-                    bg for bg in dict.fromkeys(all_bigrams[qid])
-                    if sum(bg in s for s in others) <= len(others) // 2
-                ] if others else list(dict.fromkeys(all_bigrams[qid]))
-                for a, b in distinctive[:8]:
-                    hits = fts.match(conn, f'"{a} {b}"', k=1)
-                    if hits:
-                        sample = " ".join(hits[0]["text"][:120].split())
-                        flagged.append(
-                            f"{qid} (doc {hits[0]['doc_id']}: \"{sample}\")")
-                        break
-        finally:
-            conn.close()
-        if not flagged:
-            return None
-        flagged_ids = [f.split(" ", 1)[0] for f in flagged]
-        trajectory.event("negative_audit", flagged=flagged_ids)
-        log(_LOG, logging.INFO, "negative_audit.flagged", flagged=flagged_ids)
-        metrics().incr("negative_audit_flags", len(flagged_ids))
-        listing = "; ".join(flagged[:6])
-        return (
-            "these questions were answered negatively, but the corpus "
-            f"contains text matching their terms: {listing}. Read those "
-            "passages (and search around them) before resubmitting — "
-            "change any answer they establish, or resubmit unchanged if "
-            "the negative truly stands."
-        )
-
-    @staticmethod
     def _batch_gap(final: dict, qids: list[str]) -> str | None:
         """Structural completeness for FINAL_BATCH: every qid answered.
 
         No sub-LM involved — a missing id is objectively a gap. Returns the
         gap description, or None to accept.
         """
-        answers = _coerce_batch(final.get("value"))
+        answers = coerce_batch(final.get("value"))
         if answers is None:
             return ("the submitted value is not a dict of question id -> "
                     "answer. Use FINAL_BATCH({...}) with every question id "
@@ -688,6 +606,8 @@ class RootRunner:
         """
         for attempt in (1, 2, 3):
             timeout = min(120.0, ledger.remaining_wall_s())
+            if timeout <= 0 or ledger.spend_usd >= ledger.max_spend_usd:
+                return None
             try:
                 async with asyncio.timeout(timeout):
                     return await self.root_client.complete(
@@ -717,9 +637,11 @@ class RootRunner:
             "exactly COMPLETE, or 'MISSING: <what is missing>' in one line."
         )
         try:
-            resp = await self.sub_client.complete(prompt, model=self.sub_model,
-                                                  max_tokens=100)
-            ledger.add_usage(resp.usage, sub_call=True)
+            ledger.reserve_sub_call()
+            async with asyncio.timeout(ledger.remaining_wall_s()):
+                resp = await self.sub_client.complete(prompt, model=self.sub_model,
+                                                      max_tokens=100)
+            ledger.add_usage(resp.usage)
         except Exception:
             return None
         text = resp.text.strip()

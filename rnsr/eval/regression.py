@@ -20,20 +20,10 @@ import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
-NOT_FOUND = "Not found in matter corpus"
-_NEGATIVES = ("", "no", "n/a", "na", "none", "unknown", "not applicable",
-              "not_applicable", "blank", "leave blank", "not reached")
+from rnsr.answer_semantics import NOT_FOUND as NOT_FOUND
+from rnsr.answer_semantics import comparison_key, is_negative, needs_review
 
-
-def normalize(text: str) -> str:
-    text = re.sub(r"[\u2610\u2611\u2612\u2713\u2717]", " ", text or "")
-    return re.sub(r"\s+", " ",
-                  re.sub(r"[^\w\s/@.:$%-]", " ", text.lower())).strip(" .")
-
-
-def is_negative(text: str) -> bool:
-    n = normalize(text)
-    return n in _NEGATIVES or n.startswith(normalize(NOT_FOUND))
+normalize = comparison_key
 
 
 def string_agrees(golden: list[str] | str, answer: str) -> bool:
@@ -52,7 +42,7 @@ def string_agrees(golden: list[str] | str, answer: str) -> bool:
         g = normalize(str(gold))
         if g == a:
             return True
-        if g in _NEGATIVES or g.startswith(("leave blank", "not reached")):
+        if is_negative(g) or g.startswith(("leave blank", "not reached")):
             if is_negative(answer):
                 return True
             continue
@@ -70,11 +60,11 @@ def string_agrees(golden: list[str] | str, answer: str) -> bool:
 def infer_expect(golden: list[str] | str, note: str = "") -> str:
     """Classify a golden as value-bearing or absent."""
     golds = [golden] if isinstance(golden, str) else list(golden or [])
-    if not golds or all(not str(g).strip() for g in golds):
+    if not golds or all(is_negative(g) for g in golds):
         return "absent"
     blob = " ".join(str(g) for g in golds) + " " + (note or "")
     n = normalize(blob)
-    if n in _NEGATIVES or any(
+    if is_negative(n) or any(
         k in n for k in ("not applicable", "leave blank", "not reached",
                          "not found")
     ):
@@ -135,7 +125,7 @@ class RegressionReport:
         misses = [r for r in self.results if not r.agrees]
         if not misses:
             return 1.0
-        return sum(1 for r in misses if r.tier in ("low", "medium")) / len(misses)
+        return sum(1 for r in misses if needs_review(r.tier)) / len(misses)
 
     @property
     def auto_accept_rate(self) -> float:
@@ -174,7 +164,7 @@ class RegressionReport:
         nothing, so raw agreement over every field flatters a cautious run.
         """
         rows = [r for r in self.results
-                if r.golden.strip() and normalize(r.golden) not in _NEGATIVES]
+                if r.golden.strip() and not is_negative(r.golden)]
         return sum(r.agrees for r in rows), len(rows)
 
     def summary(self) -> dict:

@@ -3,12 +3,11 @@
 Default tier: symmetric int8 quantization in a sqlite-vec ``vec0`` table
 for the coarse KNN, with fp32 blobs kept alongside for exact rescoring of
 the top candidates. Embeddings are computed on demand (first use pays once
-per corpus) and written back into the same corpus.db — a compressed
-*additional* view, never a replacement (§1.4).
+per corpus) and stored as a derived cache — a compressed additional
+view, never a replacement (§1.4).
 
-The Quantizer interface is the seam for the PolarQuant upgrade path: it
-slots in behind the same store if int8 fails the §8 recall bar at target
-corpus scale.
+Sandbox queries use a private temporary cache; trusted offline evaluation
+may explicitly use the corpus connection as its cache.
 """
 
 from __future__ import annotations
@@ -17,17 +16,8 @@ import json
 import sqlite3
 import struct
 from dataclasses import dataclass
-from typing import Protocol
 
 import numpy as np
-
-
-class Quantizer(Protocol):
-    name: str
-
-    def quantize(self, vecs: np.ndarray) -> list[bytes]: ...
-    def coarse_topk(self, conn: sqlite3.Connection, query: np.ndarray,
-                    pool: int) -> list[int]: ...
 
 
 @dataclass
@@ -60,13 +50,14 @@ def _unit(v: np.ndarray) -> np.ndarray:
 
 
 class EmbeddingStore:
-    """Lazy write-back embedding cache over the corpus chunks."""
+    """Lazy embedding cache with separate source and cache connections."""
 
     def __init__(self, conn: sqlite3.Connection, *,
-                 quantizer: Quantizer | None = None,
+                 cache_conn: sqlite3.Connection | None = None,
                  rescore_pool: int = 4000):
-        self.conn = conn
-        self.quantizer = quantizer or Int8Quantizer()
+        self.source = conn
+        self.conn = cache_conn if cache_conn is not None else conn
+        self.quantizer = Int8Quantizer()
         self.rescore_pool = rescore_pool
         self._load_vec_extension()
 
@@ -85,7 +76,7 @@ class EmbeddingStore:
     def ensure(self, embed_fn, model: str, *, batch: int = 64) -> dict:
         """Embed all chunks not yet cached; write int8 + fp32 back. embed_fn:
         list[str] -> list[list[float]] (sync; the child RPCs to the parent)."""
-        chunks = self.conn.execute(
+        chunks = self.source.execute(
             "SELECT chunk_id, text FROM chunks ORDER BY chunk_id"
         ).fetchall()
         have: set[int] = set()
@@ -107,17 +98,14 @@ class EmbeddingStore:
                 "CREATE TABLE vec_chunks_fp32 ("
                 "chunk_id INTEGER PRIMARY KEY, embedding BLOB NOT NULL)"
             )
+            # Metadata has one owner. Private caches keep the same manifest
+            # shape without modifying the read-only source artifact.
+            self.conn.execute("CREATE TABLE IF NOT EXISTS manifest (key TEXT PRIMARY KEY, value TEXT)")
             self.conn.execute(
-                "CREATE TABLE IF NOT EXISTS embedding_meta "
-                "(model TEXT, dim INTEGER, quantization TEXT)"
-            )
-            self.conn.execute("INSERT INTO embedding_meta VALUES (?,?,?)",
-                              (model, dim, self.quantizer.name))
-            self.conn.execute(
-                "INSERT OR REPLACE INTO manifest VALUES ('rung4_meta', ?)",
+                "INSERT INTO manifest (key, value) VALUES ('rung4_meta', ?) "
+                "ON CONFLICT(key) DO UPDATE SET value=excluded.value",
                 (json.dumps({"model": model, "dim": dim,
-                             "quantization": self.quantizer.name}),),
-            )
+                             "quantization": self.quantizer.name}),))
 
         done = 0
         vectors = [first]

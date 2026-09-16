@@ -1,6 +1,7 @@
 """Run-level provider governance: in-flight cap, RPM pacing, spend ceiling."""
 
 import asyncio
+import threading
 import time
 
 import pytest
@@ -28,6 +29,47 @@ def fresh_governor():
 
 
 class TestInFlightCap:
+    async def test_cap_shared_by_simultaneous_event_loops(self):
+        gov = Governor(max_in_flight=1)
+        state = {"active": 0, "peak": 0}
+        lock = threading.Lock()
+        barrier = threading.Barrier(2)
+
+        async def batch():
+            for _ in range(5):
+                await gov.acquire()
+                try:
+                    with lock:
+                        state["active"] += 1
+                        state["peak"] = max(state["peak"], state["active"])
+                    await asyncio.sleep(0.005)
+                    with lock:
+                        state["active"] -= 1
+                finally:
+                    gov.release()
+
+        def worker():
+            barrier.wait(timeout=2)
+            asyncio.run(batch())
+
+        await asyncio.gather(asyncio.to_thread(worker), asyncio.to_thread(worker))
+        assert state["peak"] == 1
+        assert gov.snapshot()["attempts"] == 10
+        assert gov.snapshot()["in_flight"] == 0
+
+    async def test_cancelled_waiter_does_not_leak_permit(self):
+        gov = Governor(max_in_flight=1)
+        await gov.acquire()
+        waiting = asyncio.create_task(gov.acquire())
+        await asyncio.sleep(0.02)
+        waiting.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await waiting
+        gov.release()
+        await asyncio.wait_for(gov.acquire(), timeout=1)
+        gov.release()
+        assert gov.snapshot()["in_flight"] == 0
+
     async def test_cap_holds_across_independent_batches(self):
         # the bug this closes: each batch had its own semaphore, so N
         # concurrent loops meant N x sub_concurrency requests in flight
@@ -51,6 +93,18 @@ class TestInFlightCap:
 
 
 class TestSpendCeiling:
+    async def test_waiting_request_rechecks_spend_before_admission(self):
+        from rnsr.llm.base import Usage
+
+        gov = Governor(max_in_flight=1, spend_ceiling_usd=1)
+        await gov.acquire()
+        waiting = asyncio.create_task(gov.acquire())
+        await asyncio.sleep(0.02)
+        gov.record(Usage(cost_usd=1))
+        gov.release()
+        with pytest.raises(SpendCeilingExceeded):
+            await waiting
+
     async def test_calls_refused_once_ceiling_reached(self):
         gov = Governor(spend_ceiling_usd=0.0025)   # 2 calls at $0.001 each
         client = governed(MockLLM(default="ok"), gov)
@@ -109,6 +163,40 @@ class TestPacing:
 
 
 class TestWiring:
+    async def test_embedding_failure_cancels_sibling_requests(self):
+        class IndividualEmbedder:
+            embeds_individually = True
+            started = []
+            completed = []
+
+            async def embed(self, texts, *, model):
+                text = texts[0]
+                self.started.append(text)
+                if text == "bad":
+                    raise ValueError("bad embedding")
+                await asyncio.sleep(0.05)
+                self.completed.append(text)
+                return [[1.0]]
+
+        inner = IndividualEmbedder()
+        gov = Governor(max_in_flight=1)
+        with pytest.raises(ValueError, match="bad embedding"):
+            await governed(inner, gov).embed(["bad", "later1", "later2"], model="e")
+        attempts = gov.attempts
+        await asyncio.sleep(0.1)
+        assert inner.completed == []
+        assert gov.attempts == attempts
+        assert gov.snapshot()["in_flight"] == 0
+
+    async def test_per_text_embedding_calls_are_individually_governed(self):
+        class IndividualEmbedder(MockLLM):
+            embeds_individually = True
+
+        gov = Governor(max_in_flight=2)
+        vectors = await governed(IndividualEmbedder(), gov).embed(["a", "b", "c"], model="e")
+        assert len(vectors) == 3
+        assert gov.requests == 3
+        assert gov.attempts == 3
     def test_router_wraps_clients(self, monkeypatch):
         from rnsr.llm.governor import GovernedClient
         from rnsr.llm.router import Router

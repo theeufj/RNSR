@@ -15,6 +15,7 @@ import sqlite3
 from dataclasses import dataclass
 
 from rnsr.db import schema
+from rnsr.db.metadata import TableSchema
 from rnsr.ingest.coerce import caption_scale, coerce_column
 from rnsr.ingest.model import RawTable
 from rnsr.ingest.validate import classify_row_kind
@@ -140,11 +141,9 @@ class BuiltTable:
 
     @property
     def schema_json(self) -> str:
-        return json.dumps({
-            "columns": self.schema_entries,
-            "n_total_rows": self.n_total_rows,
-            "n_data_rows": self.n_data_rows,
-        })
+        return TableSchema.model_validate({
+            "columns": self.schema_entries, "n_total_rows": self.n_total_rows,
+            "n_data_rows": self.n_data_rows}).model_dump_json()
 
 
 def build_data_table(
@@ -168,7 +167,7 @@ def build_data_table(
     min/max, text distinct-count + sample) are attached to the schema
     entries — both feed rung-0 sweeps and table pruning.
     """
-    taken: set[str] = set()
+    taken = set(schema.PROVENANCE_COLUMNS) | {"rowid", "oid", "_rowid_", "source_page"}
     col_names = [schema.sanitize_column_name(h, taken) for h in raw.header]
 
     columns: list[tuple[str, str]] = []       # DDL (name, type) incl. shadows

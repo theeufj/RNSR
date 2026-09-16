@@ -1,17 +1,14 @@
 """Filesystem and process containment for the sandbox child (spec §4).
 
-The audit hook installed here is what stands between model-written code
-and the rest of the machine. Matter documents arrive from opposing
-parties, so the threat is not an accident: it is a poisoned document that
-talks the root model into ``open('~/.aws/credentials').read()`` or
-``os.system(...)``. Sockets alone are not enough of a boundary.
+The OS launcher enforces containment. This audit hook provides clearer errors
+and a second layer of restrictions; it is not a hostile-Python boundary.
 
 Policy:
   - reads are confined to the interpreter's own installation (so
     ``import statistics`` still works mid-cell), the rnsr package, and
     the corpus artifact;
-  - writes are confined to the corpus artifact (annotation columns) and
-    the temp directory;
+  - writes are confined to the private temp directory; corpus and sidecars
+    are read-only, with annotation requests handled by the parent;
   - process creation and ctypes are refused outright — a child process
     is not audited at all, and ctypes reaches libc ``open()`` from below
     the audit layer, so both walk straight around every rule above.
@@ -27,15 +24,17 @@ from __future__ import annotations
 import os
 import sys
 import tempfile
+import threading
 from collections.abc import Iterable
+from urllib.parse import unquote, urlsplit
 
 # Events with no legitimate use in the child, where allowing the call at
 # all would void the rest of the policy.
 _BLOCKED_EVENTS = (
-    # an unaudited child process would sidestep every path rule below
+    # process creation is unnecessary for corpus analysis
     "os.system", "os.exec", "os.posix_spawn", "os.spawn", "os.startfile",
     "subprocess.Popen", "os.fork", "os.forkpty", "pty.spawn",
-    # ctypes calls libc open() beneath the audit layer
+    # native calls bypass Python auditing (the OS boundary still applies)
     "ctypes.dlopen", "ctypes.dlsym", "ctypes.call_function", "ctypes.cdata",
     # the child holds RPC stubs for model/embedding calls; it needs no sockets
     "socket.",   # __new__, connect, bind, DNS, sendto, …
@@ -110,7 +109,13 @@ def install(*, corpus_db: str | None = None,
                    *(_norm(d) for d in extra_write_dirs))
     read_roots = read_roots + write_roots
     artifact = _norm(corpus_db) if corpus_db else ""
-    busy = False
+    busy = threading.local()
+    # Capture policy helpers; module rebinding must not relax the hook.
+    under, norm = _under, _norm
+    blocked_events = _BLOCKED_EVENTS
+    write_events, read_events = _WRITE_EVENTS, _READ_EVENTS
+    write_modes, write_flags = _WRITE_MODE_CHARS, _WRITE_FLAGS
+    tool_hint = _TOOL_HINT
 
     def _artifact_role(resolved: str) -> str | None:
         if not artifact:
@@ -125,63 +130,63 @@ def install(*, corpus_db: str | None = None,
         return None
 
     def hook(event: str, args) -> None:
-        nonlocal busy
-        if event.startswith(_BLOCKED_EVENTS):
+        if event.startswith(blocked_events):
             if event.startswith("socket."):
                 raise PermissionError(
                     f"network access is blocked in the sandbox ({event})")
             raise PermissionError(
                 f"{event} is blocked in the sandbox: the child may not create "
-                f"processes or load native libraries. {_TOOL_HINT}")
-        if busy:
+                f"processes or load native libraries. {tool_hint}")
+        if getattr(busy, "active", False):
             return
         mode = flags = None
         if event == "open":
             path, a1, a2 = (list(args) + [None, None, None])[:3]
-            # builtin open: (path, mode_str, flags); os.open: (path, flags, perm)
+            # Both builtin open and os.open emit (path, mode_or_None, flags).
             if isinstance(a1, str):
                 mode, flags = a1, a2
             else:
-                mode, flags = None, a1
+                mode, flags = None, a2
             writing = bool(
-                (isinstance(mode, str) and _WRITE_MODE_CHARS & set(mode))
-                or (isinstance(flags, int) and flags & _WRITE_FLAGS))
+                (isinstance(mode, str) and write_modes & set(mode))
+                or (isinstance(flags, int) and flags & write_flags))
             paths, kind = [path], ("write" if writing else "read")
         elif event == "sqlite3.connect":
             raw = args[0] if args else None
+            if isinstance(raw, str) and raw.startswith("file:"):
+                raw = unquote(urlsplit(raw).path)
             if raw in (":memory:", "", None):
                 return
             paths, kind = [raw], "read"
-        elif event in _WRITE_EVENTS:
+        elif event in write_events:
             paths, kind = list(args), "write"
-        elif event in _READ_EVENTS:
+        elif event in read_events:
             paths, kind = list(args), "read"
         else:
             return
 
-        busy = True
+        busy.active = True
         try:
             for raw in paths:
                 if isinstance(raw, bytes):
                     raw = raw.decode("utf-8", "replace")
                 if not isinstance(raw, (str, os.PathLike)):
                     continue        # fd-based reopen: the open() already passed
-                resolved = _norm(os.fspath(raw))
+                resolved = norm(os.fspath(raw))
                 role = _artifact_role(resolved)
-                if role == "exact" and kind == "write" and isinstance(mode, str) and (
-                        "w" in mode or "x" in mode):
+                if role and kind == "write":
                     raise PermissionError(
-                        f"raw write to the corpus artifact is blocked. {_TOOL_HINT}")
+                        f"raw write to the corpus artifact is blocked. {tool_hint}")
                 if role:
                     continue
                 allowed = write_roots if kind == "write" else read_roots
-                if _under(resolved, allowed):
+                if under(resolved, allowed):
                     continue
                 raise PermissionError(
                     f"filesystem {kind} of {resolved!r} is blocked in the "
-                    f"sandbox. {_TOOL_HINT}")
+                    f"sandbox. {tool_hint}")
         finally:
-            busy = False
+            busy.active = False
 
     sys.addaudithook(hook)
 

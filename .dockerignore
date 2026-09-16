@@ -1,0 +1,9 @@
+# Only runtime source and package metadata belong in the image/build context.
+**
+!Dockerfile
+!pyproject.toml
+!README.md
+!rnsr/
+!rnsr/**
+rnsr/**/__pycache__/
+rnsr/**/*.pyc

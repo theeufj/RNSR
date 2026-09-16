@@ -7,6 +7,7 @@ answer-like variables and give the root LM one confirm-or-reject turn.
 
 from __future__ import annotations
 
+import asyncio
 import re
 
 _ANSWERISH = re.compile(r"answer|result|final|out(put)?|pairs|total|value", re.IGNORECASE)
@@ -29,12 +30,21 @@ def rank_candidates(vars_: dict[str, dict]) -> list[str]:
 
 
 async def recover_variable(sandbox, runner, question: str, turns: list,
-                           trajectory) -> dict | None:
+                           trajectory, ledger=None) -> dict | None:
     """One confirm-or-reject turn over ranked namespace candidates.
 
     Returns a FINAL-shaped dict ({"value", "encoding", "is_var"}) or None.
     """
-    vars_ = await sandbox.vars()
+    if ledger and (ledger.remaining_wall_s() <= 0
+                   or ledger.spend_usd >= ledger.max_spend_usd
+                   or ledger.root_iters >= ledger.max_root_iters):
+        return None
+    timeout = min(30.0, ledger.remaining_wall_s()) if ledger else 30.0
+    try:
+        async with asyncio.timeout(timeout):
+            vars_ = await sandbox.vars()
+    except TimeoutError:
+        return None
     candidates = rank_candidates(vars_)[:8]
     if not candidates:
         return None
@@ -49,12 +59,23 @@ async def recover_variable(sandbox, runner, question: str, turns: list,
         "If one of them IS the answer to the task, reply with exactly its "
         "name. If none of them answers the task, reply with exactly NONE."
     )
-    resp = await runner.root_client.complete(
-        prompt, model=runner.root_model,
-        system="You are confirming or rejecting a recovered answer. "
-               "Reply with a single variable name or NONE.",
-        max_tokens=64,
-    )
+    timeout = min(30.0, ledger.remaining_wall_s()) if ledger else 30.0
+    if timeout <= 0:
+        return None
+    if ledger:
+        ledger.root_iters += 1
+    try:
+        async with asyncio.timeout(timeout):
+            resp = await runner.root_client.complete(
+                prompt, model=runner.root_model,
+                system="You are confirming or rejecting a recovered answer. "
+                       "Reply with a single variable name or NONE.",
+                max_tokens=64,
+            )
+    except Exception:
+        return None
+    if ledger:
+        ledger.add_usage(resp.usage)
     choice: str | None = resp.text.strip().strip("`'\"")
     if choice not in vars_:
         # Models often reply with reasoning despite the instruction (seen
@@ -71,5 +92,8 @@ async def recover_variable(sandbox, runner, question: str, turns: list,
     if choice is None:
         return None
 
-    cell = await sandbox.exec_cell(f"FINAL_VAR({choice})", timeout=30.0)
+    timeout = min(30.0, ledger.remaining_wall_s()) if ledger else 30.0
+    if timeout <= 0:
+        return None
+    cell = await sandbox.exec_cell(f"FINAL_VAR({choice})", timeout=timeout)
     return cell.final

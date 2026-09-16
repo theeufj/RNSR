@@ -8,15 +8,15 @@ from pathlib import Path
 from typing import Any
 
 from rnsr.db import schema
+from rnsr.db.metadata import decode_table_schema
 from rnsr.errors import ArtifactVersionError
 
 
 class CorpusDB:
     """Open/create a corpus.db and provide manifest + text access.
 
-    Query-time consumers open ``mode="rw"``: source data stays protected by
-    the immutability triggers; only annotation columns and annotation_log
-    are writable. ``mode="ro"`` maps to a SQLite read-only URI open.
+    Query-time consumers use read-only connections. Trusted ingestion and
+    the parent annotation broker alone use ``mode="rw"``.
     """
 
     def __init__(self, path: str | Path, mode: str = "ro"):
@@ -25,13 +25,17 @@ class CorpusDB:
             raise ValueError(f"mode must be 'ro' or 'rw', got {mode!r}")
         if not self.path.exists():
             raise FileNotFoundError(self.path)
-        uri = f"file:{self.path}?mode={'ro' if mode == 'ro' else 'rw'}"
+        uri = self.path.resolve().as_uri() + f"?mode={mode}"
         self.conn = sqlite3.connect(uri, uri=True)
         self.conn.row_factory = sqlite3.Row
         # mmap-backed reads: DB pages come from the OS page cache, shared
         # across every process reading the same artifact (Stage 1).
         schema.apply_read_pragmas(self.conn)
-        self._validate_artifact()
+        try:
+            self._validate_artifact()
+        except BaseException:
+            self.conn.close()
+            raise
 
     @classmethod
     def create(cls, path: str | Path) -> CorpusDB:
@@ -86,23 +90,23 @@ class CorpusDB:
             row["key"]: json.loads(row["value"])
             for row in self.conn.execute("SELECT key, value FROM manifest")
         }
+        # Derive mutable summaries from their authoritative rows at read time.
+        out["documents"] = [dict(row) for row in self.conn.execute(
+            "SELECT doc_id,source_path,n_pages,parser,title,doc_date,author,"
+            "parent_doc_id,duplicate_of,content_sha256 FROM documents ORDER BY doc_id")]
+        out["untrusted_tables"] = [row[0] for row in self.conn.execute(
+            "SELECT table_name FROM manifest_tables WHERE status='untrusted' ORDER BY table_name")]
+        out["ingest_batches"] = [dict(row) for row in self.conn.execute(
+            "SELECT batch_id,created_at,kind,n_docs FROM ingest_batches ORDER BY batch_id")]
         out["tables"] = []
         for row in self.conn.execute("SELECT * FROM manifest_tables ORDER BY table_name"):
-            raw_schema = json.loads(row["schema_json"])
-            if isinstance(raw_schema, dict) and "columns" in raw_schema:
-                columns = raw_schema["columns"]
-                n_total_rows = int(raw_schema.get("n_total_rows") or 0)
-                n_data_rows = int(raw_schema.get("n_data_rows") or 0)
-            else:
-                columns = raw_schema
-                n_total_rows = 0
-                n_data_rows = 0
+            table_schema = decode_table_schema(row["schema_json"])
             entry = {
                 **dict(row),
-                "schema": columns,
+                "schema": [c.model_dump() for c in table_schema.columns],
                 "checks": json.loads(row["checks_json"]),
-                "n_total_rows": n_total_rows,
-                "n_data_rows": n_data_rows,
+                "n_total_rows": table_schema.n_total_rows,
+                "n_data_rows": table_schema.n_data_rows,
             }
             entry.pop("schema_json", None)
             entry.pop("checks_json", None)

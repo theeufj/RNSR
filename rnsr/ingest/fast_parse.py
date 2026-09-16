@@ -13,12 +13,11 @@ from __future__ import annotations
 from pathlib import Path
 
 from rnsr.ingest.model import Element, ParsedDocument
-from rnsr.ingest.parse import make_doc_id
+from rnsr.ingest.parse import content_sha256, make_doc_id
 
 
 def stat_identity(path: Path) -> str:
-    """Identity from path+size+mtime — no byte reads (fable-replicate's own
-    manifest scheme). Content-exact dedupe is traded for speed at scale."""
+    """Filesystem cache identity; never a substitute for a content digest."""
     import hashlib
 
     st = path.stat()
@@ -52,7 +51,8 @@ def parse_pdf_fast(path: str | Path, doc_id: str | None = None) -> ParsedDocumen
         return ParsedDocument(
             doc_id=doc_id or make_doc_id(path),
             source_path=str(path),
-            sha256=stat_identity(path),
+            sha256=content_sha256(path),
+            source_identity=stat_identity(path),
             n_pages=n_pages or 1,
             parser=FAST_PARSER_NAME,
             elements=elements,

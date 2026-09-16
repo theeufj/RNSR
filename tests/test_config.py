@@ -1,5 +1,7 @@
 """Settings: spec defaults and env overrides."""
 
+import pytest
+
 from rnsr.config import Settings
 
 
@@ -41,4 +43,35 @@ def test_legacy_provider_env(monkeypatch, tmp_path):
     monkeypatch.chdir(tmp_path)
     monkeypatch.delenv("RNSR_PROVIDER", raising=False)
     monkeypatch.setenv("LLM_PROVIDER", "gemini")
-    assert Settings.from_env().provider == "gemini"
+    with pytest.warns(DeprecationWarning, match="RNSR_PROVIDER"):
+        assert Settings.from_env().provider == "gemini"
+
+
+@pytest.mark.parametrize("field,value", [
+    ("chunk_chars", 0), ("chunk_overlap", -1), ("chunk_overlap", 1500),
+    ("sub_concurrency", 0), ("max_wall_s", 0), ("cell_timeout_s", -1),
+    ("max_spend_usd", float("nan")), ("max_wall_s", float("inf")),
+    ("coerce_threshold", 1.1), ("transcribe_scans", "typo"),
+    ("log_format", "typo"), ("provider", "typo"),
+])
+def test_invalid_settings_rejected(field, value):
+    with pytest.raises(ValueError):
+        Settings(**{field: value})
+
+
+def test_optional_path_and_boolean_env(monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("RNSR_SERVICE_CORPUS_ROOT", str(tmp_path))
+    monkeypatch.setenv("RNSR_SANDBOX_FS_GUARD", "false")
+    settings = Settings.from_env()
+    assert settings.service_corpus_root == tmp_path
+    assert settings.sandbox_fs_guard is False
+    monkeypatch.setenv("RNSR_SANDBOX_FS_GUARD", "typo")
+    with pytest.raises(ValueError):
+        Settings.from_env()
+
+
+def test_secret_settings_are_not_in_repr():
+    settings = Settings(service_token="do-not-log", trajectory_key="secret-key")
+    assert "do-not-log" not in repr(settings)
+    assert "secret-key" not in repr(settings)

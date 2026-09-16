@@ -1,5 +1,7 @@
 """HTTP service surface: health, readiness, metrics, job lifecycle."""
 
+import time
+
 import pytest
 
 from rnsr.config import Settings
@@ -8,6 +10,18 @@ fastapi = pytest.importorskip("fastapi")
 from fastapi.testclient import TestClient  # noqa: E402
 
 from rnsr.service import JobStore  # noqa: E402
+
+
+def wait_for_job(client, job_id):
+    deadline = time.monotonic() + 2
+    while time.monotonic() < deadline:
+        response = client.get(f"/jobs/{job_id}")
+        assert response.status_code == 200
+        job = response.json()
+        if job["state"] in ("done", "failed"):
+            return job
+        time.sleep(0.005)
+    pytest.fail("job did not finish within 2 seconds")
 
 
 @pytest.fixture
@@ -33,8 +47,9 @@ def client(tmp_path, monkeypatch):
     from rnsr.service import create_app
 
     monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")
-    app = create_app(Settings(provider="anthropic"), run_dir=tmp_path / "runs")
-    with TestClient(app) as c:
+    app = create_app(Settings(provider="anthropic", service_token="test-token",
+                              service_corpus_root=tmp_path), run_dir=tmp_path / "runs")
+    with TestClient(app, headers={"Authorization": "Bearer test-token"}) as c:
         yield c
 
 
@@ -57,8 +72,10 @@ class TestHealth:
 
         for env in ("ANTHROPIC_API_KEY", "OPENAI_API_KEY", "GOOGLE_API_KEY"):
             monkeypatch.delenv(env, raising=False)
-        app = create_app(Settings(provider="anthropic"), run_dir=tmp_path / "runs")
-        with TestClient(app, raise_server_exceptions=False) as c:
+        app = create_app(Settings(provider="anthropic", service_token="test-token",
+                              service_corpus_root=tmp_path), run_dir=tmp_path / "runs")
+        with TestClient(app, raise_server_exceptions=False,
+                        headers={"Authorization": "Bearer test-token"}) as c:
             r = c.get("/readyz")
         assert r.status_code == 503
         assert r.json()["detail"]["status"] == "not ready"
@@ -77,7 +94,7 @@ class TestJobs:
         r = client.post("/jobs", json={"questions": ["q?"],
                                        "corpus_db": "/nope/corpus.db"})
         assert r.status_code == 400
-        assert "corpus_db not found" in r.json()["detail"]
+        assert "corpus_db unavailable" in r.json()["detail"]
 
     def test_rejects_empty_question_list(self, client, corpus_db):
         r = client.post("/jobs", json={"questions": [],
@@ -99,7 +116,7 @@ class TestJobs:
         assert r.status_code == 202
         job_id = r.json()["id"]
 
-        got = client.get(f"/jobs/{job_id}").json()
+        got = wait_for_job(client, job_id)
         assert got["state"] == "done"
         assert got["results"][0]["answer"] == "7714"
         assert got["results"][0]["question"] == "What is the number?"
@@ -114,7 +131,7 @@ class TestJobs:
         job_id = client.post("/jobs", json={"questions": ["q?"],
                                             "corpus_db": str(corpus_db)}
                              ).json()["id"]
-        got = client.get(f"/jobs/{job_id}").json()
+        got = wait_for_job(client, job_id)
         assert got["state"] == "failed"
         assert "provider down" in got["error"]
 
@@ -137,6 +154,19 @@ class TestJobs:
 
 
 class TestJobStore:
+    def test_running_oldest_does_not_block_eviction(self):
+        from rnsr.service import Job
+
+        store = JobStore(max_jobs=2)
+        store.add(Job(id="running", questions=["q"], corpus_db="x",
+                      state="running", submitted_at=0))
+        for i in range(10):
+            store.add(Job(id=f"done{i}", questions=["q"], corpus_db="x",
+                          state="done", submitted_at=i + 1))
+        assert len(store.recent()) == 2
+        assert store.get("running") is not None
+        assert store.get("done9") is not None
+
     def test_evicts_oldest_finished_job(self):
         from rnsr.service import Job
 
@@ -153,8 +183,9 @@ class TestJobStore:
         store = JobStore(max_jobs=1)
         store.add(Job(id="running", questions=["q"], corpus_db="x",
                       state="running", submitted_at=0.0))
-        store.add(Job(id="new", questions=["q"], corpus_db="x",
-                      state="queued", submitted_at=1.0))
+        with pytest.raises(OverflowError):
+            store.add(Job(id="new", questions=["q"], corpus_db="x",
+                          state="queued", submitted_at=1.0))
         assert store.get("running") is not None
 
 
@@ -195,3 +226,53 @@ class TestRunJob:
         await run_job(job, Settings(), tmp_path / "runs")
         assert job.state == "failed"
         assert job.error
+
+
+class TestAuthorization:
+    @pytest.mark.parametrize("path", ["/readyz", "/metrics", "/jobs", "/jobs/id"])
+    def test_protected_reads(self, client, path):
+        assert client.get(path, headers={"Authorization": ""}).status_code == 401
+        assert client.get(path, headers={"Authorization": "Bearer wrong"}).status_code == 401
+
+    def test_protected_submit(self, client, corpus_db):
+        response = client.post("/jobs", headers={"Authorization": ""}, json={
+            "questions": ["q"], "corpus_db": str(corpus_db)})
+        assert response.status_code == 401
+        assert client.get("/jobs").json()["jobs"] == []
+
+    def test_liveness_is_public(self, client):
+        assert client.get("/healthz", headers={"Authorization": ""}).status_code == 200
+
+    def test_startup_requires_auth_and_root(self, tmp_path):
+        from rnsr.service import create_app
+
+        with pytest.raises(ValueError, match="SERVICE_TOKEN"):
+            create_app(Settings(), run_dir=tmp_path)
+        with pytest.raises(ValueError, match="SERVICE_CORPUS_ROOT"):
+            create_app(Settings(service_token="test"), run_dir=tmp_path)
+
+    def test_symlink_escape_and_directory_rejected(self, client, tmp_path):
+        outside = tmp_path.parent / "outside.db"
+        outside.write_bytes(b"sentinel")
+        link = tmp_path / "escape.db"
+        link.symlink_to(outside)
+        for path in (link, outside, tmp_path):
+            response = client.post("/jobs", json={"questions": ["q"], "corpus_db": str(path)})
+            assert response.status_code == 400
+        assert client.get("/jobs").json()["jobs"] == []
+
+    def test_listing_does_not_expose_question_answer_or_errors(self, client):
+        from rnsr.service import Job
+
+        client.app.state.store.add(Job(id="private", questions=["private question"],
+                                      corpus_db="private.db", state="failed",
+                                      error="private source excerpt"))
+        data = client.get("/jobs").json()["jobs"][0]
+        assert data["questions"] == 1
+        assert "error" not in data
+        assert "results" not in data
+        assert "private question" not in str(data)
+
+    @pytest.mark.parametrize("limit", [-1, 0, 201])
+    def test_listing_limits_are_bounded(self, client, limit):
+        assert client.get(f"/jobs?limit={limit}").status_code == 422

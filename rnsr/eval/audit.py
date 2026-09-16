@@ -6,6 +6,7 @@ import csv
 import json
 from pathlib import Path
 
+from rnsr.answer_semantics import TIER_RANK
 from rnsr.harness.evidence import from_records
 from rnsr.harness.trajectory import read_trajectory
 
@@ -129,8 +130,7 @@ def export_audit(work_dir: str | Path, out_dir: str | Path, *,
             "note": "",
         })
 
-    _rank = {"low": 0, "medium": 1, "high": 2}
-    review_rows.sort(key=lambda r: _rank.get(r.get("tier") or "", 3))
+    review_rows.sort(key=lambda r: TIER_RANK.get(r.get("tier") or "", 3))
     review_path = out / "review.csv"
     with open(review_path, "w", newline="", encoding="utf-8") as fh:
         w = csv.DictWriter(fh, fieldnames=["qid", "answer", "tier",
@@ -140,8 +140,8 @@ def export_audit(work_dir: str | Path, out_dir: str | Path, *,
     return {"n": written, "evidence_dir": str(ev_dir), "review": str(review_path)}
 
 
-_CORRECT = frozenset({"correct", "ok", "pass", "yes", "true", "1"})
-_WRONG = frozenset({"wrong", "miss", "fail", "no", "false", "0", "incorrect"})
+CORRECT_MARKS = frozenset({"correct", "ok", "pass", "yes", "true", "1"})
+WRONG_MARKS = frozenset({"wrong", "miss", "fail", "no", "false", "0", "incorrect"})
 
 
 def score_review(path: str | Path) -> dict:
@@ -151,9 +151,9 @@ def score_review(path: str | Path) -> dict:
     with open(path, newline="", encoding="utf-8") as fh:
         for row in csv.DictReader(fh):
             mark = (row.get("reviewer_mark") or "").strip().lower()
-            if mark in _CORRECT:
+            if mark in CORRECT_MARKS:
                 verdict = "ok"
-            elif mark in _WRONG:
+            elif mark in WRONG_MARKS:
                 verdict = "miss"
             else:
                 verdict = "unmarked"

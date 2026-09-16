@@ -52,9 +52,7 @@ def detect_duplicates(conn: sqlite3.Connection, *,
 
     The kept document is the last by ``modified_at`` then ``doc_id``.
     """
-    cols = {r[1] for r in conn.execute("PRAGMA table_info(documents)")}
-    if "duplicate_of" not in cols:
-        return []
+    conn.execute("UPDATE documents SET duplicate_of=NULL")
     docs = [
         dict(r) if isinstance(r, sqlite3.Row) else {
             "doc_id": r[0], "content_sha256": r[1], "modified_at": r[2],

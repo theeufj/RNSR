@@ -51,7 +51,7 @@ def _assemble(parsed: ParsedDocument) -> tuple[list[PageText], list[_Placed]]:
     pages: list[PageText] = []
     placed: list[_Placed] = []
     offset = 0
-    max_page = max((e.page for e in parsed.elements), default=0)
+    max_page = max(parsed.n_pages, max((e.page for e in parsed.elements), default=0))
     for page_no in range(1, max_page + 1):
         page_start = offset
         parts: list[str] = []
@@ -95,6 +95,8 @@ def chunk_document(
     parsed: ParsedDocument, chunk_chars: int = 1500, overlap: int = 200
 ) -> tuple[list[PageText], list[Chunk]]:
     """Build canonical page texts and chunks for one document."""
+    if chunk_chars <= 0 or overlap < 0 or overlap >= chunk_chars:
+        raise ValueError("chunk_chars must be positive and 0 <= overlap < chunk_chars")
     pages, placed = _assemble(parsed)
     full_len = pages[-1].char_end if pages else 0
 

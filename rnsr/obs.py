@@ -52,6 +52,14 @@ class JsonFormatter(logging.Formatter):
         return json.dumps(payload, default=repr)
 
 
+class StderrHandler(logging.StreamHandler):
+    """Resolve stderr on emission so embedded CLI runs can redirect it safely."""
+
+    def emit(self, record: logging.LogRecord) -> None:
+        self.stream = sys.stderr
+        super().emit(record)
+
+
 def configure_logging(settings=None, *, level: str | None = None,
                       fmt: str | None = None, force: bool = False) -> None:
     """Install the rnsr log handler. Idempotent unless force=True.
@@ -70,7 +78,7 @@ def configure_logging(settings=None, *, level: str | None = None,
     logger = logging.getLogger(ROOT_LOGGER)
     for handler in list(logger.handlers):
         logger.removeHandler(handler)
-    handler = logging.StreamHandler(sys.stderr)
+    handler = StderrHandler()
     handler.setFormatter(
         JsonFormatter() if fmt == "json"
         else logging.Formatter("%(asctime)s %(levelname)-7s %(name)s %(message)s"))

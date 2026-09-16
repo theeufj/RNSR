@@ -90,20 +90,7 @@ def _matches(model: str, available: set[str]) -> bool:
 
 
 async def _list_models(client, provider: str) -> set[str] | None:
-    inner = getattr(client, "_inner", client)      # unwrap the governor
     try:
-        if provider == "openai":
-            page = await inner._client.models.list()
-            return {m.id for m in page.data}
-        if provider == "anthropic":
-            page = await inner._client.models.list()
-            return {m.id for m in page.data}
-        if provider == "gemini":
-            models = await inner._client.aio.models.list()
-            out = set()
-            async for m in models:
-                out.add((m.name or "").removeprefix("models/"))
-            return out
+        return await client.list_models()
     except Exception:
         return None
-    return None

@@ -9,18 +9,18 @@ re-checked at every open-before-answer choke point.
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
-from typing import Any
+from typing import Any, Literal
 
 from rnsr.config import Settings
 from rnsr.errors import CorpusHealthError
 
-Grade = str  # 'ok' | 'degraded' | 'blocked'
+Grade = Literal["ok", "degraded", "blocked"]
 
 
 @dataclass
 class Finding:
     code: str
-    severity: str  # 'info' | 'warn' | 'error'
+    severity: Literal["info", "warn", "error"]
     detail: str
 
 
@@ -34,7 +34,7 @@ class CorpusHealth:
     tables_untrusted: int = 0
     tables_unchecked: int = 0
     validation_pass_rate: float = 1.0
-    aggregate_rows_flagged: int = 0
+    aggregate_rows_detected: int = 0
     findings: list[Finding] = field(default_factory=list)
     grade: Grade = "ok"
     source: str = "ingest"  # 'ingest' | 'derived'
@@ -62,7 +62,7 @@ class CorpusHealth:
             "tables_total": self.tables_total,
             "tables_untrusted": self.tables_untrusted,
             "tables_unchecked": self.tables_unchecked,
-            "aggregate_rows_flagged": self.aggregate_rows_flagged,
+            "aggregate_rows_detected": self.aggregate_rows_detected,
         }
 
 
@@ -89,7 +89,7 @@ def evaluate(counters: dict[str, int | float],
     tables_total = int(counters.get("tables_total") or 0)
     tables_untrusted = int(counters.get("tables_untrusted") or 0)
     tables_unchecked = int(counters.get("tables_unchecked") or 0)
-    flagged = int(counters.get("aggregate_rows_flagged") or 0)
+    flagged = int(counters.get("aggregate_rows_detected") or 0)
     rate = validation_pass_rate(tables_total, tables_untrusted, tables_unchecked)
 
     findings: list[Finding] = []
@@ -147,7 +147,7 @@ def evaluate(counters: dict[str, int | float],
     if flagged:
         findings.append(Finding(
             "aggregate_rows", "info",
-            f"{flagged} aggregate row(s) flagged (_row_kind total/subtotal)"))
+            f"{flagged} aggregate row(s) identified (_row_kind total/subtotal)"))
 
     if any(f.severity == "error" for f in findings):
         grade: Grade = "blocked"
@@ -165,7 +165,7 @@ def evaluate(counters: dict[str, int | float],
         tables_untrusted=tables_untrusted,
         tables_unchecked=tables_unchecked,
         validation_pass_rate=round(rate, 4),
-        aggregate_rows_flagged=flagged,
+        aggregate_rows_detected=flagged,
         findings=findings,
         grade=grade,
         source=source,
@@ -180,18 +180,12 @@ def counters_from_corpus(corpus, extra: dict[str, int] | None = None) -> dict[st
     tables_total = len(rows)
     tables_untrusted = sum(1 for (s,) in rows if s == "untrusted")
     tables_unchecked = sum(1 for (s,) in rows if s == "unchecked")
-    flagged = int((extra or {}).get("aggregate_rows_flagged") or 0)
+    flagged = int((extra or {}).get("aggregate_rows_detected") or 0)
     if not flagged:
-        try:
-            import json
-            for (raw,) in conn.execute("SELECT schema_json FROM manifest_tables"):
-                schema = json.loads(raw) if isinstance(raw, str) else raw
-                if isinstance(schema, dict):
-                    flagged += int(schema.get("n_total_rows") or 0)
-                elif isinstance(schema, list) and schema and isinstance(schema[0], dict):
-                    flagged += int(schema[0].get("n_total_rows") or 0)
-        except Exception:
-            pass
+        from rnsr.db.metadata import decode_table_schema
+
+        flagged = sum(decode_table_schema(raw).n_total_rows for (raw,) in
+                      conn.execute("SELECT schema_json FROM manifest_tables"))
     extra = extra or {}
     return {
         "n_documents": n_docs,
@@ -201,7 +195,7 @@ def counters_from_corpus(corpus, extra: dict[str, int] | None = None) -> dict[st
         "tables_total": tables_total,
         "tables_untrusted": tables_untrusted,
         "tables_unchecked": tables_unchecked,
-        "aggregate_rows_flagged": int(extra.get("aggregate_rows_flagged") or flagged),
+        "aggregate_rows_detected": int(extra.get("aggregate_rows_detected") or flagged),
     }
 
 
@@ -217,7 +211,10 @@ def load_health(corpus, settings: Settings | None = None) -> CorpusHealth:
     stored = corpus.manifest_get("health")
     if stored:
         existing = CorpusHealth.from_dict(stored)
-        return evaluate(existing.as_counters(), settings, source=existing.source)
+        # Retain ingest-only gaps; always derive current table/document counts.
+        extras = {key: getattr(existing, key) for key in (
+            "parse_failed", "scanned_pages_total", "scanned_pages_untranscribed")}
+        return health_from_corpus(corpus, settings, extra=extras, source=existing.source)
     return health_from_corpus(corpus, settings, source="derived")
 
 

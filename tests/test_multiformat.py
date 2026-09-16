@@ -275,11 +275,14 @@ class TestDispatch:
         with pytest.raises(ValueError, match="unsupported document type"):
             parse_any(f)
 
-    def test_fast_tier_uses_stat_identity(self, tmp_path):
+    def test_fast_tier_separates_content_and_stat_identity(self, tmp_path):
         f = tmp_path / "n.txt"
         f.write_text("hello")
-        assert parse_any_fast(f).sha256 == stat_identity(f)
-        assert parse_any(f).sha256 != stat_identity(f)  # quality: content hash
+        parsed = parse_any_fast(f)
+        assert parsed.sha256 == parse_any(f).sha256
+        assert parsed.content_sha256 == parsed.sha256
+        assert parsed.source_identity == stat_identity(f)
+        assert parsed.sha256 != parsed.source_identity
 
 
 # --- end-to-end --------------------------------------------------------------
@@ -334,7 +337,7 @@ class TestMixedIngest:
             n = conn.execute("SELECT count(*) FROM documents").fetchone()[0]
             assert n == 5
             # resume identity is stat-based for every format
-            shas = {r[0] for r in conn.execute("SELECT sha256 FROM documents")}
+            shas = {r[0] for r in conn.execute("SELECT source_identity FROM documents")}
             assert stat_identity(d / "memo.txt") in shas
         finally:
             conn.close()

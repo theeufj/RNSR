@@ -18,7 +18,7 @@ from html.parser import HTMLParser
 from pathlib import Path
 
 from rnsr.ingest.model import Element, ParsedDocument, RawTable
-from rnsr.ingest.parse import _sha256, make_doc_id, render_table_text
+from rnsr.ingest.parse import content_sha256, make_doc_id, render_table_text
 
 TEXT_PARSER_NAME = "text"
 MARKDOWN_PARSER_NAME = "markdown"
@@ -26,7 +26,7 @@ EML_PARSER_NAME = "eml"
 
 
 def _document(path: Path, doc_id: str | None, parser: str) -> ParsedDocument:
-    digest = _sha256(path)
+    digest = content_sha256(path)
     return ParsedDocument(
         doc_id=doc_id or make_doc_id(path),
         source_path=str(path),

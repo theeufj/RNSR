@@ -97,7 +97,8 @@ class TestAnswerBatch:
     def test_one_group_answers_in_input_order(self, corpus, tmp_path):
         root = MockLLM().script(
             "```python\nFINAL_BATCH({'q000': 'Paris', 'q001': '42', "
-            "'q002': 'NOT_FOUND'})\n```"
+            "'q002': 'NOT_FOUND'}, quotes={'q000': ['ACME 2023 results.'], "
+            "'q001': ['Net revenue was $3,234 million.']})\n```"
         )
         answers = rnsr.answer_batch_sync(
             ["Capital?", "Revenue?", "Weather?"], corpus,
@@ -109,7 +110,9 @@ class TestAnswerBatch:
     def test_unanswered_question_retried_solo(self, corpus, tmp_path):
         # the batch loop never answers q001 (pushback once, then accepted
         # unchanged); the SDK retries it in its own loop
-        batch_reply = "```python\nFINAL_BATCH({'q000': 'a', 'q002': 'c'})\n```"
+        batch_reply = ("```python\nFINAL_BATCH({'q000': 'a', 'q002': 'c'}, "
+                       "quotes={'q000': ['ACME 2023 results.'], "
+                       "'q002': ['ACME 2023 results.']})\n```")
         solo_reply = ("```python\nFINAL('solo-answer', "
                       "quotes=['ACME 2023 results.'])\n```")
         root = MockLLM(default=solo_reply).script(batch_reply, batch_reply)

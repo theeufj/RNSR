@@ -22,7 +22,7 @@ from rnsr.ingest.model import BBox, Element, ParsedDocument, RawTable
 PARSER_NAME = "docling"
 
 
-def _sha256(path: Path) -> str:
+def content_sha256(path: Path) -> str:
     h = hashlib.sha256()
     with open(path, "rb") as f:
         for block in iter(lambda: f.read(1 << 20), b""):
@@ -105,7 +105,7 @@ def parse_pdf(path: str | Path, doc_id: str | None = None, *, ocr: bool = False)
     result = converter.convert(path)
     doc = result.document
 
-    digest = _sha256(path)
+    digest = content_sha256(path)
     parsed = ParsedDocument(
         doc_id=doc_id or make_doc_id(path),
         source_path=str(path),

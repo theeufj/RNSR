@@ -6,16 +6,15 @@ buffer, never the protocol channel.
 
 Hardening:
   - resource rlimits on CPU time and address space
-  - an audit hook (rnsr.env.fsguard) that confines filesystem reads to
-    the interpreter and the corpus artifact, confines writes to the
-    artifact and temp, and refuses sockets, process creation and ctypes
+  - OS isolation installed by the parent launcher before Python starts
+  - an additional audit hook confines reads to runtime/source files, writes
+    to private scratch, and refuses sockets, process creation and ctypes
   - the parent spawns the child with a scrubbed environment, so provider
     keys are not readable even in-process
   - the parent enforces per-cell wall-clock with SIGKILL
 
-The guard installs after the namespace is preloaded: ingest-side machinery
-runs unrestricted, and containment begins where untrusted influence does,
-at the first model-written cell.
+The OS boundary covers startup too. The supplementary audit hook installs
+after trusted imports/namespace initialization and before any generated code.
 
 Ops: init (preload namespace), exec (run a cell), vars (namespace summary
 for the variable-recovery fallback), shutdown.

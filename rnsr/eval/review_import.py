@@ -6,7 +6,7 @@ import csv
 import json
 from pathlib import Path
 
-from rnsr.eval.audit import _CORRECT, _WRONG
+from rnsr.eval.audit import CORRECT_MARKS, WRONG_MARKS
 
 
 def import_review(
@@ -36,10 +36,10 @@ def import_review(
             note = (row.get("note") or "").strip()
             corrected = (row.get("corrected") or row.get("gold") or "").strip()
             answer = (row.get("answer") or "").strip()
-            if mark in _CORRECT:
+            if mark in CORRECT_MARKS:
                 n_ok += 1
                 continue
-            if mark in _WRONG or corrected:
+            if mark in WRONG_MARKS or corrected:
                 n_miss += 1
                 gold = corrected or note or answer
                 items.append({

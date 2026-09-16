@@ -12,14 +12,16 @@ ParseFn = Callable[[Path], ParsedDocument]
 
 
 def expand_document(parsed: ParsedDocument, parse: ParseFn,
-                    seen_ids: set[str] | None = None) -> list[ParsedDocument]:
+                    seen_ids: set[str] | None = None, *, strict: bool = False) -> list[ParsedDocument]:
     """Return [parsed] plus recursively parsed attachments/zip members.
 
     Children keep ``parent_doc_id``. Dedupes doc_id against ``seen_ids``.
     """
     seen_ids = seen_ids if seen_ids is not None else set()
-    if parsed.doc_id in seen_ids:
-        parsed.doc_id = f"{parsed.doc_id}_{len(seen_ids)}"
+    base, suffix = parsed.doc_id, 2
+    while parsed.doc_id in seen_ids:
+        parsed.doc_id = f"{base}_{suffix}"
+        suffix += 1
     seen_ids.add(parsed.doc_id)
     out = [parsed]
     for name, data in parsed.pending_attachments:
@@ -30,6 +32,8 @@ def expand_document(parsed: ParsedDocument, parse: ParseFn,
         try:
             child = parse(tmp_path)
         except Exception:
+            if strict:
+                raise
             continue
         finally:
             tmp_path.unlink(missing_ok=True)
@@ -38,6 +42,6 @@ def expand_document(parsed: ParsedDocument, parse: ParseFn,
         if not child.doc_id or child.doc_id == tmp_path.stem:
             stem = Path(name).stem
             child.doc_id = stem or f"{parsed.doc_id}_att"
-        out.extend(expand_document(child, parse, seen_ids))
+        out.extend(expand_document(child, parse, seen_ids, strict=strict))
     parsed.pending_attachments = []
     return out

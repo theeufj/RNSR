@@ -19,7 +19,7 @@ from collections import Counter
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
-from rnsr.eval.metrics import EvalResult, _as_number, _normalize, score_answer
+from rnsr.eval.metrics import EvalResult, as_number, normalize_answer, score_answer
 from rnsr.harness.trajectory import read_trajectory
 
 CAUSES = ("gold", "budget", "format", "ingest", "retrieval", "reasoning")
@@ -68,21 +68,21 @@ def format_only_miss(predicted: str | None, gold: str) -> bool:
     """
     if predicted is None:
         return False
-    p, g = _normalize(_strip_label(str(predicted))), _normalize(_strip_label(gold))
+    p, g = normalize_answer(_strip_label(str(predicted))), normalize_answer(_strip_label(gold))
     if not p or not g:
         return False
     if p == g:
         return True
     if score_answer(p, g):
         return True
-    gold_parts = [x for x in (_normalize(part) for part in _SPLIT_PARTS.split(g)) if x]
-    pred_parts = [x for x in (_normalize(part) for part in _SPLIT_PARTS.split(p)) if x]
+    gold_parts = [x for x in (normalize_answer(part) for part in _SPLIT_PARTS.split(g)) if x]
+    pred_parts = [x for x in (normalize_answer(part) for part in _SPLIT_PARTS.split(p)) if x]
     if len(gold_parts) > 1 and p in gold_parts:
         return True
     if gold_parts and pred_parts and (
             set(pred_parts) <= set(gold_parts) or set(gold_parts) <= set(pred_parts)):
         return True
-    gn, pn = _as_number(g), _as_number(p)
+    gn, pn = as_number(g), as_number(p)
     return gn is not None and pn is not None and gn == pn
 
 
@@ -140,7 +140,7 @@ def _trajectory_blob(records: list[dict]) -> str:
         for q in (rec.get("verification") or {}).get("quotes") or []:
             if isinstance(q, dict) and q.get("quote"):
                 parts.append(str(q["quote"]))
-    return _normalize(" ".join(parts))
+    return normalize_answer(" ".join(parts))
 
 
 def _gold_tokens(gold: str) -> list[str]:
@@ -382,7 +382,7 @@ def autopsy_run(
             g = "; ".join(gold.get(qid, [""]))
             results.append(EvalResult(
                 qid=qid, task_class="default", predicted=answer, gold=g,
-                correct=bool(g) and _normalize(answer) == _normalize(g),
+                correct=bool(g) and normalize_answer(answer) == normalize_answer(g),
                 status="final", latency_s=0.0, cost_usd=0.0,
                 sub_calls=0, iterations=0,
             ))

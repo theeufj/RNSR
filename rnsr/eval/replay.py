@@ -1,4 +1,4 @@
-"""Replay rung-0 search queries against cells and legacy paths.
+"""Replay rung-0 search queries against persisted and rebuilt cell indexes.
 
 Rung-0 hit semantics are part of the agent contract. A faster cells path
 that returns a slightly different row set has already dropped golden-matter
@@ -49,7 +49,7 @@ def _rowset(hits: list[dict]) -> list[tuple]:
 
 def replay(db: str | Path, queries: list[str], *, k: int = 10,
            baseline: dict | None = None) -> dict:
-    """Compare cells vs legacy (and optional baseline) for each query."""
+    """Compare persisted vs rebuilt cells (and a frozen baseline)."""
     db = Path(db)
     conn = sqlite3.connect(f"file:{db}?mode=ro", uri=True)
     try:
@@ -60,15 +60,15 @@ def replay(db: str | Path, queries: list[str], *, k: int = 10,
         diffs: list[dict] = []
         snapshot: dict[str, list] = {}
         for q in queries:
-            ladder._cells_ok = True
             cells = _rowset(ladder.search(q, rung=0, k=k))
-            ladder._cells_ok = False
-            legacy = _rowset(ladder.search(q, rung=0, k=k))
+            rebuilt = Ladder(conn=conn, doc=LazyDoc(conn), manifest=manifest,
+                             rpc=lambda _p: {}, rebuild_cells=True)
+            rebuilt_rows = _rowset(rebuilt.search(q, rung=0, k=k))
             snapshot[q] = cells
             kind = None
-            if set(cells) != set(legacy):
+            if set(cells) != set(rebuilt_rows):
                 kind = "set"
-            elif cells != legacy:
+            elif cells != rebuilt_rows:
                 kind = "order"
             expected = None if baseline is None else baseline.get(q)
             if expected is not None:
@@ -78,7 +78,7 @@ def replay(db: str | Path, queries: list[str], *, k: int = 10,
             if kind:
                 diffs.append({
                     "query": q, "kind": kind,
-                    "cells": cells, "legacy": legacy, "baseline": expected,
+                    "persisted": cells, "rebuilt": rebuilt_rows, "baseline": expected,
                 })
         return {
             "n": len(queries),

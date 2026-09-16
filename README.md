@@ -283,7 +283,10 @@ rnsr regress --answers out/answers_chunk1.csv --golden golden.json \
 
 # Operations
 rnsr doctor                    # provider keys, live model names, pricing rows
-rnsr serve --port 8000         # /healthz /readyz /metrics POST /jobs
+# Service requires an authorization token and an allowed corpus directory.
+export RNSR_SERVICE_TOKEN="$(python -c 'import secrets; print(secrets.token_urlsafe(32))')"
+export RNSR_SERVICE_CORPUS_ROOT=/absolute/path/to/corpora
+rnsr serve --port 8000         # send Authorization: Bearer <token>
 rnsr trajectory runs/.../q000.jsonl.enc   # decrypt/read a trajectory
 
 # Evaluation harness (§8): systems are flags over the same loop
@@ -387,13 +390,14 @@ infrastructure by design.
 - **Run governance**: one governor gates all provider traffic — in-flight
   cap, RPM ceiling, aggregate spend ceiling, and a shared cooldown when any
   call is rate-limited. Per-query budgets cap a query; this caps the run.
-- **Sandbox**: subprocess with no network, spawned with a scrubbed
-  environment (no provider keys) and an audit hook that confines filesystem
-  reads to the interpreter and the corpus artifact, confines writes to the
-  artifact and a private scratch dir, and refuses process creation and
-  ctypes. Matter documents are untrusted input; the cell that reads them
-  also writes code. In-process containment is a bar-raiser, not a jail —
-  run one container per tenant (see `Dockerfile`) for a kernel boundary.
+- **Sandbox**: every generated-code child runs under an OS policy:
+  `sandbox-exec` on macOS or `bubblewrap` on Linux. The runtime and corpus
+  are read-only, writes are confined to private scratch space, and the
+  child has no network or provider credentials. Startup fails closed if
+  the OS boundary is unavailable. A Python audit hook adds clearer errors;
+  disabling that hook never disables OS isolation. Annotation writes are
+  brokered through a narrow parent operation, and final quotes are checked
+  again in the parent against the retained corpus.
 - **Data protection**: trajectories quote client documents, so content mode
   (`full`/`redacted`/`metadata`), Fernet encryption at rest, and retention
   pruning are all settings; a work-directory lock keeps two runs from
@@ -403,13 +407,17 @@ infrastructure by design.
 
 ## Running it on real matters
 
-Everything below defaults to off or permissive so research runs are
-unchanged; a deployment handling client files should turn them on.
+OS containment and HTTP authentication are required. Trajectory protection
+and aggregate spending limits remain deployment choices.
+
+For Docker, use the supplied [container seccomp policy](deploy/README.md)
+to permit bubblewrap's namespace setup while retaining syscall filtering.
 
 | Concern | Control | Why it exists |
 |---|---|---|
-| Untrusted documents | `RNSR_SANDBOX_FS_GUARD=true` (default) | A poisoned document can talk the model into writing code; reads stay inside the corpus artifact, and processes/ctypes are refused |
-| Kernel-level isolation | `Dockerfile` (non-root, one container per tenant) | In-process containment raises the bar; only the OS is a boundary |
+| Untrusted documents | OS sandbox plus `RNSR_SANDBOX_FS_GUARD=true` | Generated code sees read-only runtime/corpus data and its private scratch directory |
+| Kernel-level isolation | macOS `sandbox-exec`; Linux `bubblewrap` with user namespaces | Unsupported or restricted hosts refuse to execute generated code; containers must permit the nested namespaces |
+| Service authorization | `RNSR_SERVICE_TOKEN`, `RNSR_SERVICE_CORPUS_ROOT` | Every route except liveness requires a bearer token; corpus paths cannot escape the configured root |
 | Privileged text at rest | `RNSR_TRAJECTORY_CONTENT`, `RNSR_TRAJECTORY_KEY`, `RNSR_TRAJECTORY_RETENTION_DAYS` | Trajectories quote client documents verbatim |
 | Runaway spend | `RNSR_RUN_SPEND_CEILING_USD`, `RNSR_MAX_IN_FLIGHT_REQUESTS`, `RNSR_MAX_REQUESTS_PER_MINUTE` | Per-query budgets cap a query, not a 999-question job |
 | Silent failure | `--max-error-rate` (default: any error fails), `answers_status.csv`, `run_report.json` | A provider outage must not read as "the corpus does not say" |
@@ -419,19 +427,33 @@ unchanged; a deployment handling client files should turn them on.
 
 Known limits, stated plainly: jobs in `rnsr serve` live in one process's
 memory (single node by design — a multi-node deployment needs a real
-queue); quote verification proves a quote matches the source but not that
+queue). Each service instance is one authorization scope: its token holders
+can read all jobs, so use distinct instances, tokens and corpus roots per
+tenant/matter. Completed jobs are evicted at the configured capacity;
+submissions receive HTTP 503 when all slots are active. Quote verification
+proves a quote matches the source but not that
 the answer matches its own quote, so a correct quote beside a
 mis-transcribed value still passes; and the form conventions in
 `testMatter/mitchell_form_spec.json` were derived from observed misses on
 that matter, so a new form starts from the generic rules and earns its own
 conventions.
 
+The governor enforces request concurrency and RPM across threads and event
+loops. Every explicit retry consumes a sub-call attempt; hidden SDK retries
+are disabled. Spend ceilings stop new requests after recorded usage reaches
+the limit; already in-flight requests can still add cost.
+
+Existing artifacts require `rnsr migrate /path/to/corpus.db` before use with
+format v3. Migration is explicit and transactional; it validates metadata and
+references before committing. Back up important artifacts before migrating.
+
 ## Development
 
 ```bash
 python3.14 -m venv .venv && source .venv/bin/activate
 pip install -e ".[ingest,eval,dev]"
-pytest            # 389 tests; LLM-free by default (live tests opt-in: -m live)
+# Linux: install bubblewrap and enable unprivileged user namespaces first.
+pytest            # LLM-free by default (live tests opt-in: -m live)
 ruff check .
 ```
 

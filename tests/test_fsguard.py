@@ -41,7 +41,7 @@ class TestEscapeSuite:
             "try:\n"
             "    open(os.path.expanduser('~/.ssh/id_rsa')).read()\n"
             "    print('LEAK')\n"
-            "except PermissionError:\n"
+            "except (PermissionError, FileNotFoundError):\n"
             "    print('blocked')\n"
         )
         assert "blocked" in res.stdout
@@ -71,9 +71,9 @@ class TestEscapeSuite:
     async def test_os_open_write_flags(self, repl, corpus):
         res = await repl.exec_cell(
             "import os\n"
-            f"p = {str(corpus.parent / 'escape.bin')!r}\n"
+            f"p = {str(corpus)!r}\n"
             "try:\n"
-            "    os.open(p, os.O_CREAT | os.O_WRONLY)\n"
+            "    os.open(p, os.O_TRUNC | os.O_WRONLY)\n"
             "    print('OPENED')\n"
             "except PermissionError:\n"
             "    print('blocked')\n"
@@ -100,9 +100,6 @@ class TestEscapeSuite:
             "    hits.append('fork-blocked')\n"
             "print(hits)\n"
         )
-        assert all(x.endswith("-blocked") for x in
-                   ["system-blocked", "popen-blocked", "Popen-blocked",
-                    "fork-blocked"] if True)
         for name in ("system", "popen", "Popen", "fork"):
             assert f"{name}-blocked" in res.stdout
             assert f"'{name}'" not in res.stdout.replace(f"{name}-blocked", "")
@@ -191,14 +188,14 @@ class TestEscapeSuite:
         assert "WROTE" not in res.stdout
         assert corpus.exists() and corpus.stat().st_size > 0
 
-    async def test_wal_sidecar_write_allowed(self, repl, corpus):
+    async def test_wal_sidecar_write_denied(self, repl, corpus):
         res = await repl.exec_cell(
             f"p = {str(corpus)!r} + '-wal'\n"
             "open(p, 'wb').write(b'ok')\n"
             "print(open(p, 'rb').read())\n"
         )
-        assert res.ok, res.error
-        assert b"ok" in res.stdout.encode() or "ok" in res.stdout
+        assert not res.ok
+        assert "raw write" in res.error
 
     async def test_dns_and_socket_blocked(self, repl):
         res = await repl.exec_cell(
@@ -278,3 +275,116 @@ class TestEscapeSuite:
         if res.stdout.strip() != "True":
             pytest.skip("kernel refused both RLIMIT_CPU and RLIMIT_AS")
         assert res.stdout.strip() == "True"
+
+
+class TestHostilePythonRegressions:
+    async def test_guard_global_rebinding_does_not_read_sentinel(self, repl, tmp_path):
+        sentinel = tmp_path / 'private-sentinel'
+        sentinel.write_text('PRIVATE-SENTINEL')
+        result = await repl.exec_cell(
+            "import rnsr.env.fsguard as fg\n"
+            "fg._under = lambda *_: True\nfg._BLOCKED_EVENTS = ()\n"
+            f"print(open({str(sentinel)!r}).read())")
+        assert not result.ok
+        assert 'PRIVATE-SENTINEL' not in result.stdout
+
+    @pytest.mark.parametrize('operation', [
+        'os.remove(p)', 'os.truncate(p, 0)',
+        'os.rename(p, p + ".moved")',
+        'os.open(p, os.O_RDWR | os.O_TRUNC)',
+        'open(p + "-journal", "wb").write(b"corrupt")',
+        'open(p + "-shm", "wb").write(b"corrupt")',
+    ])
+    async def test_artifact_and_sidecars_are_read_only(self, repl, corpus, operation):
+        before = corpus.read_bytes()
+        result = await repl.exec_cell(f'import os\np = {str(corpus)!r}\n{operation}')
+        assert not result.ok
+        assert corpus.read_bytes() == before
+
+    async def test_sql_readonly_survives_authorizer_removal(self, repl, corpus):
+        result = await repl.exec_cell(
+            "db.set_authorizer(None)\n"
+            "db.execute('DROP TABLE doc_text')")
+        assert not result.ok and 'readonly' in result.error.lower()
+        result = await repl.exec_cell("print(doc['acme'])")
+        assert result.stdout.strip() == 'hello world'
+
+    async def test_forged_child_verification_rejected_by_parent(self, repl):
+        result = await repl.exec_cell(
+            "from rnsr.env.final_answer import FinalAnswer\n"
+            "raise FinalAnswer('invented', is_var=False, verification={"
+            "'passed': True, 'quotes': [{'quote': 'forged retained text', "
+            "'matched': True, 'doc_id': 'acme', 'char_start': 0, 'char_end': 10}]})")
+        assert not result.ok and result.final is None
+        assert 'Parent final verification rejected' in result.error
+
+    async def test_threads_cannot_bypass_path_guard(self, repl, tmp_path):
+        sentinel = tmp_path / 'thread-sentinel'
+        sentinel.write_text('THREAD-SECRET')
+        result = await repl.exec_cell(
+            'import threading, tempfile, os\n'
+            'leaks = []\n'
+            'def allowed():\n'
+            '    for _ in range(300):\n'
+            '        with open(os.path.join(tempfile.gettempdir(), "probe"), "w") as f: f.write("x")\n'
+            'def denied():\n'
+            '    for _ in range(300):\n'
+            '        try:\n'
+            f'            leaks.append(open({str(sentinel)!r}).read())\n'
+            '        except PermissionError: pass\n'
+            'threads = [threading.Thread(target=fn) for fn in [allowed, denied] * 3]\n'
+            '[t.start() for t in threads]\n[t.join() for t in threads]\n'
+            'print(leaks)')
+        assert result.ok, result.error
+        assert result.stdout.strip() == '[]'
+
+    async def test_kernel_blocks_native_read_without_python_audit(self, tmp_path):
+        sentinel = tmp_path / 'native-sentinel'
+        sentinel.write_text('NATIVE-SECRET')
+        async with SandboxedRepl(fs_guard=False) as repl:
+            await repl.start(mode='classic', context='')
+            result = await repl.exec_cell(
+                'import ctypes, os\n'
+                'libc = ctypes.CDLL(None, use_errno=True)\n'
+                f'fd = libc.open({str(sentinel).encode()!r}, os.O_RDONLY)\n'
+                'print(fd)\n'
+                'if fd >= 0: print(os.read(fd, 100))')
+            assert result.ok, result.error
+            assert result.stdout.strip() == '-1'
+
+    async def test_parent_annotation_rejects_source_column(self, repl):
+        result = await repl.exec_cell("semantic_annotate('t_acme_001', 'item', 'rewrite')")
+        assert not result.ok
+        assert 'cannot overwrite a source' in result.error
+
+
+@pytest.mark.parametrize('operation', [
+    'os.open(p, os.O_RDWR | os.O_TRUNC)',
+    'os.remove(p)',
+    'open(p + "-wal", "wb").write(b"corrupt")',
+])
+async def test_kernel_protects_source_with_audit_disabled(corpus, operation):
+    before = corpus.read_bytes()
+    async with SandboxedRepl(fs_guard=False) as repl:
+        await repl.start(mode='docdb', corpus_db=str(corpus))
+        result = await repl.exec_cell(f'import os\np = {str(corpus)!r}\n{operation}')
+        assert not result.ok
+    assert corpus.read_bytes() == before
+
+
+async def test_kernel_isolates_host_network_with_audit_disabled():
+    import socket
+
+    # Use a test-owned endpoint; never probe a real service or external host.
+    with socket.socket() as listener:
+        listener.bind(('127.0.0.1', 0))
+        listener.listen()
+        port = listener.getsockname()[1]
+        async with SandboxedRepl(fs_guard=False) as repl:
+            await repl.start(mode='classic', context='')
+            result = await repl.exec_cell(
+                'import socket\n'
+                f'socket.create_connection(("127.0.0.1", {port}), timeout=0.2)\n'
+                'print("CONNECTED")')
+            assert not result.ok
+            assert 'CONNECTED' not in result.stdout

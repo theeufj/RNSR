@@ -87,8 +87,8 @@ source text.
 - In this environment FINAL takes quotes: FINAL(answer, quotes=["..."]) — \
 1-3 short verbatim source quotes backing the answer, verified by code; a \
 FINAL with failing quotes is rejected back to you. Copy quote text exactly \
-from search hits or doc. Purely computed values (SQL aggregates, ratios) \
-may instead be returned with FINAL_VAR(variable).
+from search hits or doc. Computed values (SQL aggregates, ratios) also \
+need source evidence: use FINAL_VAR(variable, quotes=["source excerpt"]).
 - When manifest.duplicates is present, prefer the latest version of a \
 document and cite both the current and the superseded copies.
 

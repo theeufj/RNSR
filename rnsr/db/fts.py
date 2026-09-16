@@ -19,6 +19,10 @@ def match(conn: sqlite3.Connection, query: str, k: int = 10) -> list[dict]:
     result with the error captured, so the search ladder can escalate
     instead of crashing the REPL.
     """
+    if isinstance(k, bool) or not isinstance(k, int) or not 0 <= k <= 1000:
+        raise ValueError("k must be an integer between 0 and 1000")
+    if k == 0:
+        return []
     sql = """
         SELECT c.chunk_id, c.doc_id, c.page, c.char_start, c.char_end,
                c.heading_path, c.text, bm25(fts_chunks) AS score

@@ -7,6 +7,7 @@ import time
 from dataclasses import dataclass, field
 
 from rnsr.config import Settings
+from rnsr.errors import BudgetExhausted
 from rnsr.llm.base import Usage
 
 
@@ -37,6 +38,16 @@ class BudgetLedger:
         if sub_call:
             self.sub_calls += 1
 
+    def reserve_sub_call(self) -> None:
+        """Charge an attempted provider request before dispatch, including retries."""
+        for cap, spent in (("max_sub_calls", self.sub_calls),
+                           ("max_wall_s", self.wall_s),
+                           ("max_spend_usd", self.spend_usd)):
+            limit = getattr(self, cap)
+            if spent >= limit:
+                raise BudgetExhausted(cap, limit, spent)
+        self.sub_calls += 1
+
     def breached(self) -> str | None:
         """Name of the first breached cap, or None."""
         if self.root_iters >= self.max_root_iters:
@@ -50,7 +61,7 @@ class BudgetLedger:
         return None
 
     def remaining_wall_s(self) -> float:
-        return max(self.max_wall_s - self.wall_s, 1.0)
+        return max(self.max_wall_s - self.wall_s, 0.0)
 
     def snapshot(self) -> dict:
         return {

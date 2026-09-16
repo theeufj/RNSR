@@ -3,7 +3,7 @@
 The single-shot pipeline builds atomically — right for one filing, wrong
 for 18,000 files where a crash at file 17,999 must not lose four days of
 work. Bulk ingest checkpoints per document into the .ingesting artifact:
-already-ingested files (matched by sha256) are skipped on resume, commits
+already-ingested files (matched by source_identity) are skipped on resume, commits
 happen every `commit_every` docs, and the FTS build / manifest / freeze /
 atomic rename run once at the end. The final artifact is identical in
 shape to a single-shot one.
@@ -15,29 +15,30 @@ import os
 import sqlite3
 from collections.abc import Callable
 from concurrent.futures import ProcessPoolExecutor, as_completed
-from datetime import UTC, datetime
 from pathlib import Path
 
 from rnsr.config import Settings
 from rnsr.db import fts, schema
-from rnsr.ingest.chunk import chunk_document
+from rnsr.db.artifact import CorpusDB
 from rnsr.ingest.dispatch import parse_any_fast
 from rnsr.ingest.expand import expand_document
-from rnsr.ingest.fast_parse import parse_pdf_fast
-from rnsr.ingest.fast_parse import stat_identity as _file_sha
-from rnsr.ingest.manifest import write_corpus_manifest, write_table_manifest
+from rnsr.ingest.fast_parse import parse_pdf_fast, stat_identity
+from rnsr.ingest.manifest import write_corpus_manifest
 from rnsr.ingest.model import ParsedDocument
-from rnsr.ingest.pipeline import _merge_transcriptions
-from rnsr.ingest.tables import build_data_table, merge_multipage
-from rnsr.ingest.validate import assign_table_status, validate_table
+from rnsr.ingest.transcription import merge_transcriptions
+from rnsr.ingest.writer import write_document
 
 Progress = Callable[[str], None]
 
 
 def _is_finalized(conn: sqlite3.Connection) -> bool:
-    return bool(conn.execute(
-        "SELECT 1 FROM sqlite_master WHERE type='trigger' "
-        "AND name='chunks__no_insert'").fetchone())
+    count = conn.execute("SELECT count(*) FROM sqlite_master WHERE type='trigger' "
+                         "AND name IN ('chunks__no_insert','documents__no_insert',"
+                         "'doc_text__no_insert')").fetchone()[0]
+    if count:
+        schema.validate_frozen(conn)
+        schema.validate_integrity(conn)
+    return bool(count)
 
 
 def ingest_bulk(
@@ -57,8 +58,12 @@ def ingest_bulk(
     the default picklable parser; a custom `parse` callable runs serially
     unless `workers` is set explicitly."""
     config = config or Settings()
+    if commit_every <= 0 or (workers is not None and workers <= 0):
+        raise ValueError("commit_every and workers must be positive")
     out_db = Path(out_db)
     if out_db.exists():
+        with CorpusDB(out_db) as existing:
+            schema.validate_frozen(existing.conn)
         return {"resumed": False, "already_complete": True, "out_db": str(out_db)}
 
     tmp = out_db.with_suffix(out_db.suffix + ".ingesting")
@@ -67,85 +72,46 @@ def ingest_bulk(
     try:
         if fresh:
             schema.create_corpus_db(conn)
+        schema.apply_read_pragmas(conn)
+        version = conn.execute("PRAGMA user_version").fetchone()[0]
+        if version != schema.ARTIFACT_FORMAT_VERSION:
+            raise RuntimeError(f"Ingest resume artifact format {version} is unsupported; "
+                               "migrate or rebuild the temporary artifact")
         finalized = _is_finalized(conn)
 
-        done_shas: set[str] = set()
+        done_identities: set[str] = set()
         seen_ids: set[str] = set()
         if not fresh:
-            for sha, did in conn.execute("SELECT sha256, doc_id FROM documents"):
-                done_shas.add(sha)
+            for identity, did in conn.execute("SELECT source_identity, doc_id FROM documents"):
+                done_identities.add(identity)
                 seen_ids.add(did)
-            progress(f"resuming: {len(done_shas)} documents already ingested")
+            progress(f"resuming: {len(done_identities)} documents already ingested")
 
         n_new = n_skipped = n_scanned_gap = n_failed = n_scanned_total = 0
-        table_seq: dict[str, int] = {}
-        n_tables_trusted = n_tables_untrusted = n_tables_unchecked = 0
 
-        def write_parsed(src: Path, parsed: ParsedDocument) -> None:
-            nonlocal n_new, n_tables_trusted, n_tables_untrusted, n_tables_unchecked
-            if parsed.doc_id in seen_ids:
-                parsed.doc_id = f"{parsed.doc_id}_{len(seen_ids)}"
-            seen_ids.add(parsed.doc_id)
-
-            pages, chunks = chunk_document(
-                parsed, chunk_chars=config.chunk_chars,
-                overlap=config.chunk_overlap)
-            page_texts = {p.page: p.text for p in pages}
-            schema.insert_document(
-                conn,
-                doc_id=parsed.doc_id,
-                source_path=parsed.source_path,
-                sha256=parsed.sha256,
-                n_pages=parsed.n_pages,
-                parser=parsed.parser,
-                ingested_at=datetime.now(UTC).isoformat(),
-                title=parsed.title,
-                doc_date=parsed.doc_date,
-                author=parsed.author,
-                modified_at=parsed.modified_at,
-                content_sha256=parsed.content_sha256 or parsed.sha256,
-                parent_doc_id=parsed.parent_doc_id,
-            )
-            conn.executemany(
-                "INSERT INTO doc_text VALUES (?,?,?,?,?)",
-                [(parsed.doc_id, p.page, p.char_start, p.char_end, p.text)
-                 for p in pages])
-            conn.executemany(
-                "INSERT INTO chunks (doc_id, page, char_start, char_end, "
-                "heading_path, text) VALUES (?,?,?,?,?,?)",
-                [(parsed.doc_id, c.page, c.char_start, c.char_end,
-                  c.heading_path, c.text) for c in chunks])
-            for raw in merge_multipage(parsed.tables):
-                seq = table_seq.get(parsed.doc_id, 0) + 1
-                table_seq[parsed.doc_id] = seq
-                validation = validate_table(
-                    raw, coerce_threshold=config.coerce_threshold,
-                    rel_tol=config.arithmetic_rel_tol,
-                    abs_tol=config.arithmetic_abs_tol,
-                    page_texts=page_texts)
-                status = assign_table_status(
-                    validation, config.table_confidence_threshold)
-                if status == "untrusted":
-                    n_tables_untrusted += 1
-                elif status == "unchecked":
-                    n_tables_unchecked += 1
-                else:
-                    n_tables_trusted += 1
-                built = build_data_table(
-                    conn, parsed.doc_id, seq, raw,
-                    coerce_threshold=config.coerce_threshold,
-                    style_overrides=validation.style_overrides,
-                    cells=config.cells_index)
-                write_table_manifest(conn, built, validation, status)
-            n_new += 1
-            if n_new % commit_every == 0:
+        def write_family(src: Path, family: list[ParsedDocument]) -> None:
+            nonlocal n_new
+            if not conn.in_transaction:
+                conn.execute("BEGIN IMMEDIATE")
+            conn.execute("SAVEPOINT write_family")
+            try:
+                for parsed in family:
+                    write_document(conn, src, parsed, config)
+                conn.execute("RELEASE SAVEPOINT write_family")
+            except BaseException:
+                conn.execute("ROLLBACK TO SAVEPOINT write_family")
+                conn.execute("RELEASE SAVEPOINT write_family")
+                raise
+            previous = n_new
+            n_new += len(family)
+            if n_new // commit_every > previous // commit_every:
                 conn.commit()
                 progress(f"ingested {n_new} new documents")
 
         if not finalized:
             pending: list[Path] = []
             for src in sources:
-                if _file_sha(src) in done_shas:
+                if stat_identity(src) in done_identities:
                     n_skipped += 1
                 else:
                     pending.append(src)
@@ -158,14 +124,15 @@ def ingest_bulk(
             if workers is None:
                 workers = (max(1, (os.cpu_count() or 2) - 2)
                            if parse in (parse_pdf_fast, parse_any_fast) else 1)
-            parsed_ok: list[tuple[Path, ParsedDocument]] = []
+            parsed_ok: list[tuple[Path, list[ParsedDocument]]] = []
 
             def _accept(src: Path, parsed: ParsedDocument) -> None:
-                for child in expand_document(parsed, parse):
-                    parsed_ok.append((src, child))
-                    if transcriber is None:
-                        # crash-safe: committed rows survive a later parse failure
-                        write_parsed(src, child)
+                family = expand_document(parsed, parse, seen_ids)
+                if transcriber is None:
+                    # A container and its attachments share one checkpoint, so
+                    # resume never skips a parent whose children were lost.
+                    write_family(src, family)
+                parsed_ok.append((src, family))
 
             if workers > 1 and pending:
                 progress(f"parsing with {workers} workers")
@@ -187,19 +154,20 @@ def ingest_bulk(
                         n_failed += 1
                         progress(f"PARSE FAILED {src.name}: {type(e).__name__}: {e}")
 
-            n_scanned_total = sum(len(p.scanned_pages) for _, p in parsed_ok)
-            if n_scanned_total and transcriber is not None:
+            n_scanned_total = sum(len(p.scanned_pages) for _, family in parsed_ok for p in family)
+            if transcriber is not None:
                 from rnsr.ingest.cost_estimate import estimate_transcription_usd
 
                 model = getattr(transcriber, "model", "") or config.vision_model or "vision"
                 est = estimate_transcription_usd(n_scanned_total, model)
                 progress(f"{n_scanned_total} scanned page(s), est. ${est:.2f} to transcribe")
-                for src, parsed in parsed_ok:
-                    if parsed.scanned_pages:
-                        merged = transcriber(src, parsed.scanned_pages)
-                        failed_pages = _merge_transcriptions(parsed, merged)
-                        n_scanned_gap += len(failed_pages)
-                    write_parsed(src, parsed)
+                for src, family in parsed_ok:
+                    for parsed in family:
+                        if parsed.scanned_pages:
+                            merged = transcriber(src, parsed.scanned_pages)
+                            failed_pages = merge_transcriptions(parsed, merged)
+                            n_scanned_gap += len(failed_pages)
+                    write_family(src, family)
             else:
                 n_scanned_gap = n_scanned_total
             conn.commit()
@@ -213,26 +181,27 @@ def ingest_bulk(
             progress("building FTS index…")
             fts.populate_fts(conn)
 
-            from rnsr.db.artifact import CorpusDB
-
             conn.commit()
             conn.close()
-            corpus = CorpusDB(tmp, mode="rw")
-            from rnsr.ingest.fast_parse import FAST_PARSER_NAME
+            with CorpusDB(tmp, mode="rw") as corpus:
+                from rnsr.ingest.fast_parse import FAST_PARSER_NAME
 
-            write_corpus_manifest(
-                corpus, FAST_PARSER_NAME, config=config,
-                extra_health={
-                    "parse_failed": n_failed,
-                    "scanned_pages_total": n_scanned_total,
-                    "scanned_pages_untranscribed": n_scanned_gap,
-                })
-            schema.record_ingest_batch(
-                corpus.conn, "create", sources, n_docs=n_new)
-            schema.finalize_corpus(corpus.conn)
-            corpus.conn.commit()
-            corpus.close()
+                write_corpus_manifest(
+                    corpus, FAST_PARSER_NAME, config=config,
+                    extra_health={
+                        "parse_failed": n_failed,
+                        "scanned_pages_total": n_scanned_total,
+                        "scanned_pages_untranscribed": n_scanned_gap,
+                    })
+                schema.record_ingest_batch(
+                    corpus.conn, "create", sources, n_docs=n_new)
+                schema.validate_integrity(corpus.conn)
+                schema.finalize_corpus(corpus.conn)
+                corpus.conn.commit()
+                schema.checkpoint_for_publish(corpus.conn)
+
         else:
+            schema.checkpoint_for_publish(conn)
             conn.close()
 
         tmp.rename(out_db)

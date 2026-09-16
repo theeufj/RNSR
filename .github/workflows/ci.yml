@@ -18,7 +18,10 @@ jobs:
           python-version: ${{ matrix.python-version }}
           cache: pip
       - name: Install
-        run: pip install -e ".[eval,dev]"
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y bubblewrap
+          pip install -e ".[eval,dev,service,secure]"
       - name: Ruff
         run: ruff check .
       - name: Tests (LLM-free; live tests excluded by default addopts)

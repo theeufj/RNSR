@@ -15,6 +15,9 @@ import typer
 from rich.console import Console
 from rich.table import Table
 
+from rnsr.answer_semantics import NOT_FOUND, publish_answer
+from rnsr.sdk import make_runner as _make_runner
+
 app = typer.Typer(name="rnsr", no_args_is_help=True, add_completion=False)
 console = Console()
 
@@ -60,31 +63,16 @@ def ingest(
 ) -> None:
     """Ingest documents into a corpus.db artifact (Phase A)."""
     from rnsr.config import Settings
-    from rnsr.ingest.cost_estimate import resolve_transcriber
     from rnsr.ingest.lifecycle import append as append_ingest
     from rnsr.ingest.lifecycle import replace_document
     from rnsr.ingest.pipeline import ingest as run_ingest
 
     settings = Settings.from_env()
-    prose_checker = vision = transcriber = None
-    transcriber, vision_model = resolve_transcriber(settings, no_transcribe=no_transcribe)
-    if transcriber is not None:
-        console.print(f"scanned-page transcription: on ({vision_model})")
-    if llm:
-        from rnsr.ingest.llm_hooks import (
-            make_page_transcriber,
-            make_prose_checker,
-            make_vision_extractor,
-        )
-        from rnsr.llm.router import Router
+    from rnsr.answer_workflow import make_ingest_hooks
 
-        router = Router(settings)
-        sub, vis = router.resolve("sub"), router.resolve("vision")
-        prose_checker = make_prose_checker(sub.client, sub.model,
-                                           concurrency=settings.sub_concurrency)
-        vision = make_vision_extractor(vis.client, vis.model)
-        if transcriber is None:
-            transcriber = make_page_transcriber(vis.client, vis.model)
+    hooks = make_ingest_hooks(settings, llm=llm, no_transcribe=no_transcribe)
+    transcriber = hooks["transcriber"]
+    prose_checker, vision = hooks["prose_checker"], hooks["vision"]
 
     if replace:
         stats = replace_document(
@@ -125,12 +113,6 @@ def ingest(
         console.print(f"report written to {report_path}")
 
 
-def _make_runner(settings):
-    from rnsr.sdk import make_runner
-
-    return make_runner(settings)
-
-
 @app.command()
 def query(
     corpus: Path = typer.Argument(..., exists=True, help="corpus.db artifact"),
@@ -139,6 +121,8 @@ def query(
     allow_degraded: bool = typer.Option(
         False, "--allow-degraded",
         help="Answer even when corpus health is blocked; stamp health on the result"),
+    abstain_below: str = typer.Option("off", "--abstain-below",
+        help="Replace answers at or below this tier: off | low | medium | high"),
 ) -> None:
     """Answer a question against a corpus.db via the RLM loop (Phase B/C)."""
     import asyncio
@@ -146,26 +130,28 @@ def query(
 
     from rnsr.config import Settings
     from rnsr.errors import CorpusHealthError
-    from rnsr.sdk import corpus_env
+    from rnsr.sdk import answer
 
     settings = Settings.from_env()
     if allow_degraded:
         settings = replace(settings, allow_degraded=True)
     try:
-        env = corpus_env(corpus, settings=settings)
+        result = asyncio.run(answer(question, corpus, settings=settings,
+                                    runner=_make_runner(settings), run_dir=run_dir,
+                                    abstain_below=abstain_below))
     except CorpusHealthError as e:
         console.print(f"[red]corpus health blocked:[/red] {e}")
         raise typer.Exit(2) from e
-    health = (env.manifest or {}).get("health") or {}
+    health = result.health or {}
     if health.get("grade") and health["grade"] != "ok":
         console.print(f"[yellow]corpus health {health['grade']}[/yellow]")
-    result = asyncio.run(_make_runner(settings).run(question, env, run_dir=run_dir))
-    result.health = health
     console.print(f"[bold]{result.answer}[/bold]")
     console.print(f"status={result.status} iterations={result.iterations} "
                   f"cost=${result.ledger['spend_usd']:.4f} "
                   f"sub_calls={result.ledger['sub_calls']}")
     console.print(f"trajectory: {result.trajectory_path}")
+    if result.status in {"error", "budget_exhausted"}:
+        raise typer.Exit(2)
 
 
 @app.command("trajectory")
@@ -249,9 +235,9 @@ def eval_tables_cmd(
 def eval_cmd(
     benchmark: str = typer.Option(..., "--benchmark", "-b",
                                   help="synthetic-oolong | oolong | financebench | "
-                                       "matter | office | cuad | contractnli | legalbench"),
+                                       "matter | office | cuad | cuad-long | contractnli | legalbench"),
     system: str = typer.Option("docdb", "--system", "-s",
-                               help="docdb | rlm-classic"),
+                               help="docdb | rlm-classic | bm25-rag | vector-rag | rerank-rag | graph-rag"),
     limit: int | None = typer.Option(None, "--limit", "-n"),
     run_dir: Path = typer.Option(Path("runs/eval"), "--run-dir"),
     dataset_id: str | None = typer.Option(None, "--dataset-id",
@@ -344,7 +330,7 @@ def answer_csv(
         help="independent passes per batch, voted per field (1 = off). 2 costs "
              "roughly double for the same wall time and turns disagreements "
              "into flagged fields instead of silent errors"),
-    not_found: str = typer.Option("Not found in matter corpus", "--not-found-phrase"),
+    not_found: str = typer.Option(NOT_FOUND, "--not-found-phrase"),
     max_error_rate: float = typer.Option(
         0.0, "--max-error-rate",
         help="fail the run (exit 2) when more than this fraction of questions "
@@ -366,7 +352,7 @@ def answer_csv(
     abstain_below: str = typer.Option(
         "off", "--abstain-below",
         help="Replace answers at or below this trust tier with 'NEEDS REVIEW' "
-             "in the answers CSV (off | medium | high). Status file keeps the "
+             "in the answers CSV (off | low | medium | high). Status file keeps the "
              "raw answer."),
 ) -> None:
     """Answer a questions CSV over a document corpus (fable-replicate contract).
@@ -392,13 +378,13 @@ def answer_csv(
     from dataclasses import replace as _replace
 
     from rnsr import obs as _obs
+    from rnsr.answer_workflow import AnswerCheckpoint, corpus_revision, prepare_corpus
     from rnsr.config import Settings
-    from rnsr.db.artifact import CorpusDB
-    from rnsr.eval.harness import _corpus_valid
-    from rnsr.harness.loop import EnvSpec
+    from rnsr.errors import CorpusHealthError
     from rnsr.harness.trajectory import prune_trajectories
     from rnsr.llm import governor as _governor
     from rnsr.runlock import WorkDirBusy, WorkDirLock
+    from rnsr.sdk import answer_batch, corpus_env
 
     settings = Settings.from_env()
     if allow_degraded:
@@ -415,287 +401,77 @@ def answer_csv(
     if pruned:
         console.print(f"retention: pruned {pruned} trajectory file(s)")
 
-    with open(questions, newline="", encoding="utf-8") as f:
-        rows = list(_csv.DictReader(f))
+    try:
+        with open(questions, newline="", encoding="utf-8") as f:
+            rows = list(_csv.DictReader(f))
+    except BaseException:
+        lock.release()
+        raise
     if not rows or question_col not in rows[0]:
+        lock.release()
         raise typer.BadParameter(
             f"questions CSV has no column {question_col!r}; "
             f"columns: {list(rows[0].keys()) if rows else 'none'}")
     qs = [r[question_col] for r in rows]
     console.print(f"{len(qs)} questions over corpus {corpus_dir}")
 
-    # ingest once, cached by content (extension-dispatched parsers)
-    from rnsr.ingest.dispatch import is_ingestable
-
-    all_files = [p for p in corpus_dir.rglob("*")
-                 if p.is_file() and not p.name.startswith(".")]
-    files = sorted(p for p in all_files if is_ingestable(p))
-    if not files:
-        raise typer.BadParameter(f"no ingestable files under {corpus_dir}")
-    console.print(f"ingesting {len(files)} documents (cached across runs)")
-    n_unsupported = len(all_files) - len(files)
-    if n_unsupported:
-        exts = sorted({p.suffix.lower() or "(none)" for p in all_files
-                       if not is_ingestable(p)})
-        console.print(f"[yellow]note:[/yellow] {n_unsupported} file(s) with "
-                      f"unsupported extensions skipped: {', '.join(exts)}")
-
-    from rnsr.ingest.fast_parse import stat_identity as _stat_id
-    from rnsr.ingest.lifecycle import append as append_ingest
-    from rnsr.ingest.lifecycle import file_index, replace_document
-
-    cache_dir = work_dir / "corpora"
-    corpus_path = cache_dir / "corpus.db"
-    if corpus_path.exists() and not _corpus_valid(corpus_path, 1):
-        corpus_path.unlink()
-    if corpus_path.exists():
-        index = file_index(corpus_path)
-        from rnsr.ingest.parse import _sha256 as _content_sha
-
-        new_files, changed = [], []
-        for s in files:
-            rec = index.get(str(s.resolve())) or index.get(s.name)
-            if rec is None:
-                new_files.append(s)
-                continue
-            known = {rec.get("sha256"), rec.get("content_sha256")} - {None, ""}
-            if _stat_id(s) in known or _content_sha(s) in known:
-                continue
-            changed.append((rec["doc_id"], s))
-        for doc_id, src in changed:
-            console.print(f"[dim]replacing changed {src.name}[/dim]")
-            replace_document(corpus_path, doc_id, src, config=settings)
-        if new_files:
-            console.print(f"appending {len(new_files)} new document(s)")
-            append_ingest(new_files, corpus_path, config=settings)
-    if not corpus_path.exists() and fast_ingest:
-        cache_dir.mkdir(parents=True, exist_ok=True)
-        from rnsr.ingest.cost_estimate import resolve_transcriber
-
-        transcriber, _vision_model = resolve_transcriber(
-            settings, no_transcribe=no_transcribe)
-        if llm and transcriber is None and not no_transcribe:
-            from rnsr.ingest.llm_hooks import make_page_transcriber
-            from rnsr.llm.router import Router
-
-            vis = Router(settings).resolve("vision")
-            transcriber = make_page_transcriber(vis.client, vis.model)
-        from rnsr.ingest.bulk import ingest_bulk
-
-        stats = ingest_bulk(files, corpus_path, config=settings,
-                            transcriber=transcriber,
-                            progress=lambda s: console.print(f"[dim]{s}[/dim]"))
-        console.print(f"bulk ingest: {stats}")
-        if stats.get("scanned_pages_untranscribed"):
-            console.print(
-                f"[red]WARNING:[/red] {stats['scanned_pages_untranscribed']} scanned "
-                "pages have no text — rerun with --llm to transcribe, or answers "
-                "may miss their content")
-    if not corpus_path.exists():
-        cache_dir.mkdir(parents=True, exist_ok=True)
-        from rnsr.ingest.cost_estimate import resolve_transcriber
-
-        prose_checker = vision = None
-        transcriber, _vision_model = resolve_transcriber(
-            settings, no_transcribe=no_transcribe)
-        if llm:
-            from rnsr.ingest.llm_hooks import (
-                make_page_transcriber,
-                make_prose_checker,
-                make_vision_extractor,
-            )
-            from rnsr.llm.router import Router
-
-            router = Router(settings)
-            sub, vis = router.resolve("sub"), router.resolve("vision")
-            prose_checker = make_prose_checker(sub.client, sub.model,
-                                               concurrency=settings.sub_concurrency)
-            vision = make_vision_extractor(vis.client, vis.model)
-            if transcriber is None and not no_transcribe:
-                transcriber = make_page_transcriber(vis.client, vis.model)
-        from rnsr.ingest.pipeline import ingest as _ingest
-
-        report = _ingest(files, corpus_path, config=settings,
-                         prose_checker=prose_checker, vision=vision,
-                         transcriber=transcriber)
-        console.print(f"ingested: {report.n_chunks} chunks, validation pass rate "
-                      f"{report.validation_pass_rate:.0%}")
-        if report.scanned_pages_untranscribed:
-            console.print(
-                f"[red]WARNING:[/red] scanned pages without text: "
-                f"{sum(len(x['pages']) for x in report.scanned_pages_untranscribed)} "
-                "pages across "
-                f"{len(report.scanned_pages_untranscribed)} docs — rerun with "
-                "--llm to transcribe them, or answers may miss their content")
-    from rnsr.errors import CorpusHealthError
-    from rnsr.ingest.health import enforce_health, load_health
-
-    with CorpusDB(corpus_path) as c:
-        manifest = c.manifest_dict()
-        corpus_health = load_health(c, settings)
-    try:
-        enforce_health(corpus_health, settings)
-    except CorpusHealthError as e:
-        console.print(f"[red]corpus health blocked:[/red] {e}")
-        lock.release()
-        raise typer.Exit(2) from e
-    manifest["health"] = corpus_health.to_dict()
-    if corpus_health.grade != "ok":
-        console.print(f"[yellow]corpus health {corpus_health.grade}[/yellow]")
-        for f in corpus_health.findings:
-            console.print(f"  [{f.severity}] {f.detail}")
-    from rnsr.harness.playbook import discover_playbook
-
-    playbook = discover_playbook(corpus_dir, corpus_path.parent, work_dir)
-    env = EnvSpec(mode="docdb", corpus_db=str(corpus_path), manifest=manifest,
-                  playbook=playbook)
-
-    runner = _make_runner(settings)
-    sem = asyncio.Semaphore(concurrency)
-
-    # incremental checkpoint: rerun resumes, never re-pays
-    ckpt = work_dir / "answers_partial.jsonl"
-    done: dict[int, str] = {}
-    status: dict[int, str] = {}
-    errors: dict[int, str] = {}
-    agreements: dict[int, float] = {}     # consensus mode: share of passes agreeing
-    contested: set[str] = set()           # query ids the passes disagreed on
-    tiers: dict[int, str] = {}
-    quotes_verified: dict[int, str] = {}
-    resolved_by: dict[int, str] = {}
-    neg_audits: dict[int, str] = {}
-    cite_docs: dict[int, str] = {}
-
-    def stamp_evidence(i: int, ev, *, resolved: str | None = None) -> None:
-        if ev is None:
-            return
-        tiers[i] = ev.tier
-        quotes_verified[i] = f"{ev.quotes_verified}/{ev.quotes_total}"
-        if resolved or ev.resolved_by:
-            resolved_by[i] = resolved or ev.resolved_by or ""
-        neg_audits[i] = ev.negative_audit
-        if ev.docs_cited:
-            cite_docs[i] = ", ".join(ev.docs_cited)
-    if ckpt.exists():
-        for line in ckpt.read_text().splitlines():
-            rec = _json.loads(line)
-            if rec.get("q") == qs[rec["i"]] if rec["i"] < len(qs) else False:
-                done[rec["i"]] = rec["a"]
-                # checkpoints written before status tracking hold answers
-                # that were accepted at the time
-                status[rec["i"]] = rec.get("status", "final")
-                if rec.get("error"):
-                    errors[rec["i"]] = rec["error"]
-        if done:
-            console.print(f"resuming: {len(done)}/{len(qs)} already answered")
-    ckpt.parent.mkdir(parents=True, exist_ok=True)
-    ckpt_f = open(ckpt, "a", encoding="utf-8")  # noqa: SIM115 — spans the run
-
-    def record(i: int, answer_text: str, st: str, error: str | None = None) -> None:
-        done[i] = answer_text
-        status[i] = st
-        if error:
-            errors[i] = error
-        rec = {"i": i, "q": qs[i], "a": answer_text, "status": st}
-        if error:
-            rec["error"] = error
-        ckpt_f.write(_json.dumps(rec) + "\n")
-        ckpt_f.flush()
-
-    async def answer(i: int, q: str) -> tuple[int, str]:
-        if i in done:
-            return i, done[i]
-        async with sem:
-            try:
-                res = await runner.run(q, env, run_dir=work_dir / "trajectories",
-                                       query_id=f"q{i:03d}")
-                text = "" if res.answer is None else str(res.answer).strip()
-                stamp_evidence(i, res.evidence)
-                record(i, text or not_found, res.status)
-            except Exception as e:
-                # the placeholder keeps the CSV contract; the status file and
-                # the exit code carry the truth
-                record(i, not_found, "error", f"{type(e).__name__}: {e}"[:300])
-            return i, done[i]
-
-    async def answer_group(group: list[int]) -> None:
-        qid = {i: f"q{i:03d}" for i in group}
-        group_status, group_error = "final", None
-        agreement: dict[str, float] = {}
-        async with sem:
-            try:
-                if consensus > 1:
-                    cr = await runner.run_batch_consensus(
-                        [(qid[i], qs[i]) for i in group], env,
-                        run_dir=work_dir / "trajectories",
-                        query_id=f"b{group[0]:03d}_{group[-1]:03d}",
-                        passes=consensus)
-                    got = {q: a.value for q, a in cr.answers.items()}
-                    agreement = {q: a.agreement for q, a in cr.answers.items()}
-                    contested.update(cr.contested_qids)
-                    group_status = (cr.pass_results[0].status
-                                    if cr.pass_results else "error")
-                    for i in group:
-                        ans = cr.answers.get(qid[i])
-                        if ans is not None:
-                            stamp_evidence(i, ans.evidence,
-                                           resolved=ans.resolved_by)
-                else:
-                    br = await runner.run_batch(
-                        [(qid[i], qs[i]) for i in group], env,
-                        run_dir=work_dir / "trajectories",
-                        query_id=f"b{group[0]:03d}_{group[-1]:03d}")
-                    got = br.answers
-                    group_status = br.result.status
-                    for i in group:
-                        stamp_evidence(i, br.evidence.get(qid[i]))
-            except Exception as e:
-                got, group_status = {}, "error"
-                group_error = f"{type(e).__name__}: {e}"[:300]
-        for i in group:
-            text = got.get(qid[i])
-            if text is None:
-                if group_error:      # remember why, in case the solo retry also fails
-                    errors.setdefault(i, group_error)
-                continue             # unanswered — the solo pass below retries it
-            a = not_found if text.upper() == "NOT_FOUND" else text
-            if qid[i] in agreement:
-                agreements[i] = agreement[qid[i]]
-            record(i, a, group_status)
-
-    async def main() -> list[str]:
-        if batch_size > 1:
-            pending = [i for i in range(len(qs)) if i not in done]
-            groups = [pending[j:j + batch_size]
-                      for j in range(0, len(pending), batch_size)]
-            if groups:
-                console.print(f"batched mode: {len(pending)} question(s) in "
-                              f"{len(groups)} shared loop(s) of up to "
-                              f"{batch_size}")
-                await asyncio.gather(*(answer_group(g) for g in groups))
-                missing = [i for i in range(len(qs)) if i not in done]
-                if missing:
-                    console.print(f"retrying {len(missing)} unanswered "
-                                  "question(s) in solo loops")
-        results = await asyncio.gather(*(answer(i, q) for i, q in enumerate(qs)))
-        return [a for _, a in sorted(results)]
-
     t_start = _time.monotonic()
     try:
-        answers = asyncio.run(main())
+        publish_answer(None, None, abstain_below)
+        if min(batch_size, concurrency, consensus) < 1:
+            raise typer.BadParameter("batch-size, concurrency and consensus must be positive")
+        corpus_path = prepare_corpus(corpus_dir, work_dir, settings,
+                                     fast_ingest=fast_ingest, llm=llm,
+                                     no_transcribe=no_transcribe, progress=console.print)
+        env = corpus_env(corpus_path, settings=settings)
+        from rnsr.harness.playbook import discover_playbook
+        env.playbook = discover_playbook(corpus_dir, corpus_path.parent, work_dir)
+        health = (env.manifest or {}).get("health") or {}
+        checkpoint = AnswerCheckpoint(work_dir / "answers_partial.jsonl", qs,
+                                      corpus_revision(corpus_path))
+        outcomes = checkpoint.load()
+        if outcomes:
+            console.print(f"resuming: {len(outcomes)}/{len(qs)} already answered")
+        pending = [i for i in range(len(qs)) if i not in outcomes]
+
+        def record(local_index, result):
+            i = pending[local_index]
+            outcomes[i] = result
+            checkpoint.record(i, result)
+
+        if pending:
+            results = asyncio.run(answer_batch(
+                [qs[i] for i in pending], corpus_path, batch_size=batch_size,
+                concurrency=concurrency, consensus=consensus, settings=settings,
+                runner=_make_runner(settings), env=env,
+                question_ids=[f"q{i:03d}" for i in pending],
+                run_dir=work_dir / "trajectories", on_result=record))
+            for i, result in zip(pending, results, strict=True):
+                outcomes[i] = result
+    except CorpusHealthError as exc:
+        console.print(f"[red]corpus health blocked:[/red] {exc}")
+        raise typer.Exit(2) from exc
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc)) from exc
     finally:
-        ckpt_f.close()
         lock.release()
 
-    _TIER_RANK = {"low": 0, "medium": 1, "high": 2}
-    floor = _TIER_RANK.get((abstain_below or "off").lower())
+    answers = [(outcomes[i].answer if outcomes[i].answer not in (None, "", "NOT_FOUND")
+                else not_found) for i in range(len(qs))]
+    status = {i: r.status for i, r in outcomes.items()}
+    errors = {i: r.error for i, r in outcomes.items() if r.error}
+    agreements = {i: r.agreement for i, r in outcomes.items() if r.agreement is not None}
+    contested = {f"q{i:03d}" for i, r in outcomes.items() if r.contested}
+    tiers = {i: r.tier for i, r in outcomes.items() if r.tier}
+    evidence = {i: r.evidence or {} for i, r in outcomes.items()}
+    quotes_verified = {i: f"{ev.get('quotes_verified', 0)}/{ev.get('quotes_total', 0)}"
+                       for i, ev in evidence.items()}
+    resolved_by = {i: ev.get("resolved_by", "") for i, ev in evidence.items()}
+    neg_audits = {i: ev.get("negative_audit", "") for i, ev in evidence.items()}
+    cite_docs = {i: ", ".join(ev.get("docs_cited", [])) for i, ev in evidence.items()}
 
     def maybe_abstain(i: int, text: str) -> str:
-        if floor is None:
-            return text
-        if _TIER_RANK.get(tiers.get(i, "high"), 2) < floor:
-            return "NEEDS REVIEW"
-        return text
+        return publish_answer(text, tiers.get(i), abstain_below)
 
     output.mkdir(parents=True, exist_ok=True)
     out_path = output / "answers_chunk1.csv"
@@ -711,7 +487,7 @@ def answer_csv(
         w.writerow(["row", "query_id", "status", "agreement", "contested",
                     "error", "model_answer", "corpus_health",
                     "tier", "quotes_verified", "resolved_by", "negative_audit"])
-        health_grade = corpus_health.grade
+        health_grade = health.get("grade", "")
         for i in range(len(qs)):
             qid = f"q{i:03d}"
             w.writerow([i, qid, status.get(i, "error"),
@@ -746,7 +522,7 @@ def answer_csv(
         "contested_fields": sorted(contested),
         "provider": gov,
         "metrics": _obs.metrics().snapshot(),
-        "health": corpus_health.to_dict(),
+        "health": health,
         "tier_counts": {t: sum(1 for v in tiers.values() if v == t)
                         for t in ("high", "medium", "low")},
         "abstain_below": abstain_below,
@@ -768,7 +544,7 @@ def answer_csv(
         })
     xlsx_path = write_answers_xlsx(output / "answers.xlsx", xlsx_rows,
                                    question_col=question_col)
-    write_report_card(output, report=report, health=corpus_health.to_dict())
+    write_report_card(output, report=report, health=health)
 
     console.print(f"wrote {out_path} ({len(answers)} rows, {n_nf} not-found)")
     console.print(f"wrote {xlsx_path} and {output / 'report.md'}")
@@ -957,8 +733,12 @@ def regress_cmd(
     written = report.write(out_dir or answers.parent)
     console.print(f"wrote {written}")
     if not report.passed:
-        console.print(f"[red]REGRESSION:[/red] {report.accuracy:.1%} is below "
-                      f"--min-accuracy {min_accuracy:.1%}")
+        if report.accuracy < min_accuracy:
+            console.print(f"[red]REGRESSION:[/red] accuracy {report.accuracy:.1%} < {min_accuracy:.1%}")
+        if report.false_positive_rate > max_false_positive_rate:
+            console.print(f"[red]REGRESSION:[/red] false-positive rate {report.false_positive_rate:.1%} > {max_false_positive_rate:.1%}")
+        if report.high_tier_accuracy < min_high_tier_accuracy:
+            console.print(f"[red]REGRESSION:[/red] high-tier accuracy {report.high_tier_accuracy:.1%} < {min_high_tier_accuracy:.1%}")
         raise typer.Exit(2)
 
 

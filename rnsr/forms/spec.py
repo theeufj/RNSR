@@ -18,6 +18,9 @@ import json
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Literal
+
+from rnsr.answer_semantics import DEFAULT_NOT_FOUND
 
 _SUBJECT_RE = re.compile(
     r"^For\s+(?P<role>[^\u2014]+?)\s+\u2014\s+(?P<name>[^.]+)\.\s*(?P<label>.*)$")
@@ -85,7 +88,6 @@ class FormField:
         return bool(_WANTS_YES_RE.search(self.title or ""))
 
 
-DEFAULT_NOT_FOUND = "Not found"
 DEFAULT_DATE_FORMAT = "YYYY-MM-DD"
 DEFAULT_ROLES_HEADING = "ROLES (authoritative — use these to keep entities straight):"
 DEFAULT_EVIDENCE_RULE = """\
@@ -164,9 +166,9 @@ class QuestionItem:
 
     item_id: str
     question: str
-    kind: str                             # 'group' | 'standalone'
+    kind: Literal["group", "standalone"]  # 'group' | 'standalone'
     members: list[dict] = field(default_factory=list)
-    mode: str = "options"                 # group: 'options' | 'value'
+    mode: Literal["options", "value"] = "options"                 # group: 'options' | 'value'
     group: str | None = None
     field_id: str | None = None
     needs_value: bool = False

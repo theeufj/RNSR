@@ -44,7 +44,10 @@ jobs:
           cache: pip
 
       - name: Install
-        run: pip install -e ".[ingest,eval,dev]"
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y bubblewrap
+          pip install -e ".[ingest,eval,dev]"
 
       - name: Check for a provider key
         id: guard

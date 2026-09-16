@@ -16,11 +16,18 @@ def _usage_tokens(resp) -> tuple[int, int]:
 
 class GeminiClient:
     provider = "gemini"
+    # Each text is a separate HTTP request; the governor must admit each one.
+    embeds_individually = True
 
     def __init__(self, api_key: str | None = None):
         from google import genai
 
-        self._client = genai.Client(api_key=api_key)
+        self._client = genai.Client(api_key=api_key,
+                                    http_options={"retry_options": {"attempts": 1}})
+
+    async def list_models(self) -> set[str]:
+        models = await self._client.aio.models.list()
+        return {(m.name or "").removeprefix("models/") async for m in models}
 
     async def complete(self, prompt, *, model, system=None, max_tokens=4096,
                        temperature=0.0, seed=None):

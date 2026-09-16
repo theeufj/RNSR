@@ -66,6 +66,7 @@ class ParsedDocument:
     modified_at: str | None = None
     content_sha256: str | None = None
     parent_doc_id: str | None = None
+    source_identity: str | None = None
     pending_attachments: list[tuple[str, bytes]] = field(default_factory=list)
 
     def page_text(self, page: int) -> str:

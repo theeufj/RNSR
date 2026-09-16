@@ -51,21 +51,17 @@ def write_corpus_manifest(
     from rnsr.ingest.dedup import detect_duplicates
 
     dup_groups = detect_duplicates(conn)
-    doc_cols = {r[1] for r in conn.execute("PRAGMA table_info(documents)")}
-    select = ["doc_id", "source_path", "n_pages", "parser"]
-    for extra in ("title", "doc_date", "author", "parent_doc_id",
-                  "duplicate_of", "content_sha256"):
-        if extra in doc_cols:
-            select.append(extra)
+    select = ["doc_id", "source_path", "n_pages", "parser", "title", "doc_date",
+              "author", "parent_doc_id", "duplicate_of", "content_sha256"]
     docs = [
         dict(r)
         for r in conn.execute(
             f"SELECT {', '.join(select)} FROM documents ORDER BY doc_id"
         )
     ]
-    n_chunks, total_chars = conn.execute(
-        "SELECT count(*), coalesce(sum(char_end - char_start), 0) FROM chunks"
-    ).fetchone()
+    n_chunks = conn.execute("SELECT count(*) FROM chunks").fetchone()[0]
+    total_chars = conn.execute(
+        "SELECT coalesce(sum(char_end-char_start),0) FROM doc_text").fetchone()[0]
     untrusted = [
         r["table_name"]
         for r in conn.execute("SELECT table_name FROM manifest_tables WHERE status = 'untrusted'")
@@ -75,8 +71,7 @@ def write_corpus_manifest(
         "chunk_stats", {"n_chunks": n_chunks, "total_chars": total_chars}
     )
     corpus.manifest_set("untrusted_tables", untrusted)
-    if dup_groups:
-        corpus.manifest_set("duplicates", dup_groups)
+    corpus.manifest_set("duplicates", dup_groups)
     corpus.manifest_set("versions", {"rnsr": __version__, "parser": parser})
     from rnsr.db.schema import ARTIFACT_FORMAT_VERSION
 

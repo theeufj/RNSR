@@ -6,13 +6,13 @@ real request rate against a provider was (loops x sub_concurrency) and the
 real spend was unbounded — a 999-question job could empty an account
 before anyone read the console. The governor is the missing outer bound:
 
-  - in-flight cap: one semaphore all provider traffic passes through, so
+  - in-flight cap: one thread-safe gate all provider traffic passes through, so
     adding concurrent loops stops multiplying the request rate;
   - RPM ceiling: a sliding-window gate, because providers bill per minute
     and 429 storms cost wall-clock in retries;
   - spend ceiling: aggregate USD across every role and loop. Once breached,
-    further acquisitions raise rather than spend, so a runaway job stops
-    at a number the operator chose;
+    further acquisitions raise. Already in-flight requests can add cost
+    beyond the ceiling, because their price is known only on completion;
   - shared cooldown: when one call sees a 429, every caller waits. Without
     it, sibling loops keep hammering a provider that just asked for quiet.
 
@@ -31,8 +31,8 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import threading
 import time
-import weakref
 from collections import deque
 from dataclasses import dataclass, field
 from typing import Protocol, runtime_checkable
@@ -104,44 +104,39 @@ class Governor:
 
     _window: deque[float] = field(default_factory=deque)
     _cooldown_until: float = 0.0
-    # asyncio primitives bind to the running loop, and rnsr calls asyncio.run
-    # more than once per process (CLI commands, embedding builds in worker
-    # threads), so gates are created per loop. Keyed weakly by the loop
-    # object: id() would be recycled after a loop is collected, handing a new
-    # loop a semaphore bound to the dead one.
-    _per_loop: weakref.WeakKeyDictionary = field(
-        default_factory=weakref.WeakKeyDictionary)
-
-    def _gates(self) -> tuple[asyncio.Semaphore | None, asyncio.Lock]:
-        loop = asyncio.get_running_loop()
-        gates = self._per_loop.get(loop)
-        if gates is None:
-            sem = asyncio.Semaphore(self.max_in_flight) if self.max_in_flight else None
-            gates = (sem, asyncio.Lock())
-            self._per_loop[loop] = gates
-        return gates
+    _lock: threading.RLock = field(default_factory=threading.RLock, repr=False)
+    _in_flight: int = 0
+    attempts: int = 0
 
     def check_spend(self) -> None:
-        if self.spend_ceiling_usd and self.spent_usd >= self.spend_ceiling_usd:
-            raise SpendCeilingExceeded(self.spent_usd, self.spend_ceiling_usd)
+        with self._lock:
+            if self.spend_ceiling_usd and self.spent_usd >= self.spend_ceiling_usd:
+                raise SpendCeilingExceeded(self.spent_usd, self.spend_ceiling_usd)
 
     def record(self, usage: Usage) -> None:
-        self.spent_usd += usage.cost_usd
-        self.requests += 1
+        with self._lock:
+            self.spent_usd += usage.cost_usd
+            self.requests += 1
 
     def note_rate_limit(self) -> None:
-        self.rate_limit_hits += 1
-        self._cooldown_until = max(self._cooldown_until,
-                                   time.monotonic() + self.cooldown_s)
+        with self._lock:
+            self.rate_limit_hits += 1
+            self._cooldown_until = max(self._cooldown_until,
+                                       time.monotonic() + self.cooldown_s)
+            hits = self.rate_limit_hits
         log(_LOG, logging.WARNING, "provider.rate_limited",
-            cooldown_s=self.cooldown_s, hits=self.rate_limit_hits)
+            cooldown_s=self.cooldown_s, hits=hits)
         metrics().incr("provider_rate_limit_hits")
 
-    async def _pace(self) -> None:
-        """Serialize the window/cooldown decision, then sleep outside the lock."""
-        _, lock = self._gates()
+    async def acquire(self) -> None:
+        """Atomically admit across threads/loops without blocking an event loop.
+
+        The short asynchronous wait is cancellation-safe: no permit is
+        reserved until all gates pass, and there is no await after reservation.
+        """
         while True:
-            async with lock:
+            with self._lock:
+                self.check_spend()
                 now = time.monotonic()
                 delay = max(0.0, self._cooldown_until - now)
                 if not delay and self.max_rpm:
@@ -149,34 +144,40 @@ class Governor:
                         self._window.popleft()
                     if len(self._window) >= self.max_rpm:
                         delay = 60.0 - (now - self._window[0])
+                if self.max_in_flight and self._in_flight >= self.max_in_flight:
+                    delay = max(delay, 0.01)
                 if delay <= 0:
                     if self.max_rpm:
                         self._window.append(now)
+                    self._in_flight += 1
+                    self.attempts += 1
                     return
-            self.waited_s += delay
-            metrics().incr("provider_throttle_s", delay)
-            await asyncio.sleep(delay)
-
-    async def acquire(self) -> None:
-        self.check_spend()
-        await self._pace()
-        sem, _ = self._gates()
-        if sem is not None:
-            await sem.acquire()
+            started = time.monotonic()
+            try:
+                await asyncio.sleep(delay)
+            finally:
+                elapsed = time.monotonic() - started
+                with self._lock:
+                    self.waited_s += elapsed
+                metrics().incr("provider_throttle_s", elapsed)
 
     def release(self) -> None:
-        sem, _ = self._gates()
-        if sem is not None:
-            sem.release()
+        with self._lock:
+            if self._in_flight <= 0:
+                raise RuntimeError("governor release without an acquired permit")
+            self._in_flight -= 1
 
     def snapshot(self) -> dict:
-        return {
-            "requests": self.requests,
-            "spend_usd": round(self.spent_usd, 6),
-            "spend_ceiling_usd": self.spend_ceiling_usd,
-            "rate_limit_hits": self.rate_limit_hits,
-            "throttled_s": round(self.waited_s, 2),
-        }
+        with self._lock:
+            return {
+                "requests": self.requests,
+                "attempts": self.attempts,
+                "in_flight": self._in_flight,
+                "spend_usd": round(self.spent_usd, 6),
+                "spend_ceiling_usd": self.spend_ceiling_usd,
+                "rate_limit_hits": self.rate_limit_hits,
+                "throttled_s": round(self.waited_s, 2),
+            }
 
 
 _GOVERNOR: GovernorProtocol = Governor()
@@ -189,9 +190,10 @@ def configure(settings) -> GovernorProtocol:
     limits live in its own backend, not in this process's Settings.
     """
     if isinstance(_GOVERNOR, Governor):
-        _GOVERNOR.max_in_flight = settings.max_in_flight_requests
-        _GOVERNOR.max_rpm = settings.max_requests_per_minute
-        _GOVERNOR.spend_ceiling_usd = settings.run_spend_ceiling_usd
+        with _GOVERNOR._lock:
+            _GOVERNOR.max_in_flight = settings.max_in_flight_requests
+            _GOVERNOR.max_rpm = settings.max_requests_per_minute
+            _GOVERNOR.spend_ceiling_usd = settings.run_spend_ceiling_usd
     return _GOVERNOR
 
 
@@ -265,7 +267,25 @@ class GovernedClient:
             usage_of=lambda r: r.usage)
 
     async def embed(self, texts, *, model):
+        if getattr(self._inner, "embeds_individually", False):
+            async def one(text):
+                vectors = await self._guarded(lambda: self._inner.embed([text], model=model))
+                if len(vectors) != 1:
+                    raise ValueError("provider returned an invalid embedding count")
+                return vectors[0]
+
+            tasks = [asyncio.create_task(one(text)) for text in texts]
+            try:
+                return await asyncio.gather(*tasks)
+            finally:
+                for task in tasks:
+                    if not task.done():
+                        task.cancel()
+                await asyncio.gather(*tasks, return_exceptions=True)
         return await self._guarded(lambda: self._inner.embed(texts, model=model))
+
+    async def list_models(self):
+        return await self._guarded(self._inner.list_models)
 
     async def vision(self, prompt, image_png, *, model, max_tokens=4096):
         return await self._guarded(

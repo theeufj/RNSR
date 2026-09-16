@@ -60,9 +60,21 @@ class TestLogging:
         assert "query.start" in capsys.readouterr().err
 
     def test_does_not_touch_the_root_logger(self):
+        original_handlers = list(logging.getLogger().handlers)
         configure_logging(Settings(), force=True)
         assert logging.getLogger(ROOT_LOGGER).propagate is False
-        assert logging.getLogger().handlers == logging.getLogger().handlers
+        assert logging.getLogger().handlers == original_handlers
+
+    def test_handler_follows_stderr_after_embedded_cli_capture(self, monkeypatch):
+        import io
+
+        first, second = io.StringIO(), io.StringIO()
+        monkeypatch.setattr("sys.stderr", first)
+        configure_logging(Settings(), force=True)
+        first.close()
+        monkeypatch.setattr("sys.stderr", second)
+        log(get_logger("test"), logging.INFO, "after.capture")
+        assert "after.capture" in second.getvalue()
 
 
 class TestMetrics:

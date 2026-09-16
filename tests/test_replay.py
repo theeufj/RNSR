@@ -1,16 +1,22 @@
 """Rung-0 cells vs legacy replay — search semantics are agent contract."""
 
 import json
+import shutil
 from pathlib import Path
 
+from rnsr.db.migrate import migrate_artifact
 from rnsr.eval.replay import load_queries, replay
 
 FIXTURE = Path(__file__).parent / "fixtures" / "replay"
 
 
-def test_committed_fixture_matches_baseline():
-    db = FIXTURE / "corpus.db"
-    assert db.exists(), "committed replay corpus.db is missing"
+def test_committed_fixture_matches_baseline(tmp_path):
+    original = FIXTURE / "corpus.db"
+    assert original.exists(), "committed replay corpus.db is missing"
+    # The historical replay artifact also exercises the supported format migration.
+    db = tmp_path / "replay.db"
+    shutil.copyfile(original, db)
+    migrate_artifact(db)
     queries = load_queries(FIXTURE / "queries.json")
     assert queries
     baseline = json.loads((FIXTURE / "baseline.json").read_text())

@@ -80,15 +80,18 @@ class TestBudgets:
         assert result.status == "budget_exhausted"
         assert result.breached_cap == "max_root_iters"
         assert result.answer is None
+        assert len(root.calls) == result.ledger["root_iters"] == 2
 
     async def test_recovery_confirms_variable(self, tmp_path):
-        root = MockLLM(default="```python\nanswer = 3234\nprint('computed')\n```")
+        root = MockLLM(default="```python\nanswer = 3234\nllm_map(['confirm'])\n```")
         root.rule(r"ended without FINAL", "answer")
-        result = await make_runner(root, max_root_iters=1).run("q", CLASSIC,
+        result = await make_runner(root, max_root_iters=2, max_sub_calls=1).run("q", CLASSIC,
                                                                run_dir=tmp_path)
         assert result.status == "recovered"
         assert result.answer == 3234
-        assert result.breached_cap == "max_root_iters"
+        assert result.breached_cap == "max_sub_calls"
+        assert result.iterations == result.ledger["root_iters"] == 2
+        assert result.ledger["spend_usd"] >= 0.003
 
     async def test_sub_call_budget_enforced_in_batch(self, tmp_path):
         root = MockLLM().script(
@@ -142,11 +145,11 @@ class TestRootResilience:
         assert result.breached_cap == "root_timeout"
 
     async def test_recovery_parses_name_inside_reasoning(self, tmp_path):
-        root = MockLLM(default="```python\nanswer = 3234\nprint('done')\n```")
+        root = MockLLM(default="```python\nanswer = 3234\nllm_map(['confirm'])\n```")
         root.rule(r"ended without FINAL",
                   "Looking at the task, the variable `answer` contains the "
                   "computed total, so that is the one.")
-        result = await make_runner(root, max_root_iters=1).run("q", CLASSIC,
+        result = await make_runner(root, max_root_iters=2, max_sub_calls=1).run("q", CLASSIC,
                                                                run_dir=tmp_path)
         assert result.status == "recovered"
         assert result.answer == 3234
@@ -320,11 +323,13 @@ def docdb_env(tmp_path):
 
 class TestNegativeAudit:
     async def test_lazy_negative_pushed_back_then_corrected(self, tmp_path,
-                                                            docdb_env):
+                                                            docdb_env, caplog):
+        import logging
+        caplog.set_level(logging.INFO)
         root = MockLLM().script(
             "```python\nFINAL_BATCH({'q1': 'NOT_FOUND', 'q2': 'yes'})\n```",
             "```python\nFINAL_BATCH({'q1': 'daniel@example.com', "
-            "'q2': 'yes'})\n```",
+            "'q2': 'yes'}, quotes={'q1': ['Contact email address: daniel@example.com.']})\n```",
         )
         br = await make_runner(root).run_batch(
             [("q1", "What is the email address of Daniel Robert Mitchell?"),
@@ -335,6 +340,8 @@ class TestNegativeAudit:
         assert "answered negatively" in pushback and "q1" in pushback
         # the positive answer is not audited
         assert "q2 (" not in pushback
+
+        assert "daniel@example.com" not in repr([getattr(r, "fields", {}) for r in caplog.records])
 
     async def test_genuine_negative_resubmission_accepted(self, tmp_path,
                                                           docdb_env):

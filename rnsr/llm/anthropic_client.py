@@ -15,7 +15,11 @@ class AnthropicClient:
     def __init__(self, api_key: str | None = None):
         import anthropic
 
-        self._client = anthropic.AsyncAnthropic(api_key=api_key)
+        self._client = anthropic.AsyncAnthropic(api_key=api_key, max_retries=0)
+
+    async def list_models(self) -> set[str]:
+        page = await self._client.models.list()
+        return {m.id async for m in page}
 
     async def complete(self, prompt, *, model, system=None, max_tokens=4096,
                        temperature=0.0, seed=None):

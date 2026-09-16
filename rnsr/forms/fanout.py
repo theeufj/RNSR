@@ -11,8 +11,8 @@ from __future__ import annotations
 
 import re
 
-NOT_FOUND = "Not found in matter corpus"
-DEFAULT_NOT_FOUND = NOT_FOUND
+from rnsr.answer_semantics import DEFAULT_NOT_FOUND as DEFAULT_NOT_FOUND
+from rnsr.answer_semantics import NOT_FOUND, is_negative
 
 _ANSWER_RE = re.compile(r"ANSWER\s*:\s*(.+)", re.I)
 _VALUE_RE = re.compile(r"VALUE\s*:\s*(.*)", re.I)
@@ -20,12 +20,6 @@ _VALUE_RE = re.compile(r"VALUE\s*:\s*(.*)", re.I)
 
 def _norm(text: str) -> str:
     return re.sub(r"\s+", " ", (text or "").strip().lower()).rstrip(".")
-
-
-def is_negative(answer: str, not_found: str = NOT_FOUND) -> bool:
-    a = _norm(answer)
-    return (a in ("", "no", "unknown", "n/a", "none", "not applicable")
-            or a.startswith(_norm(not_found)))
 
 
 def _first_token(text: str) -> str | None:

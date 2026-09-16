@@ -1,6 +1,6 @@
 """Builds the preloaded docdb namespace inside the sandbox child (spec §4).
 
-    db                 sqlite3 connection (rw; source data trigger-frozen)
+    db                 sqlite3 connection (read-only source artifact)
     doc                dict: doc_id -> full raw text
     manifest           dict form of the manifest
     semantic_annotate  batched sub-LM pass writing a real column (§4.1)
@@ -19,17 +19,19 @@ import sqlite3
 
 def build_namespace(corpus_db: str, child, init_msg: dict) -> dict:
     from rnsr.db.artifact import CorpusDB
-    from rnsr.env.annotate import Annotator
     from rnsr.env.search import Ladder
     from rnsr.env.verify import Verifier
 
     with CorpusDB(corpus_db, mode="ro") as ro:
         manifest = ro.manifest_dict()
 
-    conn = sqlite3.connect(corpus_db)  # rw for annotations; triggers guard sources
-    from rnsr.db.schema import apply_read_pragmas
+    from pathlib import Path
+
+    conn = sqlite3.connect(Path(corpus_db).resolve().as_uri() + "?mode=ro", uri=True)
+    from rnsr.db.schema import apply_read_pragmas, quote_ident, validate_frozen
 
     apply_read_pragmas(conn)  # mmap-backed reads via the shared OS page cache
+    validate_frozen(conn)
 
     def _authorizer(action, _arg1, _arg2, _dbname, _source):
         if action == sqlite3.SQLITE_ATTACH:
@@ -45,18 +47,18 @@ def build_namespace(corpus_db: str, child, init_msg: dict) -> dict:
     ladder = Ladder(
         conn=conn, doc=doc, manifest=manifest, rpc=child.rpc,
         expansion_max_rounds=init_msg.get("expansion_max_rounds", 3),
+        enable_embeddings=init_msg.get("enable_embeddings", True),
     )
-    annotator = Annotator(
-        conn, child.rpc,
-        char_budget=init_msg.get("sub_call_char_budget", 200_000),
-        default_batch_size=init_msg.get("annotate_batch_size", 40),
-    )
-
     def semantic_annotate(table, new_col, prompt, *, where=None, batch_size=None,
                           model="sub", force=False, votes=1):
-        return annotator.annotate(table, new_col, prompt, where=where,
-                                  batch_size=batch_size, model=model, force=force,
-                                  votes=votes)
+        result = child.rpc({"op": "annotate", "table": table, "new_col": new_col,
+                            "prompt": prompt, "where": where,
+                            "batch_size": batch_size, "model": model,
+                            "force": force, "votes": votes})
+        # The parent owns all writes; refresh metadata after a successful write.
+        with CorpusDB(corpus_db, mode="ro") as refreshed:
+            manifest.update(refreshed.manifest_dict())
+        return result["result"]
 
     def schema_map(table_a: str, table_b: str) -> list[dict]:
         """Sub-LM *proposals* for column correspondences — never auto-applied."""
@@ -65,7 +67,7 @@ def build_namespace(corpus_db: str, child, init_msg: dict) -> dict:
                       if t["table_name"] == name), None)
             cols = [c["name"] for c in (t or {}).get("schema", [])]
             rows = conn.execute(
-                f'SELECT * FROM "{name}" LIMIT 3'
+                f"SELECT * FROM {quote_ident(name)} LIMIT 3"
             ).fetchall()
             return f"{name}: columns={cols} sample_rows={rows[:3]}"
 
@@ -85,82 +87,30 @@ def build_namespace(corpus_db: str, child, init_msg: dict) -> dict:
         except (json.JSONDecodeError, ValueError):
             return []
 
-    rejections = {"n": 0}
+    def FINAL(answer, quotes=None):  # noqa: N802
+        from rnsr.env.final_answer import FinalAnswer
+        from rnsr.env.finalize import validate_final
 
-    def FINAL(answer, quotes=None):  # noqa: N802 — spec-mandated name
-        """Docdb FINAL enforces §6: answers carry quotes, verified by code.
+        report = validate_final(answer, quotes, verifier)
+        raise FinalAnswer(answer, is_var=False, verification=report)
 
-        A FINAL whose quotes fail verification raises — the failure report
-        becomes the loop observation instead of an accepted answer. To
-        prevent rejection death-spirals (seen live: 20 iterations of quote
-        retries), the third attempt is accepted with the failed verification
-        recorded rather than blocked again.
-        """
-        from rnsr.env.final_answer import FinalAnswer as _FinalAnswer
+    def FINAL_VAR(value, quotes=None):  # noqa: N802
+        # Variables carry the same evidence contract as literal values.
+        from rnsr.env.final_answer import FinalAnswer
+        from rnsr.env.finalize import validate_final
 
-        report = verifier.verify(str(answer), quotes or [])
-        report["zero_quotes"] = not quotes
-        if report["passed"] and quotes:
-            raise _FinalAnswer(answer, is_var=False, verification=report)
-
-        rejections["n"] += 1
-        if rejections["n"] >= 3:   # stop the spiral; record the failure
-            report["third_strike"] = True
-            raise _FinalAnswer(answer, is_var=False, verification=report)
-        if not quotes:
-            raise ValueError(
-                "FINAL(answer, quotes=[...]) requires 1-3 short verbatim "
-                "quotes from the source supporting the answer (copy exactly "
-                "from search hits or doc text). For a purely computed value "
-                "from SQL, return the variable with FINAL_VAR(...) instead."
-            )
-        failed = [q["quote"] for q in report["quotes"] if not q["matched"]]
-        raise ValueError(
-            f"FINAL rejected — these quotes do not match the source text "
-            f"(after normalization): {failed}. Copy the document text "
-            "verbatim, or reconsider the answer."
-        )
+        report = validate_final(value, quotes, verifier)
+        raise FinalAnswer(value, is_var=True, verification=report)
 
     def FINAL_BATCH(answers, quotes=None):  # noqa: N802
-        """Batched FINAL: one dict of question_id -> answer for a multi-
-        question task. Quotes are optional per field ({qid: ["...", ...]});
-        provided quotes are verified like FINAL's, and failures reject the
-        whole batch back to the loop (same 3-strike anti-spiral as FINAL).
-        """
-        from rnsr.env.final_answer import FinalAnswer as _FinalAnswer
+        from rnsr.env.final_answer import FinalAnswer
+        from rnsr.env.finalize import validate_final
 
-        if not isinstance(answers, dict):
-            raise ValueError(
-                "FINAL_BATCH(answers) takes a dict mapping question id -> "
-                "answer, e.g. FINAL_BATCH({'q001': 'yes', 'q002': '42'})"
-            )
-        reports: dict = {}
-        failed: dict = {}
-        for qid, qs in (quotes or {}).items():
-            if not qs:
-                continue
-            report = verifier.verify(str(answers.get(qid, "")), list(qs))
-            reports[qid] = report
-            bad = [q["quote"] for q in report["quotes"] if not q["matched"]]
-            if bad:
-                failed[qid] = bad
-        if not quotes:
-            # accepted, but the caller must see that nothing was verified
-            reports["_batch"] = {"passed": True, "quotes": [], "zero_quotes": True}
-        if not failed:
-            raise _FinalAnswer(dict(answers), is_var=True,
-                               verification=reports or None)
-        rejections["n"] += 1
-        if rejections["n"] >= 3:   # stop the spiral; record the failures
-            for qid, report in reports.items():
-                if qid in failed:
-                    report["third_strike"] = True
-            raise _FinalAnswer(dict(answers), is_var=True, verification=reports)
-        raise ValueError(
-            "FINAL_BATCH rejected — quotes do not match the source text "
-            f"(after normalization) for: {failed}. Copy the document text "
-            "verbatim for those fields, or reconsider their answers."
-        )
+        try:
+            reports = validate_final(answers, quotes, verifier, batch=True)
+        except ValueError as exc:
+            raise ValueError(f"FINAL_BATCH rejected: {exc}") from exc
+        raise FinalAnswer(dict(answers), is_var=True, verification=reports)
 
     return {
         "db": conn,
@@ -170,6 +120,7 @@ def build_namespace(corpus_db: str, child, init_msg: dict) -> dict:
         "search": ladder.search,
         "verify": verifier.verify,
         "schema_map": schema_map,
+        "FINAL_VAR": FINAL_VAR,
         "FINAL": FINAL,  # overrides the unverified classic-mode FINAL
         "FINAL_BATCH": FINAL_BATCH,  # ditto, with per-field quote checks
     }

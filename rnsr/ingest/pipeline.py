@@ -10,39 +10,25 @@ from __future__ import annotations
 
 import json
 from dataclasses import asdict, dataclass, field
-from datetime import UTC, datetime
 from pathlib import Path
 
 from rnsr.config import Settings
 from rnsr.db import fts, schema
 from rnsr.db.artifact import CorpusDB
-from rnsr.ingest.chunk import chunk_document
 from rnsr.ingest.dispatch import parse_any
 from rnsr.ingest.expand import expand_document
 from rnsr.ingest.fallback import VisionExtractor, reextract
-from rnsr.ingest.manifest import write_corpus_manifest, write_table_manifest
+from rnsr.ingest.manifest import write_corpus_manifest
 from rnsr.ingest.model import Element, ParsedDocument, RawTable
 from rnsr.ingest.parse import PARSER_NAME
-from rnsr.ingest.tables import build_data_table, merge_multipage
+from rnsr.ingest.transcription import merge_transcriptions
 from rnsr.ingest.validate import (
     ProseChecker,
     TableValidation,
     assign_table_status,
     validate_table,
 )
-
-
-@dataclass
-class TableReport:
-    name: str
-    doc_id: str
-    status: str                  # trusted | reextracted | untrusted | unchecked
-    confidence: float
-    extractor: str               # rung that produced the stored table
-    attempts: list[dict]         # every (extractor, confidence) tried
-    style_overrides: dict[str, str]
-    n_rows: int
-    n_cols: int
+from rnsr.ingest.writer import TableReport, write_document
 
 
 @dataclass
@@ -59,11 +45,11 @@ class IngestReport:
     @property
     def validation_pass_rate(self) -> float:
         """Trusted+reextracted over checked tables; unchecked are excluded."""
-        checked = [t for t in self.tables if t.status != "unchecked"]
-        if not checked:
-            return 1.0
-        ok = sum(t.status in ("trusted", "reextracted") for t in checked)
-        return ok / len(checked)
+        from rnsr.ingest.health import validation_pass_rate
+
+        return validation_pass_rate(
+            len(self.tables), sum(t.status == "untrusted" for t in self.tables),
+            sum(t.status == "unchecked" for t in self.tables))
 
     def to_json(self) -> str:
         return json.dumps(
@@ -81,45 +67,6 @@ class IngestReport:
             indent=2,
         )
 
-
-def _merge_transcriptions(parsed: ParsedDocument,
-                          transcriptions: dict[int, dict | None]) -> list[int]:
-    """Fold VLM page transcriptions into the parsed document; returns pages
-    that failed to transcribe. Elements/tables are stamped extractor=vision
-    and flow through the normal checksum-validation path (§3.3)."""
-    failed: list[int] = []
-    touched: set[int] = set()
-    for page in sorted(transcriptions):
-        t = transcriptions[page]
-        touched.add(page)
-        if t is None:
-            failed.append(page)
-            continue
-        before = sum(len((e.text or "").strip())
-                     for e in parsed.elements if e.page == page)
-        for block in t.get("blocks", []):
-            text = str(block.get("text", "")).strip()
-            if not text:
-                continue
-            kind = "heading" if block.get("kind") == "heading" else "text"
-            level = 1 if kind == "heading" else None
-            parsed.elements.append(Element(kind, text, page, heading_level=level))
-        for grid in t.get("tables", []):
-            header = [str(h) if h is not None else "" for h in grid.get("header", [])]
-            rows = [[None if c is None else str(c) for c in row]
-                    for row in grid.get("rows", [])]
-            if header and rows:
-                parsed.tables.append(RawTable(page=page, header=header, rows=rows,
-                                              extractor="vision"))
-        after = sum(len((e.text or "").strip())
-                    for e in parsed.elements if e.page == page)
-        # Empty / whitespace "success" is a silent gap — same as no transcriber.
-        if after <= before:
-            failed.append(page)
-    for page in parsed.scanned_pages:
-        if page not in touched and page not in failed:
-            failed.append(page)
-    return failed
 
 
 def _validate(raw: RawTable, config: Settings, prose_checker: ProseChecker | None,
@@ -275,7 +222,7 @@ def ingest(
             if not parsed.scanned_pages:
                 continue
             transcriptions = transcriber(src, parsed.scanned_pages)
-            failed = _merge_transcriptions(parsed, transcriptions)
+            failed = merge_transcriptions(parsed, transcriptions)
             report.scanned_pages_transcribed += (
                 len(parsed.scanned_pages) - len(failed))
             if failed:
@@ -302,66 +249,13 @@ def ingest(
     conn = corpus.conn
     try:
         for src, parsed in parsed_ok:
-            pages, chunks = chunk_document(
-                parsed, chunk_chars=config.chunk_chars, overlap=config.chunk_overlap
+            written = write_document(
+                conn, src, parsed, config, prose_checker=prose_checker,
+                select_table=lambda raw, page_texts, src=src: _extract_best_table(
+                    src, raw, config, prose_checker, vision, page_texts),
             )
-            page_texts = {p.page: p.text for p in pages}
-
-            modified = parsed.modified_at
-            if not modified:
-                try:
-                    modified = datetime.fromtimestamp(
-                        src.stat().st_mtime, UTC).isoformat()
-                except OSError:
-                    modified = None
-            schema.insert_document(
-                conn,
-                doc_id=parsed.doc_id,
-                source_path=parsed.source_path,
-                sha256=parsed.sha256,
-                n_pages=parsed.n_pages,
-                parser=parsed.parser,
-                ingested_at=datetime.now(UTC).isoformat(),
-                title=parsed.title,
-                doc_date=parsed.doc_date,
-                author=parsed.author,
-                modified_at=modified,
-                content_sha256=parsed.content_sha256 or parsed.sha256,
-                parent_doc_id=parsed.parent_doc_id,
-            )
-            conn.executemany(
-                "INSERT INTO doc_text VALUES (?,?,?,?,?)",
-                [(parsed.doc_id, p.page, p.char_start, p.char_end, p.text) for p in pages],
-            )
-            conn.executemany(
-                "INSERT INTO chunks (doc_id, page, char_start, char_end, heading_path, text) "
-                "VALUES (?,?,?,?,?,?)",
-                [(parsed.doc_id, c.page, c.char_start, c.char_end, c.heading_path, c.text)
-                 for c in chunks],
-            )
-            report.documents.append(
-                {"doc_id": parsed.doc_id, "source": str(src), "n_pages": parsed.n_pages,
-                 "n_tables_detected": len(parsed.tables), "n_chunks": len(chunks)}
-            )
-
-            for seq, raw in enumerate(merge_multipage(parsed.tables), start=1):
-                chosen, validation, status, attempts = _extract_best_table(
-                    src, raw, config, prose_checker, vision, page_texts
-                )
-                built = build_data_table(
-                    conn, parsed.doc_id, seq, chosen,
-                    coerce_threshold=config.coerce_threshold,
-                    style_overrides=validation.style_overrides,
-                    cells=config.cells_index,
-                )
-                write_table_manifest(conn, built, validation, status)
-                report.tables.append(TableReport(
-                    name=built.name, doc_id=parsed.doc_id, status=status,
-                    confidence=round(validation.confidence, 4),
-                    extractor=chosen.extractor, attempts=attempts,
-                    style_overrides=validation.style_overrides,
-                    n_rows=built.n_rows, n_cols=built.n_cols,
-                ))
+            report.documents.append(written.document)
+            report.tables.extend(written.tables)
 
         report.n_chunks = fts.populate_fts(conn)
         schema.record_ingest_batch(
@@ -374,8 +268,10 @@ def ingest(
                 "scanned_pages_untranscribed": sum(
                     len(x["pages"]) for x in report.scanned_pages_untranscribed),
             })
+        schema.validate_integrity(conn)
         schema.finalize_corpus(conn)
         conn.commit()
+        schema.checkpoint_for_publish(conn)
         corpus.close()
         tmp_db.rename(out_db)
         report.out_db = str(out_db)

@@ -139,7 +139,7 @@ class TestFilesystemContainment:
             "from pathlib import Path\n"
             "print(Path('~/.ssh/id_rsa').expanduser().read_text())")
         assert not res.ok
-        assert "filesystem read" in res.error
+        assert "FileNotFoundError" in res.error  # HOME is private scratch
 
     async def test_writing_outside_corpus_blocked(self, repl, tmp_path):
         target = tmp_path / "escape.txt"
@@ -186,7 +186,7 @@ class TestFilesystemContainment:
         assert res.ok, res.error
         assert res.stdout.strip() == "ok"
 
-    async def test_guard_can_be_disabled_for_debugging(self, tmp_path):
+    async def test_os_boundary_remains_when_audit_hook_disabled(self, tmp_path):
         from rnsr.env.sandbox import SandboxedRepl
 
         probe = tmp_path / "readable.txt"
@@ -195,8 +195,8 @@ class TestFilesystemContainment:
         await r.start(mode="classic", context="")
         try:
             res = await r.exec_cell(f"print(open({str(probe)!r}).read())")
-            assert res.ok, res.error
-            assert res.stdout.strip() == "plain"
+            assert not res.ok
+            assert "plain" not in res.stdout
         finally:
             await r.close()
 
@@ -219,3 +219,32 @@ class TestEnvironmentScrubbing:
         assert env["PATH"] == "/usr/bin"
         assert "ANTHROPIC_API_KEY" not in env
         assert "OPENAI_API_KEY" not in env
+
+
+class TestOSBoundaryStartup:
+    async def test_missing_os_backend_fails_closed_and_cleans_scratch(self, monkeypatch):
+        from pathlib import Path
+
+        from rnsr.env import osguard
+
+        allocated = []
+        def unavailable(scratch, _corpus):
+            allocated.append(Path(scratch))
+            raise SandboxError('OS sandbox unavailable')
+        monkeypatch.setattr(osguard, 'launch_command', unavailable)
+        repl = SandboxedRepl(fs_guard=False)
+        with pytest.raises(SandboxError, match='OS sandbox unavailable'):
+            await repl.start(mode='classic', context='')
+        assert repl._proc is None
+        assert repl._scratch is None
+        assert allocated and not allocated[0].exists()
+
+    def test_protocol_channel_round_trip(self):
+        import io
+
+        from rnsr.env.sandbox_child import Channel
+
+        buffer = io.BytesIO()
+        Channel(None, buffer).send({'op': 'exec', 'code': 'print("snowman ☃")'})
+        buffer.seek(0)
+        assert Channel(buffer, None).recv() == {'op': 'exec', 'code': 'print("snowman ☃")'}

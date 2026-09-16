@@ -160,7 +160,7 @@ class TestArtifact:
             corpus.conn.execute(
                 "INSERT INTO manifest_tables VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
                 ("t_doc1_001", "doc1", "Revenue by segment", 3, 3, 10, 2,
-                 '[{"name": "revenue", "type": "REAL"}]', 0.93,
+                 '{"columns":[{"name":"revenue","type":"REAL"}],"n_total_rows":0,"n_data_rows":10}', 0.93,
                  '{"arithmetic": {"passed": true}}', "trusted", "docling"),
             )
             m = corpus.manifest_dict()

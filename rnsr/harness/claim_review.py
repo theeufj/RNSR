@@ -154,6 +154,7 @@ async def review_final(
 
     Questions/definitions must be the caller's task, never evaluation gold.
     Caller cancellation propagates. Provider/parser failures remain advisory.
+    The individual advisory request stays bounded even for an uncapped query.
     Only rationales (``reply``) contain new free text, so existing trajectory
     redaction applies. Digests bind metadata to exact answers and questions.
     """

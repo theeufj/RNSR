@@ -45,6 +45,10 @@ class SandboxError(RNSRError):
     """The sandboxed REPL child failed, was killed, or violated a limit."""
 
 
+class PermanentProviderError(RNSRError):
+    """A worker provider request cannot be repaired by retrying it."""
+
+
 class BudgetExhausted(RNSRError):
     """A query-time budget cap (iterations, sub-calls, wall-clock, spend) was breached."""
 

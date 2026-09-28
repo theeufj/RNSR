@@ -1,8 +1,8 @@
 """Configuration for rnsr.
 
-All defaults trace to the design spec (docdb-rlm-design-spec.md):
-budgets from §7, validation thresholds from §3.3, chunking from §3.4,
-coercion from §3.2, batching from §4.1, search-ladder bounds from §5.
+Validation thresholds trace to the design spec (docdb-rlm-design-spec.md)
+§3.3, chunking to §3.4, coercion to §3.2, batching to §4.1, and search-ladder
+bounds to §5. Query budgets are opt-in: zero means unlimited.
 
 Environment variables (see .env.example) override defaults via
 ``Settings.from_env()``. Model roles resolve per provider in
@@ -33,21 +33,21 @@ class Settings:
     embed_model: str = ""
     vision_model: str = ""          # empty -> same as sub_model's provider default
 
-    # --- budgets (§7) ---
-    max_root_iters: int = 20
-    max_sub_calls: int = 300
-    max_wall_s: float = 600.0
-    max_spend_usd: float = 2.0
+    # --- optional query budgets (0 disables each limit) ---
+    max_root_iters: int = 0
+    max_sub_calls: int = 0
+    max_wall_s: float = 0.0
+    max_spend_usd: float = 0.0
     sub_concurrency: int = 16
-    cell_timeout_s: float = 120.0   # per-cell wall clock; sandbox killed past this
+    cell_timeout_s: float = 120.0   # local cell work; uncapped queries exclude provider waits
     root_timeout_s: float = 120.0   # active provider call, excluding governor queue
-    root_max_attempts: int = 3      # transient failures only; timeout retry <= 2x base
+    root_max_attempts: int = 3      # only for explicitly bounded queries; uncapped retries continue
     # One bounded advisory review after quote verification; never blocks FINAL
     # or upgrades trust. Opt-in until support-review quality is evaluated.
     claim_review_enabled: bool = False
 
     # --- run-level provider governance (rnsr.llm.governor) ---
-    # Budgets above cap ONE query; these cap the run. 0 disables a limit.
+    # Optional budgets above cap ONE query; these cap the run. 0 disables a limit.
     max_in_flight_requests: int = 24     # concurrent provider requests, all roles
     max_requests_per_minute: int = 0     # sliding-window RPM ceiling
     run_spend_ceiling_usd: float = 0.0   # aggregate USD before calls are refused
@@ -130,7 +130,7 @@ class Settings:
             if (isinstance(value, (int, float)) and not isinstance(value, bool)
                     and (not math.isfinite(value) or value < 0)):
                 raise ValueError(f"{f.name} must be finite and non-negative")
-        for name in ("max_wall_s", "cell_timeout_s", "root_timeout_s", "root_max_attempts",
+        for name in ("cell_timeout_s", "root_timeout_s", "root_max_attempts",
                      "sub_concurrency", "chunk_chars",
                      "sub_call_char_budget", "annotate_batch_size", "rescore_candidates",
                      "service_max_jobs"):

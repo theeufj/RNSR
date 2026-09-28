@@ -1,14 +1,16 @@
-"""Bounded root requests with separate queue and generation deadlines."""
+"""Root requests with bounded attempts and cancellable, uncapped-query retries."""
 
 from __future__ import annotations
 
 import asyncio
+import math
 import time
 
 from rnsr.errors import BudgetExhausted
 from rnsr.harness.budget import BudgetLedger
 from rnsr.llm.base import LLMClient, LLMResponse
 from rnsr.llm.governor import SpendCeilingExceeded, is_rate_limit
+from rnsr.llm.retry import is_terminal_provider_error
 
 
 def _is_timeout(exc: Exception) -> bool:
@@ -16,7 +18,8 @@ def _is_timeout(exc: Exception) -> bool:
 
 
 def _retryable(exc: Exception) -> bool:
-    if isinstance(exc, (BudgetExhausted, SpendCeilingExceeded)):
+    if (isinstance(exc, (BudgetExhausted, SpendCeilingExceeded))
+            or is_terminal_provider_error(exc)):
         return False
     status = getattr(exc, "status_code", None)
     if isinstance(status, int):
@@ -35,25 +38,31 @@ async def complete_root(
     Admission waits count toward the overall deadline, not the active-call
     timeout. After a timeout, a retry may use twice the base allowance so a
     consistently slower response can finish. SDK limits are unchanged.
-    All attempts/backoff share one deadline, reserving up to 30 seconds
-    (10% of the remaining query time) for variable recovery. Cancellation
-    propagates; terminal provider/configuration errors are never retried.
+    Explicitly bounded queries retain the attempt limit and reserve up to
+    30 seconds (10% of remaining query time) for variable recovery. Uncapped
+    queries retry transient failures until success or caller cancellation,
+    with a bounded backoff and individual request timeout on every attempt.
+    Terminal provider/configuration errors are never retried.
     """
     if timeout_s <= 0 or attempts < 1:
         raise ValueError("timeout_s and attempts must be positive")
     remaining = ledger.remaining_wall_s()
-    if remaining <= 0 or ledger.spend_usd >= ledger.max_spend_usd:
+    if remaining <= 0 or ledger.limit_reached("max_spend_usd"):
         return None
-    reserve = min(30.0, remaining * 0.1)
-    deadline = time.monotonic() + remaining - reserve
+    deadline = (time.monotonic() + remaining - min(30.0, remaining * 0.1)
+                if math.isfinite(remaining) else None)
+    uncapped = ledger.uncapped
     extended = False
 
     def available() -> float:
-        return min(deadline - time.monotonic(), ledger.remaining_wall_s())
+        return min(deadline - time.monotonic() if deadline is not None else math.inf,
+                   ledger.remaining_wall_s())
 
-    for attempt in range(1, attempts + 1):
+    attempt = 0
+    while uncapped or attempt < attempts:
+        attempt += 1
         remaining = available()
-        if remaining <= 0 or ledger.spend_usd >= ledger.max_spend_usd:
+        if remaining <= 0 or ledger.limit_reached("max_spend_usd"):
             return None
         active_timeout = min(timeout_s * (2 if extended else 1), remaining)
         started = time.monotonic()
@@ -68,7 +77,7 @@ async def complete_root(
                              queue_wait_s=round(wait_s, 3),
                              timeout_s=_timeout)
 
-        overall_timeout = asyncio.timeout(remaining)
+        overall_timeout = asyncio.timeout(remaining if math.isfinite(remaining) else None)
         try:
             async with overall_timeout:
                 timed_complete = getattr(client, "complete_with_timeout", None)
@@ -103,13 +112,14 @@ async def complete_root(
             )
             if not retryable:
                 raise
-            if overall_timeout.expired() or attempt == attempts or available() <= 0:
+            if (overall_timeout.expired() or (not uncapped and attempt == attempts)
+                    or available() <= 0):
                 return None
             if _is_timeout(exc):
                 extended = True
             # No delay after the last failure, and no sleep past the shared
             # deadline. The governor additionally enforces provider cooldown.
-            backoff = min(5.0 * attempt, available() / 4)
+            backoff = min(5.0 * attempt, 30.0 if uncapped else math.inf, available() / 4)
             if backoff > 0.1:
                 await asyncio.sleep(backoff)
     return None

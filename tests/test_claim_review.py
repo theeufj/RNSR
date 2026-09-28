@@ -189,14 +189,27 @@ async def test_duplicate_batch_field_rejected():
 
 
 @pytest.mark.parametrize("ledger", [
-    BudgetLedger(max_sub_calls=0), BudgetLedger(max_spend_usd=0),
-    BudgetLedger(max_root_iters=0), BudgetLedger(max_wall_s=0),
+    BudgetLedger(max_sub_calls=1, sub_calls=1),
+    BudgetLedger(max_spend_usd=1, spend_usd=1),
+    BudgetLedger(max_root_iters=1, root_iters=1),
+    BudgetLedger(max_wall_s=0.001, _t0=0),
 ])
 async def test_existing_caps_skip_advisory(ledger):
     sub = client()
     result = await run_review(sub=sub, ledger=ledger)
     assert not sub.calls and result["status"] == "skipped"
     assert result["fields"][0]["verdict"] is None
+
+
+async def test_uncapped_query_can_review_after_former_limits():
+    sub = client()
+    ledger = BudgetLedger(max_root_iters=0, max_sub_calls=0,
+                          max_wall_s=0, max_spend_usd=0,
+                          root_iters=100, sub_calls=1000, spend_usd=100, _t0=0)
+    result = await run_review(sub=sub, ledger=ledger)
+    assert len(sub.calls) == 1 and result["status"] == "completed"
+    assert result["fields"][0]["verdict"] == "supported"
+    assert ledger.sub_calls == 1001
 
 
 async def test_remaining_wall_budget_skips_call():

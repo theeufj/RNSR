@@ -58,7 +58,8 @@ def test_extract_code_accepts_bare_final_rejects_prose():
 async def test_completeness_check_never_starts_after_cap():
     sub = MockLLM(default="COMPLETE")
     runner = RootRunner(MockLLM(), "mock", sub, "mock")
-    for ledger in (BudgetLedger(max_sub_calls=0), BudgetLedger(max_wall_s=0)):
+    for ledger in (BudgetLedger(max_sub_calls=1, sub_calls=1),
+                   BudgetLedger(max_wall_s=0.001, _t0=0)):
         assert await runner._completeness_gap("q", {"value": "a"}, ledger) is None
     assert sub.calls == []
 
@@ -109,3 +110,41 @@ async def test_recovery_namespace_read_obeys_remaining_wall_budget():
         ledger), timeout=1.0)
     assert result is None
     assert root.calls == [] and ledger.root_iters == 0
+
+
+async def test_recovery_can_finish_an_uncapped_query_past_former_limits():
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock, Mock
+
+    from rnsr.env.sandbox import CellResult
+    from rnsr.harness.recovery import recover_variable
+
+    final = {"value": "42", "encoding": "text", "is_var": True}
+    sandbox = SimpleNamespace(
+        vars=AsyncMock(return_value={"answer": {"type": "str", "repr": "'42'"}}),
+        exec_cell=AsyncMock(return_value=CellResult(ok=True, stdout="", final=final)))
+    root = MockLLM(default="answer")
+    ledger = BudgetLedger(max_root_iters=0, max_sub_calls=0,
+                          max_wall_s=0, max_spend_usd=0,
+                          root_iters=100, sub_calls=1000, spend_usd=100, _t0=0)
+    result = await recover_variable(
+        sandbox, SimpleNamespace(root_client=root, root_model="mock"),
+        "question", [], Mock(), ledger)
+    assert result == final and len(root.calls) == 1
+    assert ledger.root_iters == 101
+    assert sandbox.exec_cell.call_args.kwargs["timeout"] == 30.0
+
+
+@pytest.mark.parametrize("ledger", [BudgetLedger(max_root_iters=1, root_iters=1),
+                                   BudgetLedger(max_spend_usd=1, spend_usd=1)])
+async def test_recovery_respects_explicit_exhausted_limits(ledger):
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock, Mock
+
+    from rnsr.harness.recovery import recover_variable
+
+    sandbox = SimpleNamespace(vars=AsyncMock())
+    runner = SimpleNamespace(root_client=MockLLM(), root_model="mock")
+    assert await recover_variable(sandbox, runner, "question", [], Mock(), ledger) is None
+    sandbox.vars.assert_not_awaited()
+    assert not runner.root_client.calls

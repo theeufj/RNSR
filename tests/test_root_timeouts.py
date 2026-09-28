@@ -152,7 +152,8 @@ async def test_three_failures_do_not_sleep_after_final_attempt(monkeypatch):
         raise TimeoutError("network timeout")
 
     events = Events()
-    assert await request(SimpleNamespace(complete=complete), events) is None
+    assert await request(SimpleNamespace(complete=complete), events,
+                         BudgetLedger(max_wall_s=600)) is None
     assert calls == 3 and delays == [5.0, 10.0]
     assert [row["timeout_s"] for row in events.of_kind("root_call_started")] == [
         120.0, 240.0, 240.0,
@@ -182,7 +183,7 @@ async def test_plain_client_is_cancelled_at_remaining_wall_bound():
 
 async def test_no_retry_when_wall_budget_expires_during_failure(monkeypatch):
     delays = no_backoff(monkeypatch)
-    ledger = BudgetLedger()
+    ledger = BudgetLedger(max_wall_s=600)
     calls = 0
 
     async def complete(*args, **kwargs):
@@ -230,7 +231,8 @@ async def test_provider_status_controls_retries(status, retries, monkeypatch):
         raise ProviderError("provider rejected request")
 
     if retries:
-        assert await request(SimpleNamespace(complete=complete), Events()) is None
+        assert await request(SimpleNamespace(complete=complete), Events(),
+                             BudgetLedger(max_wall_s=600)) is None
         assert calls == 3
     else:
         with pytest.raises(ProviderError):
@@ -276,7 +278,125 @@ async def test_exhausted_spend_makes_no_request():
         raise AssertionError("must not dispatch")
 
     assert await request(SimpleNamespace(complete=complete), Events(),
-                         BudgetLedger(max_spend_usd=0)) is None
+                         BudgetLedger(max_spend_usd=1, spend_usd=1)) is None
+
+
+@pytest.mark.parametrize("failure_kind", ["timeout", "connection", "provider"])
+async def test_uncapped_query_retries_past_three_failures_until_success(monkeypatch, failure_kind):
+    delays = no_backoff(monkeypatch)
+    calls = 0
+
+    class Unavailable(Exception):
+        status_code = 503
+
+    async def complete(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        if calls <= 8:
+            if failure_kind == "timeout":
+                raise TimeoutError("provider still processing")
+            if failure_kind == "connection":
+                raise ConnectionError("connection interrupted")
+            raise Unavailable("try later")
+        return LLMResponse("verified answer", "mock")
+
+    ledger = BudgetLedger(max_root_iters=0, max_sub_calls=0,
+                          max_wall_s=0, max_spend_usd=0)
+    ledger.root_iters, ledger.sub_calls, ledger.spend_usd = 99, 1000, 20
+    events = Events()
+    response = await request(SimpleNamespace(complete=complete), events, ledger, attempts=3)
+    assert response.text == "verified answer" and calls == 9
+    assert delays == [5, 10, 15, 20, 25, 30, 30, 30]
+    assert len(events.of_kind("root_call_failed")) == 8
+    assert events.of_kind("root_call_completed")[0]["attempt"] == 9
+
+
+async def test_uncapped_retry_backoff_remains_cancellable(monkeypatch):
+    retry_started = asyncio.Event()
+    calls = 0
+
+    async def complete(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        raise TimeoutError("still unavailable")
+
+    async def wait_in_backoff(delay):
+        if calls < 5:
+            return
+        retry_started.set()
+        await asyncio.Event().wait()
+
+    monkeypatch.setattr("rnsr.harness.root_call.asyncio.sleep", wait_in_backoff)
+    task = asyncio.create_task(request(SimpleNamespace(complete=complete), Events(),
+                                       BudgetLedger()))
+    await asyncio.wait_for(retry_started.wait(), timeout=1)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert calls == 5
+
+
+async def test_uncapped_request_has_no_overall_timeout_but_keeps_request_timeout(monkeypatch):
+    real_timeout = asyncio.timeout
+    allowances = []
+
+    def timeout(delay):
+        allowances.append(delay)
+        return real_timeout(delay)
+
+    async def complete(*args, **kwargs):
+        return LLMResponse("done", "mock")
+
+    monkeypatch.setattr("rnsr.harness.root_call.asyncio.timeout", timeout)
+    response = await request(SimpleNamespace(complete=complete), Events(), BudgetLedger())
+    assert response.text == "done"
+    assert allowances == [None, 120.0]
+
+
+@pytest.mark.parametrize("message,body", [
+    ("429 request rejected", {"error": {"code": "insufficient_quota"}}),
+    ("429 request rejected", {"code": "billing_hard_limit_reached"}),
+    ("Your credit balance is too low to access the API", None),
+    ("429 insufficient credits", None),
+    ("You exceeded your current quota, please check your plan and billing details.", None),
+])
+async def test_credit_refusal_is_terminal_even_when_status_is_429(monkeypatch, message, body):
+    delays = no_backoff(monkeypatch)
+
+    class CreditError(Exception):
+        status_code = 429
+
+    error = CreditError(message)
+    error.body = body
+    calls = 0
+
+    async def complete(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        raise error
+
+    events = Events()
+    with pytest.raises(CreditError):
+        await request(SimpleNamespace(complete=complete), events, BudgetLedger())
+    assert calls == 1 and delays == []
+    assert not events.of_kind("root_call_failed")[0]["retryable"]
+
+
+@pytest.mark.parametrize("cap", ["max_root_iters", "max_sub_calls",
+                               "max_wall_s", "max_spend_usd"])
+async def test_explicit_positive_query_cap_retains_retry_limit(monkeypatch, cap):
+    delays = no_backoff(monkeypatch)
+    calls = 0
+
+    async def complete(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        raise ConnectionError("unavailable")
+
+    ledger = BudgetLedger(**{cap: 600})
+    assert await request(SimpleNamespace(complete=complete), Events(), ledger,
+                         attempts=2) is None
+    assert calls == 2 and delays == [5]
 
 
 @pytest.mark.parametrize("field,value", [("root_timeout_s", 0), ("root_timeout_s", -1),

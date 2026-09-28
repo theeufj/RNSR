@@ -27,7 +27,7 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
-from rnsr.errors import SandboxError
+from rnsr.errors import PermanentProviderError, SandboxError
 
 if TYPE_CHECKING:
     from rnsr.db.artifact import CorpusDB
@@ -173,12 +173,19 @@ class SandboxedRepl:
             raise SandboxError("sandbox protocol frame must be an object")
         return reply
 
-    async def _roundtrip(self, msg: dict, timeout: float, *, deadline: float | None = None) -> dict:
-        """Send an op and read to its result, serving RPCs along the way."""
+    async def _roundtrip(self, msg: dict, timeout: float, *, deadline: float | None = None,
+                         pause_provider_rpc_timeout: bool = False) -> dict:
+        """Serve a cell, bounding local work separately from provider waits.
+
+        Uncapped queries may suspend the cell watchdog while a trusted
+        provider/annotation handler runs. Those handlers must bound each
+        provider request and propagate cancellation. Calculations and all
+        other RPCs continue to share the local cell deadline.
+        """
         deadline = time.monotonic() + timeout if deadline is None else deadline
         rpc_count = 0
         try:
-            async with asyncio.timeout(max(0, deadline - time.monotonic())):
+            async with asyncio.timeout(max(0, deadline - time.monotonic())) as watchdog:
                 if time.monotonic() >= deadline:
                     raise TimeoutError
                 self._send(msg)
@@ -188,10 +195,29 @@ class SandboxedRepl:
                         raise TimeoutError
                     if reply.get("kind") == "rpc":
                         rpc_count += 1
-                        await self._serve_rpc(reply, deadline=deadline)
+                        if (pause_provider_rpc_timeout
+                                and reply.get("op") in {"llm_batch", "annotate"}):
+                            remaining_local_s = deadline - time.monotonic()
+                            if remaining_local_s <= 0:
+                                raise TimeoutError
+                            watchdog.reschedule(None)
+                            await self._serve_rpc(reply)
+                            # Provider wait does not consume local execution
+                            # time, but a cheap/empty RPC must not replenish it.
+                            deadline = time.monotonic() + remaining_local_s
+                            watchdog.reschedule(
+                                asyncio.get_running_loop().time() + remaining_local_s)
+                        else:
+                            await self._serve_rpc(reply, deadline=deadline)
                         continue
                     reply["_rpc_count"] = rpc_count
+                    # Always replace any child-supplied value. Parent final
+                    # verification shares the actual remaining local window.
+                    reply["_deadline"] = deadline
                     return reply
+        except (asyncio.CancelledError, PermanentProviderError):
+            await self.kill()
+            raise
         except TimeoutError:
             await self.kill()
             raise SandboxError(
@@ -215,6 +241,10 @@ class SandboxedRepl:
             body = (await self._calculation(request, deadline=deadline)
                     if request.get("op") == "calculation" else await handler(request))
             self._send({"error": None, **body})
+        except PermanentProviderError:
+            # Authentication/configuration failures cannot be repaired by
+            # model-written code; preserve them for the query's terminal error.
+            raise
         except Exception as e:
             if deadline is not None and time.monotonic() >= deadline:
                 raise TimeoutError("RPC exceeded cell wall-clock deadline") from e
@@ -303,9 +333,13 @@ class SandboxedRepl:
 
     # --- public API ----------------------------------------------------------
 
-    async def exec_cell(self, code: str, *, timeout: float = 120.0) -> CellResult:
+    async def exec_cell(self, code: str, *, timeout: float = 120.0,
+                        pause_provider_rpc_timeout: bool = False) -> CellResult:
         deadline = time.monotonic() + timeout
-        reply = await self._roundtrip({"op": "exec", "code": code}, timeout, deadline=deadline)
+        reply = await self._roundtrip(
+            {"op": "exec", "code": code}, timeout, deadline=deadline,
+            pause_provider_rpc_timeout=pause_provider_rpc_timeout)
+        deadline = reply.get("_deadline", deadline)
         final = reply.get("final")
         if final is not None and self._verifier is not None:
             from rnsr.env.finalize import submitted_quotes, validate_final

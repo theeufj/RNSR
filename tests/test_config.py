@@ -1,4 +1,4 @@
-"""Settings: spec defaults and env overrides."""
+"""Settings: uncapped queries, spec defaults, and env overrides."""
 
 import pytest
 
@@ -7,11 +7,13 @@ from rnsr.config import Settings
 
 def test_spec_defaults():
     s = Settings()
-    # §7 budgets
-    assert s.max_root_iters == 20
-    assert s.max_sub_calls == 300
-    assert s.max_wall_s == 600.0
-    assert s.max_spend_usd == 2.0
+    # Query limits are opt-in; execution timeouts stay enabled.
+    assert s.max_root_iters == 0
+    assert s.max_sub_calls == 0
+    assert s.max_wall_s == 0.0
+    assert s.max_spend_usd == 0.0
+    assert s.cell_timeout_s > 0
+    assert s.root_timeout_s > 0
     assert s.sub_concurrency == 16
     # §3.3 validation
     assert s.table_confidence_threshold == 0.7
@@ -55,7 +57,9 @@ def test_legacy_provider_env(monkeypatch, tmp_path):
 
 @pytest.mark.parametrize("field,value", [
     ("chunk_chars", 0), ("chunk_overlap", -1), ("chunk_overlap", 1500),
-    ("sub_concurrency", 0), ("max_wall_s", 0), ("cell_timeout_s", -1),
+    ("sub_concurrency", 0), ("max_wall_s", -1), ("cell_timeout_s", -1),
+    ("cell_timeout_s", 0), ("root_timeout_s", 0), ("root_max_attempts", 0),
+    ("max_root_iters", -1), ("max_sub_calls", -1), ("max_spend_usd", -1),
     ("max_spend_usd", float("nan")), ("max_wall_s", float("inf")),
     ("coerce_threshold", 1.1), ("transcribe_scans", "typo"),
     ("log_format", "typo"), ("provider", "typo"),
@@ -63,6 +67,15 @@ def test_legacy_provider_env(monkeypatch, tmp_path):
 def test_invalid_settings_rejected(field, value):
     with pytest.raises(ValueError):
         Settings(**{field: value})
+
+
+def test_explicit_zero_query_caps_from_env(monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
+    for field in ("max_root_iters", "max_sub_calls", "max_wall_s", "max_spend_usd"):
+        monkeypatch.setenv(f"RNSR_{field.upper()}", "0")
+    settings = Settings.from_env()
+    assert settings.max_root_iters == settings.max_sub_calls == 0
+    assert settings.max_wall_s == settings.max_spend_usd == 0.0
 
 
 def test_optional_path_and_boolean_env(monkeypatch, tmp_path):

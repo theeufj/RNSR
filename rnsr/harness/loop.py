@@ -1,7 +1,7 @@
 """The depth-1 RLM root loop (spec §4, §7).
 
 prompt -> root code cell -> sandboxed exec -> observation -> repeat, until
-FINAL/FINAL_VAR or a budget cap. The damping rule and the variable-recovery
+FINAL/FINAL_VAR or an explicitly configured budget cap. The damping rule and the variable-recovery
 fallback are harness mechanics, not prompt requests — they fire regardless
 of what the model does.
 """
@@ -11,6 +11,7 @@ from __future__ import annotations
 import ast
 import asyncio
 import logging
+import math
 import re
 import uuid
 from dataclasses import dataclass, field, replace
@@ -188,8 +189,8 @@ class RootRunner:
                 client, resolved_model, role = self.root_client, self.root_model, "root"
             else:
                 raise ValueError("llm_batch model must be the configured sub or root model")
-            remaining = ledger.max_sub_calls - ledger.sub_calls
-            if len(prompts) > remaining:
+            remaining = ledger.remaining_sub_calls()
+            if remaining is not None and len(prompts) > remaining:
                 raise RuntimeError(
                     f"sub-call budget exceeded: batch of {len(prompts)} > "
                     f"{remaining} remaining"
@@ -199,7 +200,10 @@ class RootRunner:
                 concurrency=self.settings.sub_concurrency,
                 on_usage=ledger.add_usage,
                 on_attempt=ledger.reserve_sub_call,
-                deadline=ledger._t0 + ledger.max_wall_s,
+                deadline=ledger.deadline(),
+                attempts=None if ledger.uncapped else 4,
+                request_timeout_s=self.settings.root_timeout_s,
+                raise_permanent_errors=ledger.uncapped,
             )
             trajectory.event("sub_batch", n=len(prompts),
                              failed=sum(r is None for r in responses),
@@ -327,7 +331,8 @@ class RootRunner:
 
                 try:
                     cell = await sandbox.exec_cell(
-                        code, timeout=min(s.cell_timeout_s, ledger.remaining_wall_s())
+                        code, timeout=min(s.cell_timeout_s, ledger.remaining_wall_s()),
+                        pause_provider_rpc_timeout=ledger.uncapped,
                     )
                 except SandboxError as e:
                     # A runaway cell killed the sandbox (seen live: 120s
@@ -362,8 +367,15 @@ class RootRunner:
                 if cell.final is not None and unseen_output:
                     fname = "FINAL_BATCH" if batch_qids else "FINAL"
                     trajectory.event("final_observation_review", draft=cell.final.get("value"))
-                    remaining = max(0, int(ledger.remaining_wall_s()))
-                    iters_left = max(0, ledger.max_root_iters - ledger.root_iters)
+                    remaining = ledger.remaining_wall_s()
+                    iters_left = ledger.remaining_root_iters()
+                    budget_detail = []
+                    if math.isfinite(remaining):
+                        budget_detail.append(f"~{max(0, int(remaining))}s")
+                    if iters_left is not None:
+                        budget_detail.append(f"{iters_left} iterations")
+                    budget_hint = ("Budget remaining: " + ", ".join(budget_detail) + "."
+                                   if budget_detail else "No overall query time or iteration limit.")
                     turns.append((code, observation + (
                         f"\n[harness] {fname} is pending review: this cell produced "
                         "new output that you had not seen when writing its answer. "
@@ -373,7 +385,7 @@ class RootRunner:
                         "truncated, print only the relevant result. Then submit "
                         f"{fname} in a separate cell using the computed variables "
                         "where possible, without repeating the investigation. "
-                        f"Budget remaining: ~{remaining}s, {iters_left} iterations."
+                        f"{budget_hint}"
                     )))
                     continue
 
@@ -430,20 +442,27 @@ class RootRunner:
                 # Budget pressure (§7): the harness can see the wall clock;
                 # the model can't. Seen live: five careful exploration turns,
                 # then death mid-thought with the right verdict unconcluded.
-                remaining = ledger.max_wall_s - ledger.wall_s
-                iters_left = ledger.max_root_iters - ledger.root_iters
-                if not budget_warned and (remaining < max(120.0, 0.2 * ledger.max_wall_s)
-                                          or iters_left <= 2):
+                remaining = ledger.remaining_wall_s()
+                iters_left = ledger.remaining_root_iters()
+                time_low = (ledger.max_wall_s > 0
+                            and remaining < max(120.0, 0.2 * ledger.max_wall_s))
+                iterations_low = iters_left is not None and iters_left <= 2
+                if not budget_warned and (time_low or iterations_low):
                     budget_warned = True
+                    remaining_label = (f"~{int(remaining)}s" if math.isfinite(remaining)
+                                       else "unlimited time")
+                    iterations_label = (f"{iters_left} iterations" if iters_left is not None
+                                        else "unlimited iterations")
                     observation += (
-                        f"\n[harness] BUDGET LOW: ~{int(remaining)}s and "
-                        f"{iters_left} iterations remain. Converge NOW: give "
+                        f"\n[harness] BUDGET LOW: {remaining_label} and "
+                        f"{iterations_label} remain. Converge NOW: give "
                         "FINAL with the best-supported answer from what you "
                         "have already seen (including a definitive negative "
                         "like 'No such clause' if that is where the evidence "
                         "points). Do not start new exploration."
                     )
-                    trajectory.event("budget_warning", remaining_s=int(remaining),
+                    trajectory.event("budget_warning", remaining_s=(int(remaining)
+                                     if math.isfinite(remaining) else None),
                                      iters_left=iters_left)
 
                 # Damping (§7): same normalized output recomputed twice ->
@@ -684,7 +703,8 @@ class RootRunner:
         )
         try:
             ledger.reserve_sub_call()
-            async with asyncio.timeout(ledger.remaining_wall_s()):
+            async with asyncio.timeout(min(self.settings.root_timeout_s,
+                                           ledger.remaining_wall_s())):
                 resp = await self.sub_client.complete(prompt, model=self.sub_model,
                                                       max_tokens=100)
             ledger.add_usage(resp.usage)
@@ -696,7 +716,16 @@ class RootRunner:
         return None
 
     def _observe(self, cell) -> str:
-        text = cell.stdout if cell.ok else (cell.stdout + (cell.error or ""))
+        # The repair instruction must survive verbose evidence dumps. Retrying
+        # indefinitely is useless when truncation hides why a cell failed.
+        if not cell.ok and cell.error:
+            error = cell.error[-_OBSERVATION_LIMIT:]
+            available = max(0, _OBSERVATION_LIMIT - len(error) - 1)
+            output = cell.stdout[:available]
+            omitted = len(cell.stdout) - len(output)
+            return error + ("\n" + output if output else "") + (
+                f"\n…[truncated {omitted} stdout chars]" if omitted else "")
+        text = cell.stdout
         if len(text) > _OBSERVATION_LIMIT:
             text = (text[:_OBSERVATION_LIMIT]
                     + f"\n…[truncated {len(text) - _OBSERVATION_LIMIT} chars]")

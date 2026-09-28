@@ -35,9 +35,8 @@ async def recover_variable(sandbox, runner, question: str, turns: list,
 
     Returns a FINAL-shaped dict ({"value", "encoding", "is_var"}) or None.
     """
-    if ledger and (ledger.remaining_wall_s() <= 0
-                   or ledger.spend_usd >= ledger.max_spend_usd
-                   or ledger.root_iters >= ledger.max_root_iters):
+    if ledger and any(ledger.limit_reached(cap) for cap in (
+            "max_wall_s", "max_spend_usd", "max_root_iters")):
         return None
     timeout = min(30.0, ledger.remaining_wall_s()) if ledger else 30.0
     try:

@@ -81,15 +81,28 @@ Then grade with fable-replicate's grader as usual, pointing it at
 
 ## 4. What it costs and how long it takes
 
+These planning estimates describe the earlier capped workflow. They are not
+runtime or spend guarantees for the current uncapped defaults.
+
 | Stage | Time | API cost |
 |---|---|---|
 | Ingest, 18k files (`--fast-ingest`) | ~10–40 min depending on page counts (parses in parallel across cores−2 workers; measured 850–4,600 pages/s on M-series) | $0 — no LLM calls |
-| Per question | ~1–3 min wall each, 3 concurrent | typically $0.05–0.30; hard budget cap **$2.00/question** |
-| 100 questions | a few hours | usually $10–40, worst case $200 |
+| Per question | ~1–3 min wall each, 3 concurrent | typically $0.05–0.30 in the earlier workflow |
+| 100 questions | a few hours | previously estimated at $10–40 |
 
-The $2/question figure is a hard cap enforced by the harness (along with
-20 iterations / 600 s per question) — a runaway question is cut off, not
-billed open-endedly.
+Queries now default to unlimited iterations, sub-calls, wall time and spend:
+`RNSR_MAX_ROOT_ITERS`, `RNSR_MAX_SUB_CALLS`, `RNSR_MAX_WALL_S` and
+`RNSR_MAX_SPEND_USD` are all `0`. There is no guaranteed worst-case runtime
+or spend. Set any of those variables to a positive value to impose that
+limit, or set `RNSR_RUN_SPEND_CEILING_USD` to stop new requests across the
+whole job after recorded usage reaches a chosen amount. In-flight requests
+can still add cost.
+
+Individual provider calls and code cells retain their operation timeouts.
+With all four query caps disabled, transient root-request failures retry
+until success or cancellation; terminal provider errors still end in error.
+The former defaults of 20 iterations, 300 sub-calls, 600 seconds and $2 per
+question describe older runs, not the current default settings.
 
 ## 5. Resume semantics (crashes are cheap)
 
@@ -101,8 +114,9 @@ Everything checkpoints. **Rerun the identical command and it resumes:**
   (path+size+mtime — if you touch/replace corpus files mid-ingest they
   will be re-ingested as new).
 - **Answers** checkpoint to `runs/matter/answers_partial.jsonl` after each
-  question. Interrupting a 100-question run at 60 costs nothing; the rerun
-  answers only the remaining 40 and re-emits the full CSV.
+  question. Interrupting a 100-question run at 60 preserves those completed
+  answers; the rerun answers the remaining 40 and re-emits the full CSV.
+  In-flight requests may already have accrued spend when interrupted.
 - The finished corpus artifact is cached — later runs with more questions
   skip ingest entirely.
 
@@ -122,8 +136,9 @@ only processes what's missing).
   HTML or zero-byte files with a `.pdf` extension.
 - **All parses failed** → the run aborts *before* finalizing rather than
   producing an empty corpus. Usually means the `--corpus` path is wrong.
-- **Network blips mid-run**: root API calls retry with backoff; a question
-  that still fails is recorded and retried on the next resume.
+- **Network blips mid-run**: transient root API failures retry with backoff
+  and individual request timeouts. Fully uncapped queries keep retrying
+  until success or cancellation. Terminal failures are recorded as errors.
 - **Want to inspect an answer?** Each question's full REPL trajectory is
   under `runs/matter/` — every answer is backed by verified verbatim
   quotes or SQL lineage, so misses are auditable, not mysterious.

@@ -118,7 +118,7 @@ class TestBudgets:
             "```python\nllm_map(['p'] * 500)\n```",   # over the 300 cap
             "```python\nFINAL('gave up on the sweep')\n```",
         )
-        result = await make_runner(root).run("q", CLASSIC, run_dir=tmp_path)
+        result = await make_runner(root, max_sub_calls=300).run("q", CLASSIC, run_dir=tmp_path)
         assert result.status == "final"  # loop survives; cell saw the error
         assert result.ledger["sub_calls"] == 1  # only the completeness check
 
@@ -495,13 +495,19 @@ class TestBatchHelpers:
     def test_scale_budgets_half_per_extra_question(self):
         from rnsr.harness.loop import scale_budgets
 
-        s = Settings()   # 20 iters / 300 sub / 600s / $2
+        s = Settings(max_root_iters=20, max_sub_calls=300, max_wall_s=600, max_spend_usd=2)
         scaled = scale_budgets(s, 8)   # factor 4.5
         assert scaled.max_root_iters == 90
         assert scaled.max_sub_calls == 1350
         assert scaled.max_wall_s == 2700.0
         assert scaled.max_spend_usd == 9.0
         assert scale_budgets(s, 1) is s
+
+    def test_scale_preserves_uncapped_defaults(self):
+        from rnsr.harness.loop import scale_budgets
+
+        scaled = scale_budgets(Settings(), 8)
+        assert BudgetLedger.from_settings(scaled).uncapped
 
     def test_coerce_batch_parses_dict_and_json_string(self):
         from rnsr.harness.loop import _coerce_batch

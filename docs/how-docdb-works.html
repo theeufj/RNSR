@@ -842,10 +842,10 @@ db.execute("SELECT COUNT(*) FROM t_contract_003 WHERE is_termination = 'yes'")</
 
       <!-- annotation: budgets -->
       <rect x="588" y="236" width="292" height="86" rx="10" fill="#f6f8fa" stroke="#d8dee6" stroke-width="1.5"/>
-      <text x="604" y="259" font-size="12" font-weight="700" fill="#1a2332">Budgets scale sub-linearly</text>
-      <text x="604" y="278" font-size="11" fill="#5a6a80">1 + 0.5 × (n − 1). A batch of eight gets</text>
-      <text x="604" y="294" font-size="11" fill="#5a6a80">4.5 questions' worth of iterations, time</text>
-      <text x="604" y="310" font-size="11" fill="#5a6a80">and spend — not eight.</text>
+      <text x="604" y="259" font-size="12" font-weight="700" fill="#1a2332">Optional caps scale with batches</text>
+      <text x="604" y="278" font-size="11" fill="#5a6a80">Positive caps scale by 1 + 0.5 × (n − 1).</text>
+      <text x="604" y="294" font-size="11" fill="#5a6a80">A batch of eight gets 4.5 × each cap.</text>
+      <text x="604" y="310" font-size="11" fill="#5a6a80">Default zero caps stay unlimited.</text>
       <line x1="588" y1="279" x2="556" y2="279" stroke="#c4ccd6" stroke-width="1.5" stroke-dasharray="5 4"/>
 
       <!-- annotation: gates -->
@@ -974,29 +974,38 @@ db.execute("SELECT COUNT(*) FROM t_contract_003 WHERE is_termination = 'yes'")</
 <!-- ============================================================ -->
 <section id="budgets">
   <h2>12. Budgets and governance</h2>
-  <p>There are two separate ceilings: one on a query, one on the run. Every
-  query runs under hard caps, so a confused question costs a bounded amount and
-  then stops:</p>
+  <p>Query limits are optional. Iterations, sub-model calls, wall time and
+  spend all default to <strong>0, meaning unlimited</strong>. A question can
+  continue working past the former limits; there is no guaranteed worst-case
+  runtime or spend. Positive settings opt into individual limits:</p>
   <table class="info">
-    <tr><th>Per-query limit (defaults)</th><th>Purpose</th></tr>
-    <tr><td>20 loop iterations</td><td>The model gets at most 20 rounds of "write code, see result".</td></tr>
-    <tr><td>300 sub-model calls</td><td>Caps bulk annotation and search-expansion spend.</td></tr>
-    <tr><td>600 seconds wall time</td><td>No run hangs forever.</td></tr>
-    <tr><td>$2 of model spend</td><td>The hard financial ceiling per question.</td></tr>
-    <tr><td>16 concurrent sub-calls</td><td>Parallelism without stampeding the API provider.</td></tr>
+    <tr><th>Query setting</th><th>Default and purpose</th></tr>
+    <tr><td><code>RNSR_MAX_ROOT_ITERS</code></td><td>0 — unlimited rounds of "write code, see result"; positive values limit rounds.</td></tr>
+    <tr><td><code>RNSR_MAX_SUB_CALLS</code></td><td>0 — unlimited attempted sub-model requests; usage is still recorded.</td></tr>
+    <tr><td><code>RNSR_MAX_WALL_S</code></td><td>0 — no overall query deadline; positive values set seconds.</td></tr>
+    <tr><td><code>RNSR_MAX_SPEND_USD</code></td><td>0 — no query spend ceiling; positive values stop new work after recorded usage reaches the limit.</td></tr>
+    <tr><td><code>RNSR_SUB_CONCURRENCY</code></td><td>16 simultaneous sub-calls; this controls parallelism, not total work.</td></tr>
   </table>
-  <p>Additional rails: damping against pointless re-verification loops, a
+  <p>The former §7 defaults were 20 iterations, 300 sub-model calls,
+  600 seconds and $2 per question. Historical measurements using those
+  settings remain measurements of those runs.</p>
+  <p>Individual operations still have timeouts: stuck code cells trigger a
+  sandbox restart, and each root-model request has a timeout. With all four
+  query caps disabled, transient root-request failures retry with bounded
+  backoff until success or cancellation. Terminal provider or configuration
+  errors remain errors; unlimited work does not guarantee a correct answer.
+  Bounded queries retain their configured root-request attempt limit.</p>
+  <p>The harness also retains damping against repeated re-verification and a
   variable-recovery fallback (if the loop dies but the model had already
-  computed the answer into a variable, it is salvaged), sandbox restart on
-  runaway code cells, and timeouts on every root-model call. When many
-  questions share one batched loop, the caps scale <em>sub-linearly</em> — each
-  extra question adds only half a question's budget — so a confused batch can't
-  burn the full per-question budget times the batch size.</p>
+  computed the answer into a variable, recovery can try to salvage it).
+  When questions share a batched loop, positive caps scale by
+  1 + 0.5 × (n − 1). Zero caps remain unlimited.</p>
 
-  <p>None of that, though, caps a <em>job</em>. Ninety questions under a $2
-  per-question ceiling is a $180 ceiling, which is not a ceiling anyone
-  intended. So all provider traffic — every root call, every sub-model call,
-  every embedding — passes through one process-wide governor:</p>
+  <p>Run controls apply across the whole job independently of query limits.
+  All provider traffic — every root call, every sub-model call, every
+  embedding — passes through one process-wide governor. A positive run spend
+  ceiling stops new requests after recorded usage reaches that amount;
+  requests already in flight can still add cost:</p>
   <table class="info">
     <tr><th>Run-level control</th><th>Default</th><th>What it does</th></tr>
     <tr><td>Concurrent requests</td><td>24</td><td>Total requests in flight across every question and every role.</td></tr>

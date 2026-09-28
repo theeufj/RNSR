@@ -150,9 +150,9 @@ reported beside accuracy by `rnsr regress` and gated by
 reason: forms carry mutually-exclusive field groups (radio buttons,
 checkbox families), and a solo loop seeing only its own field happily
 answers "yes" to every sibling option. A batched loop sees the whole
-group in one context and picks one. Budgets scale sub-linearly with
-batch size (each extra question adds half a single question's caps), so
-a confused batch cannot burn n questions' worth of spend.
+group in one context and picks one. When positive query caps are configured,
+they scale sub-linearly with batch size (each extra question adds half a
+single question's caps). The default zero caps remain unlimited for batches.
 
 With enriched questions (`rnsr build-questions`: group collapse, role
 maps, evidence rules, per-field answer shapes) the same matter reaches
@@ -383,13 +383,19 @@ infrastructure by design.
 - **semantic_annotate** (§4.1): one batched sub-model pass writes results
   back as a real SQL column (idempotent, audit-logged) — O(N²) reasoning
   becomes O(N) calls plus a self-join.
-- **Budgets** (§7): hard caps per query (20 iterations / 300 sub-calls /
-  600 s / $2), damping against re-verification loops, variable-recovery
-  fallback, sandbox restart on runaway cells, root-call timeouts. Batched
-  loops scale every cap by 1 + 0.5·(n−1) for n questions.
+- **Query limits**: iterations, sub-calls, wall time, and spend default to
+  **0 (unlimited)**. Set positive `RNSR_MAX_ROOT_ITERS`, `RNSR_MAX_SUB_CALLS`,
+  `RNSR_MAX_WALL_S`, or `RNSR_MAX_SPEND_USD` values to opt into limits. The
+  earlier §7 defaults (20 / 300 / 600 s / $2) are no longer applied by default.
+  Usage is always recorded. Individual provider calls and code cells still
+  time out; fully uncapped queries retry transient root failures until success
+  or cancellation, while terminal errors remain errors. There is no guaranteed
+  worst-case query runtime or spend. Batched loops scale positive caps by
+  1 + 0.5·(n−1) for n questions; zero stays unlimited.
 - **Run governance**: one governor gates all provider traffic — in-flight
   cap, RPM ceiling, aggregate spend ceiling, and a shared cooldown when any
-  call is rate-limited. Per-query budgets cap a query; this caps the run.
+  call is rate-limited. Optional query limits apply to one query; the optional
+  run spend ceiling applies across the job and defaults to off.
 - **Sandbox**: every generated-code child runs under an OS policy:
   `sandbox-exec` on macOS or `bubblewrap` on Linux. The runtime and corpus
   are read-only, writes are confined to private scratch space, and the
@@ -419,7 +425,7 @@ to permit bubblewrap's namespace setup while retaining syscall filtering.
 | Kernel-level isolation | macOS `sandbox-exec`; Linux `bubblewrap` with user namespaces | Unsupported or restricted hosts refuse to execute generated code; containers must permit the nested namespaces |
 | Service authorization | `RNSR_SERVICE_TOKEN`, `RNSR_SERVICE_CORPUS_ROOT` | Every route except liveness requires a bearer token; corpus paths cannot escape the configured root |
 | Privileged text at rest | `RNSR_TRAJECTORY_CONTENT`, `RNSR_TRAJECTORY_KEY`, `RNSR_TRAJECTORY_RETENTION_DAYS` | Trajectories quote client documents verbatim |
-| Runaway spend | `RNSR_RUN_SPEND_CEILING_USD`, `RNSR_MAX_IN_FLIGHT_REQUESTS`, `RNSR_MAX_REQUESTS_PER_MINUTE` | Per-query budgets cap a query, not a 999-question job |
+| Run governance | `RNSR_RUN_SPEND_CEILING_USD`, `RNSR_MAX_IN_FLIGHT_REQUESTS`, `RNSR_MAX_REQUESTS_PER_MINUTE` | An optional spend ceiling applies across the job; concurrency and request pacing do not bound total spend |
 | Silent failure | `--max-error-rate` (default: any error fails), `answers_status.csv`, `run_report.json` | A provider outage must not read as "the corpus does not say" |
 | Run-to-run variance | `--consensus 2` | Two independent passes rarely make the same mistake, so a split is a signal |
 | Model rot | `rnsr doctor` | Model names retire on the provider's schedule; an unpriced model makes spend caps infinite |

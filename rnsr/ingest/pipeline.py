@@ -102,11 +102,16 @@ def _extract_best_table(
         validation = _validate(current, config, prose_checker, page_texts)
         attempts.append({"extractor": current.extractor,
                          "confidence": round(validation.confidence, 4)})
-        if best is None or validation.confidence > best[1].confidence:
+        quality = (not validation.structural_errors, validation.confidence)
+        if best is None or quality > (not best[1].structural_errors, best[1].confidence):
             best = (current, validation)
-        if validation.confidence >= config.table_confidence_threshold:
+        if not validation.structural_errors and validation.confidence >= config.table_confidence_threshold:
             break
-        current = reextract(pdf_path, current, vision=vision)
+        # A page-local replacement cannot stand in for a merged table spanning
+        # several pages; retain and flag the original until all pages can be matched.
+        if raw.row_pages and len(set(raw.row_pages)) > 1:
+            break
+        current = reextract(pdf_path, current, target=raw, vision=vision)
 
     assert best is not None
     chosen, validation = best
@@ -149,6 +154,7 @@ def ingest_text(
                 rows=[[str(i), line] for i, line in enumerate(lines, 1)],
                 extractor="text",
                 caption=f"lines of {doc_id}",
+                kind="text_lines",
             ))
         return ParsedDocument(
             doc_id=doc_id,

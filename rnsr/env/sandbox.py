@@ -31,6 +31,7 @@ from rnsr.errors import SandboxError
 
 if TYPE_CHECKING:
     from rnsr.db.artifact import CorpusDB
+    from rnsr.env.calculations import CalculationRegistry
     from rnsr.env.verify import Verifier
 
 # op payload -> response body; e.g. {"op": "llm_batch", ...} -> {"results": [...]}
@@ -63,9 +64,16 @@ def _child_env(scratch: str | None = None) -> dict[str, str]:
     return env
 
 
-def _document_generation(conn) -> tuple:
-    return tuple(tuple(row) for row in conn.execute(
-        "SELECT doc_id,sha256,content_sha256,ingested_at FROM documents ORDER BY doc_id"))
+def _document_generation(conn, check=None) -> tuple:
+    rows = []
+    for row in conn.execute(
+            "SELECT doc_id,sha256,content_sha256,ingested_at FROM documents ORDER BY doc_id"):
+        if check is not None:
+            check()
+        rows.append(tuple(row))
+    if check is not None:
+        check()
+    return tuple(rows)
 
 
 @dataclass
@@ -89,6 +97,7 @@ class SandboxedRepl:
     _scratch: str | None = None
     _corpus: CorpusDB | None = None
     _verifier: Verifier | None = None
+    _calculations: CalculationRegistry | None = None
     _init_options: dict = field(default_factory=dict)
     _source_generation: tuple = ()
     _source_identity: tuple = ()
@@ -102,11 +111,14 @@ class SandboxedRepl:
             self._proc = None
         try:
             self._init_options = dict(init_extra or {})
+            if mode != "docdb" and self._init_options.get("metric_contract") is not None:
+                raise ValueError("metric contracts require a docdb session")
             if mode == "docdb":
                 from pathlib import Path
 
                 from rnsr.db.artifact import CorpusDB
                 from rnsr.db.schema import validate_frozen
+                from rnsr.env.calculations import CalculationRegistry
                 from rnsr.env.lazydoc import LazyDoc
                 from rnsr.env.verify import Verifier
 
@@ -117,6 +129,8 @@ class SandboxedRepl:
                 self._source_generation = _document_generation(self._corpus.conn)
                 stat = self._corpus.path.stat()
                 self._source_identity = (stat.st_dev, stat.st_ino)
+                self._calculations = CalculationRegistry(
+                    self._corpus.conn, metric_contract=self._init_options.get("metric_contract"))
             if self._scratch is None:
                 self._scratch = os.path.realpath(tempfile.mkdtemp(prefix="rnsr-sandbox-"))
             from rnsr.env.osguard import launch_command
@@ -159,17 +173,22 @@ class SandboxedRepl:
             raise SandboxError("sandbox protocol frame must be an object")
         return reply
 
-    async def _roundtrip(self, msg: dict, timeout: float) -> dict:
+    async def _roundtrip(self, msg: dict, timeout: float, *, deadline: float | None = None) -> dict:
         """Send an op and read to its result, serving RPCs along the way."""
-        self._send(msg)
+        deadline = time.monotonic() + timeout if deadline is None else deadline
         rpc_count = 0
         try:
-            async with asyncio.timeout(timeout):
+            async with asyncio.timeout(max(0, deadline - time.monotonic())):
+                if time.monotonic() >= deadline:
+                    raise TimeoutError
+                self._send(msg)
                 while True:
                     reply = await self._recv()
+                    if time.monotonic() >= deadline:
+                        raise TimeoutError
                     if reply.get("kind") == "rpc":
                         rpc_count += 1
-                        await self._serve_rpc(reply)
+                        await self._serve_rpc(reply, deadline=deadline)
                         continue
                     reply["_rpc_count"] = rpc_count
                     return reply
@@ -185,16 +204,20 @@ class SandboxedRepl:
             await self.kill()
             raise SandboxError(f"sandbox died: {type(e).__name__}") from e
 
-    async def _serve_rpc(self, request: dict) -> None:
+    async def _serve_rpc(self, request: dict, *, deadline: float | None = None) -> None:
         handler = (self._annotate if request.get("op") == "annotate"
+                   else self._calculation if request.get("op") == "calculation"
                    else self.rpc_handlers.get(request.get("op", "")))
         if handler is None:
             self._send({"error": f"no handler for rpc op {request.get('op')!r}"})
             return
         try:
-            body = await handler(request)
+            body = (await self._calculation(request, deadline=deadline)
+                    if request.get("op") == "calculation" else await handler(request))
             self._send({"error": None, **body})
         except Exception as e:
+            if deadline is not None and time.monotonic() >= deadline:
+                raise TimeoutError("RPC exceeded cell wall-clock deadline") from e
             self._send({"error": f"{type(e).__name__}: {e}"})
 
     async def _annotate(self, request: dict) -> dict:
@@ -236,7 +259,7 @@ class SandboxedRepl:
                     cancelled=cancelled.is_set)
                 result = annotator.annotate(**{key: request[key] for key in (
                     "table", "new_col", "prompt", "where", "batch_size",
-                    "model", "force", "votes") if key in request})
+                    "model", "force", "votes", "allowed_labels") if key in request})
                 return {"result": result}
 
         try:
@@ -245,11 +268,44 @@ class SandboxedRepl:
             cancelled.set()
             raise
 
+    def _check_source(self) -> None:
+        stat = self._corpus.path.stat()
+        if ((stat.st_dev, stat.st_ino) != self._source_identity or
+                _document_generation(self._corpus.conn, self._calculations._check_deadline)
+                != self._source_generation):
+            raise ValueError("source changed; restart the sandbox session")
+
+    async def _calculation(self, request: dict, *, deadline: float | None = None) -> dict:
+        if self._corpus is None or self._calculations is None:
+            raise ValueError("source calculations require a docdb session")
+        action = request.get('action')
+        actions = {
+            'source': (self._calculations.source_number,
+                       {'table', 'rowid', 'column', 'unit_span', 'period_span'}),
+            'compute': (self._calculations.calculate, {'operation', 'operand_ids'}),
+            'get': (self._calculations.get, {'record_id'}),
+            'metric': (self._calculations.calculate_metric, set()),
+        }
+        if not isinstance(action, str) or action not in actions:
+            raise ValueError("unknown calculation action")
+        fn, allowed = actions[action]
+        arguments = {k: v for k, v in request.items() if k not in {'kind', 'op', 'action'}}
+        if arguments.keys() - allowed:
+            raise ValueError("unsupported calculation arguments; values cannot be supplied")
+        try:
+            with self._calculations.deadline(deadline):
+                self._corpus.conn.execute('BEGIN')
+                self._check_source()
+                return {'result': fn(**arguments)}
+        finally:
+            # The progress handler is reset before rollback, even on timeout.
+            self._corpus.conn.rollback()
+
     # --- public API ----------------------------------------------------------
 
     async def exec_cell(self, code: str, *, timeout: float = 120.0) -> CellResult:
         deadline = time.monotonic() + timeout
-        reply = await self._roundtrip({"op": "exec", "code": code}, timeout)
+        reply = await self._roundtrip({"op": "exec", "code": code}, timeout, deadline=deadline)
         final = reply.get("final")
         if final is not None and self._verifier is not None:
             from rnsr.env.finalize import submitted_quotes, validate_final
@@ -258,16 +314,19 @@ class SandboxedRepl:
             try:
                 # Keep source generation and all reads on one SQLite snapshot;
                 # trusted concurrent ingest must not invalidate cached evidence.
-                self._corpus.conn.execute("BEGIN")
-                stat = self._corpus.path.stat()
-                if ((stat.st_dev, stat.st_ino) != self._source_identity or
-                        _document_generation(self._corpus.conn) != self._source_generation):
-                    raise ValueError("source changed; restart the sandbox session")
-                value = final["value"]
-                batch = isinstance(value, dict)
-                final["verification"] = validate_final(
-                    value, submitted_quotes(final.get("verification"), batch=batch),
-                    self._verifier, batch=batch)
+                with self._calculations.deadline(deadline):
+                    self._corpus.conn.execute("BEGIN")
+                    self._check_source()
+                    value = final["value"]
+                    report = final.get('verification')
+                    if isinstance(report, dict) and report.get('check') == 'source_bound_calculation':
+                        value, report = self._calculations.resolve_final(report.get('calculation_id'), value)
+                        final['value'], final['verification'] = value, report
+                    else:
+                        batch = isinstance(value, dict)
+                        abstention = self._calculations.validate_legacy_final(value)
+                        final["verification"] = abstention if abstention is not None else validate_final(
+                            value, submitted_quotes(report, batch=batch), self._verifier, batch=batch)
             except (TimeoutError, sqlite3.OperationalError) as exc:
                 if isinstance(exc, TimeoutError) or time.monotonic() >= deadline:
                     await self.kill()
@@ -299,6 +358,7 @@ class SandboxedRepl:
             await self._proc.wait()
 
     async def close(self) -> None:
+        self._calculations = None
         if self._proc and self._proc.returncode is None:
             try:
                 self._send({"op": "shutdown"})

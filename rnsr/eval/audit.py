@@ -4,11 +4,12 @@ from __future__ import annotations
 
 import csv
 import json
+import tempfile
 from pathlib import Path
 
 from rnsr.answer_semantics import TIER_RANK
 from rnsr.harness.evidence import from_records
-from rnsr.harness.trajectory import read_trajectory
+from rnsr.harness.trajectory import read_trajectory, trajectory_stem
 
 
 def _sql_from_cells(records: list[dict]) -> list[str]:
@@ -113,14 +114,29 @@ def export_audit(work_dir: str | Path, out_dir: str | Path, *,
     review_rows: list[dict] = []
     written = 0
     for path in paths:
-        qid = path.name.split(".", 1)[0]
         records = read_trajectory(path, key=key)
+        # New logs retain the original ID separately from their safe basename.
+        # Legacy logs may only have the filename; strip the complete suffix
+        # without dropping dots that are part of the identifier.
+        suffix = ".jsonl.enc" if path.name.endswith(".jsonl.enc") else ".jsonl"
+        qid = next((r["query_id"] for r in records if isinstance(r.get("query_id"), str)),
+                   path.name[:-len(suffix)])
         evidence = extract_evidence(
             records, qid=qid, health=health,
             status_row=status_by_qid.get(qid),
         )
-        (ev_dir / f"{qid}.json").write_text(
-            json.dumps(evidence, indent=2, default=str))
+        # Atomic replacement also avoids following pre-existing symlinks or
+        # writing through hardlinks in a reused evidence directory.
+        destination = ev_dir / f"{trajectory_stem(qid)}.json"
+        with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=ev_dir,
+                                         prefix=".evidence-", delete=False) as fh:
+            temporary = Path(fh.name)
+            try:
+                json.dump(evidence, fh, indent=2, default=str)
+                fh.close()
+                temporary.replace(destination)
+            finally:
+                temporary.unlink(missing_ok=True)
         written += 1
         review_rows.append({
             "qid": qid,

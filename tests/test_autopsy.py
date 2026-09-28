@@ -49,6 +49,22 @@ class TestClassify:
         item = classify_miss(_result(status="recovered"))
         assert item.cause == "budget"
 
+    def test_health_error_is_ingest_not_budget(self):
+        item = classify_miss(_result(status="error", predicted=None,
+                                     error_type="CorpusHealthError"))
+        assert item.cause == "ingest"
+        assert "CorpusHealthError" in item.reason
+
+    def test_setup_error_is_execution_not_budget(self):
+        item = classify_miss(_result(status="error", predicted=None,
+                                     error_type="FileNotFoundError"))
+        assert item.cause == "execution"
+
+    def test_health_counter_format_does_not_crash(self):
+        item = classify_miss(_result(), meta={"gold_doc": "receipt", "gold_page": 1},
+                             health={"parse_failed": 1, "scanned_pages_untranscribed": 2})
+        assert item.cause == "reasoning"
+
     def test_format_tie_set(self):
         item = classify_miss(_result(
             predicted="location",
@@ -140,6 +156,16 @@ class TestSummarizeCauseTable:
 
 
 class TestAutopsyRun:
+    def test_finds_hashed_trajectory_without_recorded_path(self, tmp_path):
+        import json
+
+        result = _result(qid="category/with/slashes", predicted="Answer: right", gold="right")
+        (tmp_path / "results.jsonl").write_text(json.dumps(result.to_dict()) + "\n")
+        with TrajectoryWriter(tmp_path / "trajectories", result.qid) as writer:
+            writer.event("cell", stdout="doc=original_doc right")
+        ledger = autopsy_run(tmp_path)
+        assert ledger["items"][0]["seen_docs"] == ["original_doc"]
+
     def test_writes_ledger_from_results_jsonl(self, tmp_path):
         import json
 
@@ -186,6 +212,47 @@ class TestOfficeGen:
         generate_office(tmp_path, seed=3)
         assert (tmp_path / "budget.xlsx").read_bytes() == first
 
+    def test_answer_key_and_unrelated_files_are_not_sources(self, tmp_path):
+        generate_office(tmp_path, seed=7)
+        (tmp_path / "receipt_scan.gold.txt").write_text("Answer key: 312")
+        (tmp_path / "answers.txt").write_text("All the answers")
+        items = generate_office(tmp_path, seed=7)
+        assert len(items[0].sources) == 8
+        assert all(path.name not in {"receipt_scan.gold.txt", "answers.txt"}
+                   for item in items for path in item.sources)
+
+    @pytest.mark.parametrize("old_identity", [{"seed": 7}, {"seed": 3, "version": 2}])
+    def test_old_or_different_seed_fixture_is_not_silently_reused(self, tmp_path, old_identity):
+        import json
+
+        marker = tmp_path / ".office_gen.json"
+        marker.write_text(json.dumps(old_identity))
+        with pytest.raises(ValueError, match="fresh output directory"):
+            generate_office(tmp_path, seed=7)
+        assert json.loads(marker.read_text()) == old_identity
+
+    def test_receipt_has_visible_caption_pixels_without_text_layer(self, tmp_path):
+        pdfium = pytest.importorskip("pypdfium2")
+        from rnsr.eval.datasets.office_gen import write_scanned_pdf
+
+        rendered = []
+        for amount in (312, 445):
+            path = tmp_path / f"receipt-{amount}.pdf"
+            write_scanned_pdf(path, f"Receipt total ${amount}")
+            with pdfium.PdfDocument(str(path)) as pdf:
+                page = pdf[0]
+                text = page.get_textpage()
+                assert text.get_text_range().strip() == ""
+                text.close()
+                bitmap = page.render(scale=1)
+                image = bitmap.to_pil().convert("L")
+                # The old blank rectangle has no dark text pixels.
+                assert sum(image.histogram()[:100]) > 100
+                rendered.append(image.tobytes())
+                bitmap.close()
+                page.close()
+        assert rendered[0] != rendered[1]
+
     def test_all_causes_named(self):
         assert CAUSES == ("gold", "budget", "format", "ingest",
-                          "retrieval", "reasoning")
+                          "retrieval", "reasoning", "execution")

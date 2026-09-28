@@ -6,6 +6,7 @@
     semantic_annotate  batched sub-LM pass writing a real column (§4.1)
     search             the tiered ladder (§5)
     verify             exact quote matching (§6)
+    source_context     retained section/page context for a span or table row
     schema_map         cross-table column-correspondence proposals (§9)
 
 llm_query/llm_map/FINAL/FINAL_VAR are installed by the child itself.
@@ -50,11 +51,11 @@ def build_namespace(corpus_db: str, child, init_msg: dict) -> dict:
         enable_embeddings=init_msg.get("enable_embeddings", True),
     )
     def semantic_annotate(table, new_col, prompt, *, where=None, batch_size=None,
-                          model="sub", force=False, votes=1):
+                          model="sub", force=False, votes=1, allowed_labels=None):
         result = child.rpc({"op": "annotate", "table": table, "new_col": new_col,
                             "prompt": prompt, "where": where,
                             "batch_size": batch_size, "model": model,
-                            "force": force, "votes": votes})
+                            "force": force, "votes": votes, "allowed_labels": allowed_labels})
         # The parent owns all writes; refresh metadata after a successful write.
         with CorpusDB(corpus_db, mode="ro") as refreshed:
             manifest.update(refreshed.manifest_dict())
@@ -112,6 +113,34 @@ def build_namespace(corpus_db: str, child, init_msg: dict) -> dict:
             raise ValueError(f"FINAL_BATCH rejected: {exc}") from exc
         raise FinalAnswer(dict(answers), is_var=True, verification=reports)
 
+    def source_number(table, rowid, column, *, unit_span=None, period_span=None):
+        """Bind a numeric source cell; metadata spans are exact text, not inferred scope."""
+        return child.rpc({'op': 'calculation', 'action': 'source', 'table': table,
+                          'rowid': rowid, 'column': column, 'unit_span': unit_span,
+                          'period_span': period_span})['result']
+
+    def calculate(operation, operand_ids):
+        """Decimal arithmetic over source/result IDs; no literal replacement operands."""
+        return child.rpc({'op': 'calculation', 'action': 'compute',
+                          'operation': operation, 'operand_ids': operand_ids})['result']
+
+    def calculation(result_id):
+        return child.rpc({'op': 'calculation', 'action': 'get',
+                          'record_id': result_id})['result']
+
+    def FINAL_CALC(result_id):  # noqa: N802
+        """The parent resolves this result again before accepting the final answer."""
+        from rnsr.env.final_answer import FinalAnswer
+
+        result = calculation(result_id)
+        raise FinalAnswer(result['value'], is_var=True,
+                          verification={'check': 'source_bound_calculation',
+                                        'calculation_id': result_id})
+
+    def calculate_metric():
+        """Execute the exact caller-issued metric contract, when configured."""
+        return child.rpc({'op': 'calculation', 'action': 'metric'})['result']
+
     return {
         "db": conn,
         "doc": doc,
@@ -119,8 +148,15 @@ def build_namespace(corpus_db: str, child, init_msg: dict) -> dict:
         "semantic_annotate": semantic_annotate,
         "search": ladder.search,
         "verify": verifier.verify,
+        "source_context": doc.context,
         "schema_map": schema_map,
         "FINAL_VAR": FINAL_VAR,
         "FINAL": FINAL,  # overrides the unverified classic-mode FINAL
         "FINAL_BATCH": FINAL_BATCH,  # ditto, with per-field quote checks
+        "source_number": source_number,
+        "calculate": calculate,
+        "calculation": calculation,
+        "FINAL_CALC": FINAL_CALC,
+        "calculate_metric": calculate_metric,
+        "metric_contract": init_msg.get("metric_contract"),
     }

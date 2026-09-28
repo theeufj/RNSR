@@ -7,6 +7,7 @@ to these types, so tables.py/chunk.py/validate.py are parser-agnostic.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import Literal
 
 BBox = tuple[float, float, float, float]  # x0, y0, x1, y1 in page coordinates
 
@@ -34,6 +35,8 @@ class RawTable:
     row_bboxes: list[BBox | None] | None = None
     extractor: str = "docling"     # which fallback rung produced it (§3.1)
     caption: str | None = None     # nearest caption/heading text, machine-extracted
+    kind: Literal["table", "text_lines"] = "table"
+    row_extractors: list[str] | None = None
 
     @property
     def n_cols(self) -> int:
@@ -43,9 +46,12 @@ class RawTable:
         return self.row_pages[i] if self.row_pages else self.page
 
     def row_bbox(self, i: int) -> BBox | None:
-        if self.row_bboxes and self.row_bboxes[i] is not None:
+        if self.row_bboxes is not None:
             return self.row_bboxes[i]
         return self.bbox
+
+    def row_extractor(self, i: int) -> str:
+        return self.row_extractors[i] if self.row_extractors is not None else self.extractor
 
 
 @dataclass

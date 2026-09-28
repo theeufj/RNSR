@@ -11,6 +11,7 @@ text — hits carry provenance back to doc/char offsets (§1.4).
 from __future__ import annotations
 
 import contextlib
+import heapq
 import json
 import re
 import sqlite3
@@ -18,15 +19,19 @@ from dataclasses import dataclass, field
 from typing import Literal, NotRequired, TypedDict
 
 from rnsr.db.schema import PROVENANCE_COLUMNS, quote_ident
+from rnsr.env.evidence import SourceContext
 from rnsr.harness.prompts.search import render_expansion, render_sweep
 
-TOKEN = re.compile(r"[A-Za-z][A-Za-z0-9_-]{2,}")
+TOKEN = re.compile(r"[A-Za-z][A-Za-z0-9_-]{2,}|\b\d+(?:[,.]\d+)*\b")
+_YEAR = re.compile(r"(?<!\d)[12]\d{3}(?!\d)")
 _NUMBER = re.compile(r"-?\d[\d,]*(?:\.\d+)?")
 STOP_WORDS = frozenset(["the", "and", "for", "was", "were", "with", "what", "which", "how", "many", "much", "does", "did"])
 
 
 def terms(query: str) -> list[str]:
-    return [t for t in TOKEN.findall(query) if t.lower() not in STOP_WORDS][:12]
+    found = [t for t in TOKEN.findall(query) if t.lower() not in STOP_WORDS]
+    # Keep numeric constraints even when they occur late in a long question.
+    return list(dict.fromkeys(found[:12] + [t for t in found if t[0].isdigit()]))
 
 
 class SearchHit(TypedDict):
@@ -53,6 +58,10 @@ class Ladder:
     rebuild_cells: bool = False  # public replay/validation seam
     _cell_relation: str | None = field(default=None, init=False, repr=False)
     _embedding_store: object | None = field(default=None, init=False, repr=False)
+    _context: SourceContext = field(init=False, repr=False)
+
+    def __post_init__(self):
+        self._context = SourceContext(self.conn, self.doc)
 
     # --- public entry --------------------------------------------------------
 
@@ -89,6 +98,13 @@ class Ladder:
             raise ValueError(f"no such rung: {rung} (0,1,2,3,4,5)")
         hits = fn(query, k)
         for hit in hits:
+            if "source_context" not in hit and hit.get("doc_id") is not None:
+                p = hit.get("provenance", {})
+                if p.get("char_start") is not None and p.get("char_end") is not None:
+                    hit["source_context"] = self._context(hit["doc_id"], char_start=p["char_start"],
+                                                         char_end=p["char_end"])
+                    hit.setdefault("heading_path", " > ".join(hit["source_context"]["heading_paths"]) or None)
+            self._rank(hit, query)
             hit.setdefault("score", None)
             hit.setdefault("provenance", {})
         self._log(rung, query, len(hits))
@@ -105,7 +121,7 @@ class Ladder:
     def _rung0_sql(self, query: str, k: int) -> list[dict]:
         query_terms = [t.lower() for t in terms(query)]
         numbers = [n.replace(",", "") for n in _NUMBER.findall(query)]
-        return self._rung0_cells(query_terms, numbers, k)
+        return self._rung0_cells(query_terms, numbers, k, query=query)
 
     def _cells_ready(self) -> bool:
         """Whether the source carries its optional persisted derived index."""
@@ -162,21 +178,18 @@ class Ladder:
         return routed
 
     def _rung0_cells(self, terms: list[str], numbers: list[str],
-                     k: int) -> list[dict]:
+                     k: int, *, query: str = "") -> list[dict]:
         """One scan of the derived cells index instead of LIKE over every
-        routed t_* table — with stable hit semantics:
-
-        - routing gate as in the legacy path (_routed_tables);
-        - text probes match text cells only (num_value IS NULL), the way
-          legacy LIKEs only TEXT columns; numeric probes hit num_value;
-        - at most k rows per table, tables in name order — the per-table
-          cap keeps evidence diverse across documents (a single wide
-          early table must not monopolize every hit; seen live: golden-
-          matter answers regressed when hits collapsed to one table).
+        routed t_* table. Text probes match text cells; numeric probes
+        match numeric cells. Keep at most k rows per table, then rank all
+        table candidates with their retained section context before the
+        global cap. Alphabetical table order must not hide a later year.
         """
         routed = self._routed_tables(terms, numbers)
         clauses, params = [], []
         for t in terms:
+            if t[0].isdigit():
+                continue
             clauses.append("(num_value IS NULL AND text_value LIKE ?)")
             params.append(f"%{t}%")
         for n in numbers:
@@ -197,11 +210,12 @@ class Ladder:
             "        WHERE (" + " OR ".join(clauses) + ")"
             "        AND table_name IN ("
             + ",".join("?" * len(routed)) + "))"
-            ") WHERE rn <= ? ORDER BY table_name, rn LIMIT ?"
+            ") WHERE rn <= ? ORDER BY table_name, rn"
         )
         located = self.conn.execute(
-            sql, [*params, *routed, k, k * 4]).fetchall()
-        hits: list[dict] = []
+            sql, [*params, *routed, k])
+        ranked = []
+        serial = 0
         for table, row_idx in located:
             try:
                 cur = self.conn.execute(
@@ -214,56 +228,97 @@ class Ladder:
                 continue
             cols = [d[0] for d in cur.description]
             record = dict(zip(cols, row, strict=True))
-            hits.append(self._sql_hit(table, record))
-            if len(hits) >= k:
-                break
-        return hits
+            hit = self._sql_hit(table, record)
+            rank = self._rank(hit, query)
+            serial += 1
+            item = (rank, -serial, hit)
+            if len(ranked) < k:
+                heapq.heappush(ranked, item)
+            elif item[:2] > ranked[0][:2]:
+                heapq.heapreplace(ranked, item)
+        return [h for _, _, h in sorted(ranked, key=lambda item: item[:2], reverse=True)]
 
     def _sql_hit(self, name: str, record: dict) -> dict:
         data_cols = {k: v for k, v in record.items()
                      if k != "rowid" and k not in PROVENANCE_COLUMNS
                      and not k.endswith("__raw")}
+        context = self._context(table=name, rowid=record.get("rowid"))
+        headings = " > ".join(context["heading_paths"]) or "(no section heading retained)"
+        label = "Section" if context["row_location"] == "exact" else "Page headings (row-to-section unverified)"
         return {
             "rung": 0, "kind": "sql", "table": name, "rows": record,
             # uniform fields shared with chunk hits — the root model
             # reads hit['text']/hit['score'] regardless of rung
-            "text": json.dumps(data_cols, default=str),
+            "text": (f"Source: {context['doc_id']} (page {context['page']})\n"
+                     f"{label}: {headings}\n"
+                     + (f"Table caption: {context['title']}\n" if context.get('title') else "")
+                     + json.dumps(data_cols, default=str)),
+            "doc_id": context["doc_id"],
+            "source_context": context,
+            "heading_path": " > ".join(context["heading_paths"]) or None,
             "score": None,
             "page": record.get("_page"),
             "provenance": {"table": name, "rowid": record.get("rowid"),
+                           "doc_id": context["doc_id"], "source_path": context["source_path"],
                            "_bbox": record.get("_bbox")},
         }
 
     # --- rung 1: grep with priors -------------------------------------------
 
     def _rung1_grep(self, query: str, k: int, expanded_terms: list[str] | None = None) -> list[dict]:
-        hits: list[dict] = []
-        for term in (expanded_terms or terms(query)):
-            try:
-                pattern = re.compile(re.escape(term), re.IGNORECASE)
-            except re.error:
-                continue
-            for doc_id, text in self.doc.items():
-                for m in pattern.finditer(text):
-                    start = max(m.start() - 150, 0)
-                    end = min(m.end() + 150, len(text))
-                    hits.append({
-                        "rung": 1, "kind": "chunk", "doc_id": doc_id,
-                        "term": term, "text": text[start:end],
-                        "provenance": {"doc_id": doc_id, "char_start": m.start(),
-                                       "char_end": m.end()},
-                    })
-                    if len(hits) >= k * 3:
-                        break
-        # dedupe overlapping windows, keep earliest per (doc, region)
-        seen: set[tuple] = set()
-        unique = []
-        for h in hits:
-            key = (h["provenance"]["doc_id"], h["provenance"]["char_start"] // 300)
-            if key not in seen:
-                seen.add(key)
-                unique.append(h)
-        return unique[:k]
+        query_terms = expanded_terms or terms(query)
+        if not query_terms:
+            return []
+        pattern = re.compile('|'.join(re.escape(t) for t in sorted(query_terms, key=len, reverse=True)),
+                             re.IGNORECASE)
+        ranked = []
+        serial = 0
+        for doc_id, text in self.doc.items():
+            seen = set()
+            for match in pattern.finditer(text):
+                context = self._context(doc_id, char_start=match.start(), char_end=match.end(), max_chars=600)
+                # A new section can begin inside the same 300-character
+                # bucket: never let an earlier section suppress its hits.
+                section = tuple(s['char_start'] for s in context['sections'])
+                region = (section, match.start() // 300)
+                if region in seen:
+                    continue
+                seen.add(region)
+                hit = {
+                    "rung": 1, "kind": "chunk", "doc_id": doc_id,
+                    "term": match.group(), "text": context["text"], "page": context["page"],
+                    "heading_path": " > ".join(context["heading_paths"]) or None,
+                    "source_context": context,
+                    "provenance": {"doc_id": doc_id, "char_start": match.start(),
+                                   "char_end": match.end(), "source_path": context["source_path"]},
+                }
+                serial += 1
+                item = (self._rank(hit, query), -serial, hit)
+                if len(ranked) < k:
+                    heapq.heappush(ranked, item)
+                elif item[:2] > ranked[0][:2]:
+                    heapq.heapreplace(ranked, item)
+        return [h for _, _, h in sorted(ranked, key=lambda item: item[:2], reverse=True)]
+
+    def _rank(self, hit: dict, query: str) -> tuple:
+        """Prefer query coverage and explicit section-year alignment, without
+        asserting that an unknown or conflicting section cannot be relevant.
+        Multi-year sections stay visible for comparative questions/tables.
+        """
+        requested = set(_YEAR.findall(query))
+        context = hit.get('source_context', {})
+        source_years = set(_YEAR.findall(' '.join(context.get('heading_paths', []))))
+        if hit.get('kind') == 'sql' and context.get('row_location') != 'exact':
+            source_years = set()
+        alignment = ('unknown' if not source_years or not requested else
+                     'match' if requested <= source_years else 'conflict')
+        hit['query_scope'] = {'requested_years': sorted(requested),
+                              'section_years': sorted(source_years), 'year_alignment': alignment}
+        haystack = (hit['text'] + ' ' + ' '.join(context.get('heading_paths', []))).casefold()
+        coverage = sum(t.casefold() in haystack for t in terms(query))
+        # No inferred year: a filename or adjacent next-section heading is not
+        # evidence that the retrieved row belongs to the requested fiscal year.
+        return ({'match': 2, 'unknown': 1, 'conflict': 0}[alignment], coverage)
 
     # --- rung 2: FTS5 --------------------------------------------------------
 
@@ -271,7 +326,7 @@ class Ladder:
         from rnsr.db import fts
 
         query_terms = terms(query)
-        match_query = " OR ".join(query_terms) if query_terms else query
+        match_query = " OR ".join('"' + t.replace('"', '""') + '"' for t in query_terms) if query_terms else query
         return [{
             "rung": 2, "kind": "chunk", "doc_id": h["doc_id"], "page": h["page"],
             "text": h["text"], "score": h["score"],

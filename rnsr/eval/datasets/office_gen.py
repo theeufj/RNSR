@@ -10,6 +10,7 @@ checked against a known cause.
 
 from __future__ import annotations
 
+import json
 import random
 import zipfile
 from email.message import EmailMessage
@@ -17,6 +18,13 @@ from email.utils import formatdate
 from pathlib import Path
 
 from rnsr.eval.datasets.base import EvalItem
+
+_GENERATOR_VERSION = 2
+_SOURCE_NAMES = (
+    "memo_q3_review.docx", "budget.xlsx", "cfo_q3_invoice.eml",
+    "policy_v1_superseded.pdf", "policy_v2_current.pdf", "receipt_scan.pdf",
+    "notes.txt", "agenda.md",
+)
 
 # Minimal SpreadsheetML / WordprocessingML — generation must not depend on
 # anydoc/openpyxl/python-docx so the benchmark can be built in CI.
@@ -138,20 +146,22 @@ def write_docx(path: Path, title: str, paragraphs: list[str]) -> None:
 
 
 def write_scanned_pdf(path: Path, caption: str) -> None:
-    """Near-blank PDF: extractable text is well under the scanned-page threshold.
-
-    Ingest flags pages with < 50 extracted characters as scanned. The gold
-    lives in a sidecar ``.gold.txt`` so a transcriber (or a human) can
-    recover it; the PDF itself has no usable text layer.
-    """
+    """Render the receipt into image pixels, with no PDF text layer."""
+    from PIL import Image, ImageDraw, ImageFont
     from reportlab.lib.pagesizes import LETTER
+    from reportlab.lib.utils import ImageReader
     from reportlab.pdfgen.canvas import Canvas
 
+    font = ImageFont.load_default()
+    left, top, right, bottom = font.getbbox(caption)
+    image = Image.new("RGB", (right - left + 40, bottom - top + 40), "white")
+    ImageDraw.Draw(image).text((20 - left, 20 - top), caption, font=font, fill="black")
+    image = image.resize((image.width * 3, image.height * 3), Image.Resampling.NEAREST)
     c = Canvas(str(path), pagesize=LETTER)
-    c.setFillColorRGB(0.96, 0.96, 0.94)
-    c.rect(72, 600, 400, 120, fill=1, stroke=0)
+    width = min(468, image.width)
+    c.drawImage(ImageReader(image), 72, 600, width=width,
+                height=width * image.height / image.width)
     c.save()
-    _ = caption
 
 
 def write_text_pdf(path: Path, title: str, blocks: list[str]) -> None:
@@ -200,15 +210,18 @@ def generate_office(out_dir: str | Path, *, seed: int = 7) -> list[EvalItem]:
     out.mkdir(parents=True, exist_ok=True)
     f = OfficeFacts(seed)
     marker = out / ".office_gen.json"
-    if not marker.exists():
+    identity = {"seed": seed, "version": _GENERATOR_VERSION}
+    if marker.exists():
+        if json.loads(marker.read_text()) != identity:
+            raise ValueError("Office fixture seed/version differs; use a fresh output directory")
+    else:
         _write_docs(out, f)
-        marker.write_text(f'{{"seed": {seed}}}\n')
-    sources = sorted(
-        p for p in out.iterdir()
-        if p.is_file() and p.suffix.lower() in {
-            ".pdf", ".docx", ".xlsx", ".eml", ".txt", ".md",
-        }
-    )
+        marker.write_text(json.dumps(identity) + "\n")
+    # Only generated evidence belongs in retrieval, never answer-key sidecars
+    # or unrelated files subsequently placed in this directory.
+    sources = sorted(out / name for name in _SOURCE_NAMES)
+    if any(not path.is_file() for path in sources):
+        raise ValueError("Office fixture is incomplete; use a fresh output directory")
     return _questions(f, sources, seed)
 
 
@@ -260,11 +273,6 @@ def _write_docs(out: Path, f: OfficeFacts) -> None:
 
     write_scanned_pdf(out / "receipt_scan.pdf",
                       f"Receipt total ${f.receipt_total}")
-    # The gold for the scan lives next to the image so a transcriber (or a
-    # human) can recover it; the PDF itself has no text layer.
-    (out / "receipt_scan.gold.txt").write_text(
-        f"Receipt total ${f.receipt_total}\n")
-
     (out / "notes.txt").write_text(
         f"{f.company} weekly notes.\n"
         "Parking permits renewed. Catering for the offsite is booked.\n"

@@ -23,6 +23,9 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
+import re
+import stat
 import time
 from pathlib import Path
 
@@ -34,6 +37,46 @@ _CONTENT_KEYS = frozenset({
     "query", "candidates", "choice", "verification", "flagged", "prompt",
 })
 _REDACT_OVER_CHARS = 200
+_SAFE_QUERY_ID = re.compile(r"[a-z0-9][a-z0-9._-]{0,119}\Z")
+_RESERVED_FILENAMES = {"con", "prn", "aux", "nul"} | {
+    f"{prefix}{i}" for prefix in ("com", "lpt") for i in range(1, 10)
+}
+
+
+def trajectory_stem(query_id: str) -> str:
+    """Return a bounded filename component, independent of filesystem folding.
+
+    Keep common lowercase ASCII IDs for existing consumers. All other IDs
+    use their exact UTF-8 digest, including case and Unicode normalization.
+    The leading underscore reserves the hashed namespace so a literal ID
+    cannot collide with a generated name. The original ID lives in events.
+    """
+    if not isinstance(query_id, str):
+        raise TypeError("query_id must be a string")
+    if (_SAFE_QUERY_ID.fullmatch(query_id)
+            and not query_id.endswith(".")
+            and query_id.split(".", 1)[0] not in _RESERVED_FILENAMES):
+        return query_id
+    digest = hashlib.sha256(query_id.encode("utf-8", "surrogatepass")).hexdigest()
+    return f"_qid_{digest}"
+
+
+def _open_log(directory: Path, filename: str):
+    """Anchor append to the run directory and refuse pre-existing aliases."""
+    directory_fd = os.open(directory, os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        fd = os.open(filename, os.O_WRONLY | os.O_APPEND | os.O_CREAT | os.O_NOFOLLOW
+                     | os.O_NONBLOCK, 0o600, dir_fd=directory_fd)
+    finally:
+        os.close(directory_fd)
+    try:
+        info = os.fstat(fd)
+        if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
+            raise ValueError("trajectory must be a regular file with one link")
+        return os.fdopen(fd, "a", encoding="utf-8")
+    except BaseException:
+        os.close(fd)
+        raise
 
 
 def _describe(value: object) -> str:
@@ -48,8 +91,10 @@ def redact(record: dict, mode: str) -> dict:
         return record
     out: dict = {}
     for key, value in record.items():
-        sensitive = key in _CONTENT_KEYS or (
-            isinstance(value, str) and len(value) > _REDACT_OVER_CHARS)
+        # IDs remain operational metadata even when their encoded filename
+        # is a digest; audit exports need the original identifier for joins.
+        sensitive = key != "query_id" and (key in _CONTENT_KEYS or (
+            isinstance(value, str) and len(value) > _REDACT_OVER_CHARS))
         if not sensitive or value is None:
             out[key] = value
         elif mode == "metadata":
@@ -83,17 +128,20 @@ class _Cipher:
 class TrajectoryWriter:
     def __init__(self, run_dir: str | Path, query_id: str, *,
                  content: str = "full", key: str = ""):
-        self.dir = Path(run_dir)
+        stem = trajectory_stem(query_id)
+        self.query_id = query_id
+        self.dir = Path(run_dir).resolve()
         self.dir.mkdir(parents=True, exist_ok=True)
         self.content = content or "full"
         self._cipher = _Cipher(key) if key else None
         suffix = ".jsonl.enc" if self._cipher else ".jsonl"
-        self.path = self.dir / f"{query_id}{suffix}"
-        self._f = open(self.path, "a", encoding="utf-8")  # noqa: SIM115 — lifetime spans the query; closed in close()
+        self.path = self.dir / f"{stem}{suffix}"
+        self._f = _open_log(self.dir, self.path.name)
         self._t0 = time.monotonic()
 
     def event(self, kind: str, **data) -> None:
-        record = {"t": round(time.monotonic() - self._t0, 3), "kind": kind, **data}
+        record = {"t": round(time.monotonic() - self._t0, 3), "kind": kind, **data,
+                  "query_id": self.query_id}
         line = json.dumps(redact(record, self.content), default=repr)
         if self._cipher:
             line = self._cipher.encrypt(line)

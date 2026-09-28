@@ -1,6 +1,33 @@
-"""Shared fixtures: synthetic PDF generation via reportlab."""
+"""Shared fixtures: isolated configuration and synthetic PDFs."""
+
+import os
+from pathlib import Path
 
 import pytest
+
+
+@pytest.fixture(autouse=True)
+def isolate_offline_configuration(request, monkeypatch):
+    """Offline tests must not consume developer credentials or local settings."""
+    if request.node.get_closest_marker("live"):
+        return
+    from rnsr import config
+
+    for name in tuple(os.environ):
+        if name.startswith("RNSR_") or name in {
+            "ANTHROPIC_API_KEY", "OPENAI_API_KEY", "GOOGLE_API_KEY", "LLM_PROVIDER",
+        }:
+            monkeypatch.delenv(name)
+    repository_env = Path(__file__).resolve().parents[1] / ".env"
+    real_load_dotenv = config.load_dotenv
+
+    def load_test_dotenv(dotenv_path=None, *args, **kwargs):
+        candidate = Path(dotenv_path or ".env")
+        if candidate == Path(".env") or candidate.resolve() == repository_env:
+            return False
+        return real_load_dotenv(dotenv_path, *args, **kwargs)
+
+    monkeypatch.setattr(config, "load_dotenv", load_test_dotenv)
 
 
 @pytest.fixture(scope="session")

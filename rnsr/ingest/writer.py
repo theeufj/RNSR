@@ -47,7 +47,14 @@ def write_document(conn, source, parsed, config, *, prose_checker=None,
     try:
         pages, chunks = chunk_document(
             parsed, chunk_chars=config.chunk_chars, overlap=config.chunk_overlap)
-        page_texts = {p.page: p.text for p in pages}
+        # A grid cannot corroborate its own values. Keep the full canonical
+        # page text above for retrieval, but cross-check only independent
+        # narrative elements, never the rendered table being validated.
+        page_texts = {
+            p.page: "\n".join(e.text for e in parsed.elements
+                              if e.page == p.page and e.kind != "table" and e.text)
+            for p in pages
+        }
         modified = parsed.modified_at
         if not modified:
             with contextlib.suppress(OSError):

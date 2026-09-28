@@ -12,13 +12,13 @@ from __future__ import annotations
 import json
 import re
 import sqlite3
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from rnsr.db import schema
 from rnsr.db.metadata import TableSchema
 from rnsr.ingest.coerce import caption_scale, coerce_column
 from rnsr.ingest.model import RawTable
-from rnsr.ingest.validate import classify_row_kind
+from rnsr.ingest.validate import classify_row_kind, label_column
 
 _WS = re.compile(r"\s+")
 
@@ -36,12 +36,20 @@ def headers_match(a: list[str], b: list[str]) -> bool:
 def merge_multipage(tables: list[RawTable]) -> list[RawTable]:
     """Merge runs of tables with repeated headers on consecutive pages (§3.2).
 
-    Tables are assumed to be in document order. A continuation must repeat
-    the header exactly (after whitespace/case normalization) and start on
-    the same page as, or the page after, the previous fragment ends.
+    Repeated headers alone cannot distinguish continuation from an original
+    and a restated table. Require a nonempty matching caption identity and
+    the next page; otherwise retain separate source tables. A trailing
+    "continued" marker is optional and is not part of the caption identity.
     """
     merged: list[RawTable] = []
-    for t in tables:
+    def caption_identity(caption: str | None) -> str:
+        text = _norm_header_cell(caption)
+        identity = re.sub(r"[\s:()\-–—]*\bcontinued\b[\s:()\-–—]*$", "", text).strip()
+        return identity
+
+    for source in tables:
+        # Do not mutate parser IR; validation/fallback can still refer to it.
+        t = replace(source, rows=list(source.rows))
         prev = merged[-1] if merged else None
         prev_last_page = (
             prev.row_page(len(prev.rows) - 1) if prev and prev.rows else prev.page if prev else -1
@@ -49,8 +57,10 @@ def merge_multipage(tables: list[RawTable]) -> list[RawTable]:
         if (
             prev is not None
             and headers_match(prev.header, t.header)
-            and (prev.caption or "") == (t.caption or "")
-            and t.page in (prev_last_page, prev_last_page + 1)
+            and prev.kind == t.kind == "table"
+            and bool(caption_identity(prev.caption))
+            and caption_identity(prev.caption) == caption_identity(t.caption)
+            and t.page == prev_last_page + 1
         ):
             prev.row_pages = [prev.row_page(i) for i in range(len(prev.rows))] + [
                 t.row_page(i) for i in range(len(t.rows))
@@ -58,7 +68,12 @@ def merge_multipage(tables: list[RawTable]) -> list[RawTable]:
             prev.row_bboxes = [prev.row_bbox(i) for i in range(len(prev.rows))] + [
                 t.row_bbox(i) for i in range(len(t.rows))
             ]
+            prev.row_extractors = [prev.row_extractor(i) for i in range(len(prev.rows))] + [
+                t.row_extractor(i) for i in range(len(t.rows))
+            ]
             prev.rows = prev.rows + t.rows
+            if len(set(prev.row_extractors)) > 1:
+                prev.extractor = "mixed"
         else:
             merged.append(t)
     return merged
@@ -210,12 +225,10 @@ def build_data_table(
     table = schema.data_table_name(doc_id, seq)
     schema.create_data_table(conn, table, columns, with_source_page=multipage)
 
-    label_idx = 0
-    for i, entry in enumerate(schema_entries):
-        if entry["type"] == "TEXT":
-            label_idx = i
-            break
-    kinds = [classify_row_kind(raw.rows[i], label_idx) for i in range(len(raw.rows))]
+    label_idx = label_column(raw, {i for i, entry in enumerate(schema_entries)
+                                   if entry["type"] != "TEXT"})
+    kinds = (["data"] * len(raw.rows) if raw.kind == "text_lines" else
+             [classify_row_kind(row, label_idx) for row in raw.rows])
     n_total_rows = sum(1 for k in kinds if k in ("total", "subtotal"))
     n_data_rows = sum(1 for k in kinds if k == "data")
 
@@ -230,7 +243,7 @@ def build_data_table(
             row_out.append(raw.row_page(i))
         bbox = raw.row_bbox(i)
         row_out += [raw.row_page(i), json.dumps(bbox) if bbox else "[]",
-                    raw.extractor, kinds[i]]
+                    raw.row_extractor(i), kinds[i]]
         rows_out.append(row_out)
 
     width = len(columns) + (1 if multipage else 0) + len(schema.PROVENANCE_COLUMNS)

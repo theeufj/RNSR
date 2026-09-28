@@ -20,6 +20,11 @@ class TestClassifyRowKind:
     def test_net_income_is_not_a_total(self):
         assert classify_row_kind(["Net income", "50"]) == "data"
 
+    def test_mentions_of_total_in_prose_are_data(self):
+        assert classify_row_kind(["The total payments were received", "50"]) == "data"
+        assert classify_row_kind(["Total payments are due monthly", "50"]) == "data"
+        assert classify_row_kind(["Total assets", "50"]) == "total"
+
 
 class TestGenerator:
     def test_writes_labels_and_pdfs(self, tmp_path):

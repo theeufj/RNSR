@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import re
 import sqlite3
 import time
@@ -19,6 +20,59 @@ from datetime import UTC, datetime
 from rnsr.db import schema
 
 _LINE = re.compile(r"^\s*(\d+)\s*[.):\-]\s*(.+?)\s*$")
+_AUDIT_LABEL_CHARS = 4096
+_HISTORY_LIMIT = 3
+
+
+def _allowed_labels(labels) -> tuple[str, ...] | None:
+    if labels is None:
+        return None
+    if (not isinstance(labels, (list, tuple)) or not 1 <= len(labels) <= 256
+            or any(not isinstance(label, str) or not label.strip()
+                   or label != label.strip() or len(label) > 256
+                   or "\n" in label or "\r" in label for label in labels)
+            or len(set(labels)) != len(labels)):
+        raise ValueError("allowed_labels must contain 1 to 256 unique, nonempty single-line labels")
+    return tuple(sorted(labels))
+
+
+def _audit_label(label: str) -> dict:
+    """Bound free-form labels; classification labels fit without truncation."""
+    value = {"label": label[:_AUDIT_LABEL_CHARS]}
+    if len(label) > _AUDIT_LABEL_CHARS:
+        value.update(label_truncated=True, label_chars=len(label),
+                     label_sha256=hashlib.sha256(label.encode()).hexdigest())
+    return value
+
+
+def _response_metadata(value) -> dict:
+    """Only trusted, optional response metadata; never infer a resolved model."""
+    if not isinstance(value, dict):
+        return {}
+    out = {}
+    if isinstance(value.get("model"), str):
+        out["resolved_model"] = value["model"][:256]
+    for name in ("input_tokens", "output_tokens", "cost_usd", "latency_s"):
+        number = value.get(name)
+        if (isinstance(number, (int, float)) and not isinstance(number, bool)
+                and math.isfinite(number) and number >= 0):
+            out[name] = number
+    return out
+
+
+def _previous_runs(prior) -> dict:
+    old = json.loads(prior[3])
+    history = old.pop("previous_runs", [])
+    dropped_count = old.pop("earlier_runs_count", 0)
+    dropped_digest = old.pop("earlier_runs_sha256", "")
+    history.append({"created_at": prior[2], "rows_written": prior[0],
+                    "rows_failed": prior[1], "usage": old})
+    for dropped in history[:-_HISTORY_LIMIT]:
+        dropped_digest = hashlib.sha256(
+            (dropped_digest + json.dumps(dropped, sort_keys=True)).encode()).hexdigest()
+        dropped_count += 1
+    return {"previous_runs": history[-_HISTORY_LIMIT:], "earlier_runs_count": dropped_count,
+            "earlier_runs_sha256": dropped_digest}
 
 
 def _source_columns(conn: sqlite3.Connection, table: str, annotated: set[str]) -> list[str]:
@@ -30,23 +84,46 @@ def _source_columns(conn: sqlite3.Connection, table: str, annotated: set[str]) -
             and c not in annotated]
 
 
-def _batch_prompt(prompt: str, rows: list[tuple[int, str]]) -> str:
+def _batch_prompt(prompt: str, rows: list[tuple[int, str]],
+                  allowed_labels: tuple[str, ...] | None = None) -> str:
     numbered = "\n".join(f"{i}. {rendered}" for i, rendered in rows)
+    contract = ("\nUse exactly one of these labels, without quotes: "
+                + json.dumps(allowed_labels, ensure_ascii=False) if allowed_labels else "")
     return (
-        f"For EACH numbered row below, apply this instruction:\n{prompt}\n\n"
+        f"For EACH numbered row below, apply this instruction:\n{prompt}{contract}\n\n"
         f"Rows:\n{numbered}\n\n"
         f"Reply with exactly {len(rows)} lines, one per row, in the form "
         "'<row number>. <result>'. No other text."
     )
 
 
-def _parse_batch(reply: str, expected: list[int]) -> dict[int, str] | None:
+def _inspect_batch(reply: str, expected: list[int],
+                   allowed_labels: tuple[str, ...] | None = None) -> tuple[dict | None, dict]:
     out: dict[int, str] = {}
+    expected_set = set(expected)
+    duplicate_ids = set()
+    invalid = {}
     for line in (reply or "").splitlines():
         m = _LINE.match(line)
-        if m and int(m.group(1)) in set(expected):
-            out[int(m.group(1))] = m.group(2)
-    return out if len(out) == len(expected) else None
+        if m and int(m.group(1)) in expected_set:
+            rowid, label = int(m.group(1)), m.group(2)
+            if rowid in out:
+                duplicate_ids.add(rowid)
+            out[rowid] = label
+            if allowed_labels is not None and label not in allowed_labels:
+                invalid[rowid] = {"rowid": rowid, **_audit_label(label)}
+    issues = {"missing_rowids": [i for i in expected if i not in out],
+              "invalid_labels": list(invalid.values()),
+              "duplicate_rowids": sorted(duplicate_ids)}
+    # Preserve permissive free-form parsing when no contract was requested.
+    valid = len(out) == len(expected) and not invalid
+    if allowed_labels is not None and duplicate_ids:
+        valid = False
+    return (out if valid else None), issues
+
+
+def _parse_batch(reply: str, expected: list[int]) -> dict[int, str] | None:
+    return _inspect_batch(reply, expected)[0]
 
 
 _SOURCE_GENERATION = (
@@ -71,15 +148,25 @@ class Annotator:
         self.cancelled = cancelled
         self.usage = {"calls": 0, "prompts": 0}
 
-    def _ask(self, prompts: list[str], model: str) -> list[str]:
+    def _ask(self, prompts: list[str], model: str) -> tuple[list[str], list[dict]]:
         if self.cancelled():
             raise RuntimeError("annotation cancelled")
         self.usage["calls"] += 1
         self.usage["prompts"] += len(prompts)
-        return self.rpc({"op": "llm_batch", "prompts": prompts, "model": model})["results"]
+        response = self.rpc({"op": "llm_batch", "prompts": prompts, "model": model})
+        replies = response["results"]
+        if not isinstance(replies, list) or len(replies) != len(prompts):
+            raise ValueError("annotation RPC must return one result per prompt")
+        if any(not isinstance(reply, str) for reply in replies):
+            raise ValueError("annotation RPC results must be text")
+        metadata = response.get("response_metadata")
+        if not isinstance(metadata, list) or len(metadata) != len(replies):
+            metadata = [{} for _ in replies]
+        return replies, [_response_metadata(item) for item in metadata]
 
     def _one_pass(self, prompt: str, rendered: list[tuple[int, str]],
-                  batch_size: int, model: str) -> dict[int, str]:
+                  batch_size: int, model: str,
+                  allowed_labels: tuple[str, ...] | None = None) -> tuple[dict[int, str], list[dict]]:
         """One full labeling pass: batch -> llm -> parse -> strict re-ask."""
         batches: list[list[tuple[int, str]]] = [[]]
         chars = 0
@@ -91,29 +178,43 @@ class Annotator:
             batches[-1].append(item)
             chars += len(item[1])
 
-        prompts = [_batch_prompt(prompt, b) for b in batches]
-        replies = self._ask(prompts, model)
+        prompts = [_batch_prompt(prompt, b, allowed_labels) for b in batches]
+        replies, metadata = self._ask(prompts, model)
 
         values: dict[int, str] = {}
-        retry_prompts, retry_batches = [], []
-        for batch, reply in zip(batches, replies, strict=True):
-            parsed = _parse_batch(reply, [i for i, _ in batch])
+        retry_prompts, retry_batches, attempts = [], [], []
+
+        def inspect(batch, reply, sent_prompt, response_meta, retry):
+            parsed, issues = _inspect_batch(reply, [i for i, _ in batch], allowed_labels)
+            attempts.append({"rowids": [i for i, _ in batch], "retry": retry,
+                             "accepted": parsed is not None,
+                             "prompt_sha256": hashlib.sha256(sent_prompt.encode()).hexdigest(),
+                             "response_sha256": hashlib.sha256(reply.encode()).hexdigest(),
+                             **issues, **response_meta})
+            return parsed
+
+        for batch, reply, sent, meta in zip(batches, replies, prompts, metadata, strict=True):
+            parsed = inspect(batch, reply, sent, meta, False)
             if parsed is None:                       # count mismatch — strict re-ask
                 retry_batches.append(batch)
                 retry_prompts.append(
-                    _batch_prompt(prompt, batch)
-                    + "\nYour previous reply did not have one line per row. "
-                      "Follow the format exactly."
+                    _batch_prompt(prompt, batch, allowed_labels)
+                    + ("\nYour previous reply did not have one valid label per row. "
+                       "Use the allowed labels and follow the format exactly."
+                       if allowed_labels is not None else
+                       "\nYour previous reply did not have one line per row. "
+                       "Follow the format exactly.")
                 )
             else:
                 values.update(parsed)
         if retry_prompts:
-            replies = self._ask(retry_prompts, model)
-            for batch, reply in zip(retry_batches, replies, strict=True):
-                parsed = _parse_batch(reply, [i for i, _ in batch])
+            replies, metadata = self._ask(retry_prompts, model)
+            for batch, reply, sent, meta in zip(
+                    retry_batches, replies, retry_prompts, metadata, strict=True):
+                parsed = inspect(batch, reply, sent, meta, True)
                 if parsed:
                     values.update(parsed)
-        return values
+        return values, attempts
 
     def _read_selection(self, table: str, sql: str, where: str | None):
         """A bounded predicate over this table, without subqueries or unions."""
@@ -154,11 +255,14 @@ class Annotator:
 
     def annotate(self, table: str, new_col: str, prompt: str, *,
                  where: str | None = None, batch_size: int | None = None,
-                 model: str = "sub", force: bool = False, votes: int = 1) -> dict:
+                 model: str = "sub", force: bool = False, votes: int = 1,
+                 allowed_labels: list[str] | tuple[str, ...] | None = None) -> dict:
         """votes>1 runs the labeling pass that many times with different
-        (seeded) item orders and writes the per-row majority — decorrelates
-        per-item classification noise, which dominates counting-task error.
+        (seeded) item orders and writes the per-row majority. These passes
+        share a model and prompt; their errors need not be independent.
         Sub-call cost scales with votes. Ties keep the first pass's label.
+        Optional allowed_labels enforce exact membership; invalid batches
+        get one strict retry. Every vote and failed attempt is audited.
         """
         from rnsr.db.metadata import decode_table_schema
 
@@ -176,19 +280,23 @@ class Annotator:
             raise ValueError("annotation cannot overwrite a source or provenance column")
         if not isinstance(prompt, str) or not prompt.strip():
             raise ValueError("annotation prompt must be nonempty text")
+        allowed_labels = _allowed_labels(allowed_labels)
         self.usage = {"calls": 0, "prompts": 0}
         batch_size = self.default_batch_size if batch_size is None else batch_size
         if not isinstance(batch_size, int) or not 1 <= batch_size <= 1000:
             raise ValueError("annotation batch_size must be between 1 and 1000")
         votes = max(1, min(int(votes), 5))
-        prompt_sha = hashlib.sha256(f"{prompt}|votes={votes}".encode()).hexdigest()
+        prompt_key = f"{prompt}|votes={votes}"
+        if allowed_labels is not None:
+            prompt_key += "|allowed_labels=" + json.dumps(allowed_labels, ensure_ascii=False)
+        prompt_sha = hashlib.sha256(prompt_key.encode()).hexdigest()
 
-        prior = self.conn.execute(
-            "SELECT rows_written, rows_failed FROM annotation_log WHERE "
+        prior_sql = (
+            "SELECT rows_written, rows_failed, created_at, usage_json FROM annotation_log WHERE "
             "table_name=? AND column=? AND prompt_sha256=? AND model=? "
-            "AND ifnull(where_clause,'')=?",
-            (table, new_col, prompt_sha, model, where or ""),
-        ).fetchone()
+            "AND ifnull(where_clause,'')=?")
+        prior_key = (table, new_col, prompt_sha, model, where or "")
+        prior = self.conn.execute(prior_sql, prior_key).fetchone()
         if prior is not None and not force:
             return {"noop": True, "rows": prior[0], "failed": prior[1],
                     "coverage": None,
@@ -209,17 +317,26 @@ class Annotator:
             for row in rows
         ]
 
-        # At temperature 0 identical prompts give identical replies, so each
-        # vote uses a different item order: different batch contexts give
-        # decorrelated per-item errors that the majority can cancel.
+        # Different row orders vary batch context. Retain every vote so any
+        # benefit or correlated errors can be measured, rather than assumed.
         import random
 
         tallies: dict[int, list[str]] = {}
+        vote_audit = []
         for vote in range(votes):
             ordered = list(rendered)
             if vote > 0:
                 random.Random(vote).shuffle(ordered)
-            pass_values = self._one_pass(prompt, ordered, batch_size, model)
+            started = time.monotonic()
+            pass_values, attempts = self._one_pass(
+                prompt, ordered, batch_size, model, allowed_labels)
+            vote_audit.append({
+                "index": vote, "shuffle_seed": vote if vote else None,
+                "elapsed_s": time.monotonic() - started,
+                "rows": [{"rowid": rowid, **(_audit_label(pass_values[rowid])
+                         if rowid in pass_values else {"label": None})} for rowid, _ in ordered],
+                "attempts": attempts,
+            })
             for rowid, label in pass_values.items():
                 tallies.setdefault(rowid, []).append(label)
 
@@ -232,6 +349,17 @@ class Annotator:
             # tie -> earliest vote's label (labels[] preserves vote order)
             values[rowid] = next(la for la in labels if counts[la] == best)
 
+        self.usage["vote_audit"] = {
+            "schema_version": 1, "requested_model": model,
+            "allowed_labels": allowed_labels, "votes_requested": votes,
+            "source": {"doc_id": row[1], "sha256": row[2], "content_sha256": row[3],
+                       "selection_sha256": source_digest, "row_count": len(rows)},
+            "instruction_sha256": hashlib.sha256(prompt.encode()).hexdigest(),
+            "aggregation": "plurality_of_valid_votes; ties_use_earliest_valid_vote",
+            "partial_vote_rowids": [r[0] for r in rows if 0 < len(tallies.get(r[0], [])) < votes],
+            "failed_rowids": [r[0] for r in rows if r[0] not in values],
+            "votes": vote_audit,
+        }
         if self.cancelled():
             raise RuntimeError("annotation cancelled")
         # Release the read snapshot before provider calls, then verify the
@@ -246,33 +374,35 @@ class Annotator:
             current_rows = self._read_selection(table, sql, where)
             if _selection_digest(current, current_rows) != source_digest:
                 raise ValueError("annotation source changed while labeling; retry against current source")
+            schema.add_annotation_column(self.conn, table, new_col)
+            self.conn.executemany(
+                f"UPDATE {schema.quote_ident(table)} SET {schema.quote_ident(new_col)} = ? "
+                "WHERE rowid = ?",
+                [(v, rowid) for rowid, v in values.items()],
+            )
+            failed = len(rows) - len(values)
+            if force:
+                # Read the latest log under the publishing lock; another
+                # trusted annotation may have completed during provider calls.
+                prior = self.conn.execute(prior_sql, prior_key).fetchone()
+                if prior is not None:
+                    self.usage.update(_previous_runs(prior))
+                self.conn.execute(
+                    "DELETE FROM annotation_log WHERE table_name=? AND column=? AND "
+                    "prompt_sha256=? AND model=? AND ifnull(where_clause,'')=?", prior_key)
+            self.conn.execute(
+                "INSERT INTO annotation_log (created_at, table_name, column, prompt, "
+                "prompt_sha256, model, where_clause, batch_size, rows_written, "
+                "rows_failed, usage_json) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                (datetime.now(UTC).isoformat(), table, new_col, prompt, prompt_sha,
+                 model, where, batch_size, len(values), failed, json.dumps(self.usage)),
+            )
+            if self.cancelled():
+                raise RuntimeError("annotation cancelled")
+            self.conn.commit()
         except BaseException:
             self.conn.rollback()
             raise
-        schema.add_annotation_column(self.conn, table, new_col)
-        self.conn.executemany(
-            f"UPDATE {schema.quote_ident(table)} SET {schema.quote_ident(new_col)} = ? "
-            "WHERE rowid = ?",
-            [(v, rowid) for rowid, v in values.items()],
-        )
-        failed = len(rows) - len(values)
-        if force:
-            self.conn.execute(
-                "DELETE FROM annotation_log WHERE table_name=? AND column=? AND "
-                "prompt_sha256=? AND model=? AND ifnull(where_clause,'')=?",
-                (table, new_col, prompt_sha, model, where or ""),
-            )
-        self.conn.execute(
-            "INSERT INTO annotation_log (created_at, table_name, column, prompt, "
-            "prompt_sha256, model, where_clause, batch_size, rows_written, "
-            "rows_failed, usage_json) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
-            (datetime.now(UTC).isoformat(), table, new_col, prompt, prompt_sha,
-             model, where, batch_size, len(values), failed, json.dumps(self.usage)),
-        )
-        if self.cancelled():
-            self.conn.rollback()
-            raise RuntimeError("annotation cancelled")
-        self.conn.commit()
 
         sample = list(values.items())[:5]
         return {"rows": len(values), "failed": failed,

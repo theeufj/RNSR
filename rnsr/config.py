@@ -40,6 +40,11 @@ class Settings:
     max_spend_usd: float = 2.0
     sub_concurrency: int = 16
     cell_timeout_s: float = 120.0   # per-cell wall clock; sandbox killed past this
+    root_timeout_s: float = 120.0   # active provider call, excluding governor queue
+    root_max_attempts: int = 3      # transient failures only; timeout retry <= 2x base
+    # One bounded advisory review after quote verification; never blocks FINAL
+    # or upgrades trust. Opt-in until support-review quality is evaluated.
+    claim_review_enabled: bool = False
 
     # --- run-level provider governance (rnsr.llm.governor) ---
     # Budgets above cap ONE query; these cap the run. 0 disables a limit.
@@ -125,7 +130,8 @@ class Settings:
             if (isinstance(value, (int, float)) and not isinstance(value, bool)
                     and (not math.isfinite(value) or value < 0)):
                 raise ValueError(f"{f.name} must be finite and non-negative")
-        for name in ("max_wall_s", "cell_timeout_s", "sub_concurrency", "chunk_chars",
+        for name in ("max_wall_s", "cell_timeout_s", "root_timeout_s", "root_max_attempts",
+                     "sub_concurrency", "chunk_chars",
                      "sub_call_char_budget", "annotate_batch_size", "rescore_candidates",
                      "service_max_jobs"):
             if getattr(self, name) <= 0:

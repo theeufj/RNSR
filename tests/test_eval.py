@@ -436,19 +436,10 @@ def _fake_query_result(status: str, answer: object = "x"):
 
 
 def _answer_csv_corpus(tmp_path):
-    """One small real PDF, so ingest has something to chew on."""
-    import pytest as _pytest
-
-    _pytest.importorskip("docling")
-    from reportlab.lib.pagesizes import LETTER
-    from reportlab.lib.styles import getSampleStyleSheet
-    from reportlab.platypus import Paragraph, SimpleDocTemplate
-
+    """Native text keeps CLI contract tests independent of OCR and providers."""
     corpus = tmp_path / "corpus"
     corpus.mkdir()
-    styles = getSampleStyleSheet()
-    SimpleDocTemplate(str(corpus / "doc.pdf"), pagesize=LETTER).build(
-        [Paragraph("The secret number is 7714.", styles["BodyText"])])
+    (corpus / "doc.txt").write_text("The secret number is 7714.")
     return corpus
 
 
@@ -589,19 +580,7 @@ class TestAnswerCsvAdapter:
 
         from rnsr.cli import app
 
-        corpus = tmp_path / "corpus"
-        corpus.mkdir()
-        # generate one small real PDF so ingest works (docling-free? needs docling)
-        import pytest as _pytest
-
-        _pytest.importorskip("docling")
-        from reportlab.lib.pagesizes import LETTER
-        from reportlab.lib.styles import getSampleStyleSheet
-        from reportlab.platypus import Paragraph, SimpleDocTemplate
-
-        styles = getSampleStyleSheet()
-        SimpleDocTemplate(str(corpus / "doc.pdf"), pagesize=LETTER).build(
-            [Paragraph("The secret number is 7714.", styles["BodyText"])])
+        corpus = _answer_csv_corpus(tmp_path)
 
         questions = tmp_path / "q.csv"
         with open(questions, "w", newline="") as f:
@@ -644,23 +623,13 @@ class TestAnswerCsvAdapter:
         phrase; unanswered questions are retried in solo loops."""
         import csv
 
-        import pytest as _pytest
         from typer.testing import CliRunner
-
-        _pytest.importorskip("docling")
-        from reportlab.lib.pagesizes import LETTER
-        from reportlab.lib.styles import getSampleStyleSheet
-        from reportlab.platypus import Paragraph, SimpleDocTemplate
 
         import rnsr.cli as cli_mod
         from rnsr.cli import app
         from rnsr.harness.loop import BatchQueryResult
 
-        corpus = tmp_path / "corpus"
-        corpus.mkdir()
-        styles = getSampleStyleSheet()
-        SimpleDocTemplate(str(corpus / "doc.pdf"), pagesize=LETTER).build(
-            [Paragraph("The secret number is 7714.", styles["BodyText"])])
+        corpus = _answer_csv_corpus(tmp_path)
 
         qs = ["What is the secret number?",
               "What is the flaky one?",       # batch fails -> solo retry

@@ -112,6 +112,7 @@ def test_eval_tables_required_failure(tmp_path, monkeypatch):
 
 
 def test_ablate_dispatch(corpus, monkeypatch, tmp_path):
+    monkeypatch.setenv("RNSR_PROVIDER", "anthropic")
     monkeypatch.setattr("rnsr.llm.router.Router.resolve", lambda *a:
                         SimpleNamespace(client=object(), model="mock"))
     monkeypatch.setattr("rnsr.eval.ablation.run_ablation", lambda *a, **k: {"accepts": True})

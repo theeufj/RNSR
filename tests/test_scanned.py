@@ -37,6 +37,70 @@ class TestParseTranscription:
         assert t["tables"] == []
 
 
+class TestTableTranscription:
+    def test_table_only_page_retains_canonical_text(self, tmp_path):
+        from rnsr.db.artifact import CorpusDB
+        from rnsr.ingest.model import ParsedDocument
+        from rnsr.ingest.pipeline import ingest
+
+        source = tmp_path / "table-only.pdf"
+        source.write_bytes(b"Source is supplied by the deterministic parser fixture")
+        parsed = ParsedDocument("table_only", str(source), "a" * 64, 2, "fixture",
+                                scanned_pages=[2])
+        transcription = {"blocks": [], "tables": [{"header": ["Item", "Amount"],
+                                                   "rows": [["Uncommon source label", "$731"]]}]}
+        database = tmp_path / "table.db"
+        report = ingest([source], database, parse=lambda path: parsed,
+                        transcriber=lambda path, pages: {2: transcription})
+        assert report.scanned_pages_transcribed == 1
+        assert not report.scanned_pages_untranscribed
+        with CorpusDB(database) as corpus:
+            full_text = corpus.full_text("table_only")
+            assert "Uncommon source label | $731" in full_text
+            pages = corpus.conn.execute("SELECT page, text FROM doc_text ORDER BY page").fetchall()
+            assert pages[0][1] == "\n" and "$731" in pages[1][1]
+            assert any("$731" in row[0] for row in corpus.conn.execute("SELECT text FROM chunks"))
+
+    def test_empty_table_is_not_a_successful_transcription(self):
+        from rnsr.ingest.model import ParsedDocument
+        from rnsr.ingest.transcription import merge_transcriptions
+
+        parsed = ParsedDocument("empty", "empty.pdf", "a" * 64, 1, "fixture",
+                                scanned_pages=[1])
+        failed = merge_transcriptions(parsed, {1: {"blocks": [], "tables": [
+            {"header": [" ", ""], "rows": [[None, " "]]}
+        ]}})
+        assert failed == [1] and not parsed.elements and not parsed.tables
+
+    def test_table_already_in_blocks_is_not_duplicated(self):
+        from rnsr.ingest.model import ParsedDocument
+        from rnsr.ingest.transcription import merge_transcriptions
+
+        parsed = ParsedDocument("table", "table.pdf", "a" * 64, 1, "fixture",
+                                scanned_pages=[1])
+        transcription = {"blocks": [{"text": "Item | Amount\nWidgets | 222"}],
+                         "tables": [{"header": ["Item", "Amount"],
+                                     "rows": [["Widgets", "222"]]}]}
+        assert merge_transcriptions(parsed, {1: transcription}) == []
+        assert parsed.page_text(1).count("Widgets | 222") == 1
+
+    def test_header_only_table_text_survives_alongside_prose(self):
+        from rnsr.ingest.chunk import chunk_document
+        from rnsr.ingest.model import ParsedDocument
+        from rnsr.ingest.transcription import merge_transcriptions
+
+        parsed = ParsedDocument("header", "header.pdf", "a" * 64, 2, "fixture",
+                                scanned_pages=[2])
+        transcription = {"blocks": [{"text": "The signed notice states:"}],
+                         "tables": [{"header": ["Amount payable", "$731"], "rows": []}]}
+        assert merge_transcriptions(parsed, {2: transcription}) == []
+        pages, chunks = chunk_document(parsed)
+        assert "The signed notice states:" in pages[1].text
+        assert "Amount payable | $731" in pages[1].text
+        assert any("Amount payable | $731" in chunk.text for chunk in chunks)
+        assert not parsed.tables  # Retained text does not fabricate a data row.
+
+
 @pytest.mark.filterwarnings("ignore::DeprecationWarning")
 class TestScannedIngest:
     def test_detection(self, scanned_pdf):

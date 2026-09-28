@@ -34,6 +34,7 @@ import logging
 import threading
 import time
 from collections import deque
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Protocol, runtime_checkable
 
@@ -241,11 +242,17 @@ class GovernedClient:
     def __getattr__(self, name: str):     # passthrough for non-call helpers
         return getattr(self._inner, name)
 
-    async def _guarded(self, coro_factory, *, usage_of=None):
+    async def _guarded(self, coro_factory, *, usage_of=None,
+                       timeout_s: float | None = None,
+                       on_admitted: Callable[[float], None] | None = None):
         gov = self.governor
+        queued_at = time.monotonic()
         await gov.acquire()
         try:
-            result = await coro_factory()
+            if on_admitted:
+                on_admitted(time.monotonic() - queued_at)
+            async with asyncio.timeout(timeout_s):
+                result = await coro_factory()
         except BaseException as exc:
             if is_rate_limit(exc):
                 # let the caller's retry policy decide what to do next, but
@@ -265,6 +272,26 @@ class GovernedClient:
                                          max_tokens=max_tokens,
                                          temperature=temperature, seed=seed),
             usage_of=lambda r: r.usage)
+
+    async def complete_with_timeout(
+        self, prompt, *, model, timeout_s: float,
+        on_admitted: Callable[[float], None] | None = None,
+        system=None, max_tokens=4096, temperature=0.0, seed=None,
+    ) -> LLMResponse:
+        """Bound active generation separately from admission wait.
+
+        The caller must also bound the complete operation with its overall
+        deadline: queueing still consumes a query's wall-clock budget.
+        Provider SDK timeouts remain in effect inside this tighter bound.
+        """
+        if timeout_s <= 0:
+            raise ValueError("timeout_s must be positive")
+        return await self._guarded(
+            lambda: self._inner.complete(prompt, model=model, system=system,
+                                         max_tokens=max_tokens,
+                                         temperature=temperature, seed=seed),
+            usage_of=lambda r: r.usage,
+            timeout_s=timeout_s, on_admitted=on_admitted)
 
     async def embed(self, texts, *, model):
         if getattr(self._inner, "embeds_individually", False):

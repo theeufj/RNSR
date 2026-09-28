@@ -30,8 +30,40 @@ from rnsr.ingest.coerce import CoercedColumn, caption_scale, coerce_column, is_n
 from rnsr.ingest.model import RawTable
 
 # "net" is not a total: "Net income" is a line item, not a checksum row.
-TOTAL_LABEL = re.compile(r"\b(total|subtotal|sum)\b", re.IGNORECASE)
+TOTAL_LABEL = re.compile(
+    r"^(?:grand\s+)?(?:total|subtotal|sub-total|sum)\b|\b(?:total|subtotal)\s*$",
+    re.IGNORECASE,
+)
 _SUBTOTAL = re.compile(r"\bsubtotal\b", re.IGNORECASE)
+_PROSE_VERB = re.compile(
+    r"\b(is|are|was|were|will|shall|must|has|have|had|includes?|exceeds?|due)\b"
+    r"|\bmay\s+(?:be|have|not)\b",
+    re.IGNORECASE,
+)
+_IDENTIFIER = re.compile(
+    r"^(?:id|no\.?|(?:line|row|record|account|invoice|exhibit|reference|serial)"
+    r"(?:[ _-]*(?:id|no\.?|number))?|code|zip|postal code|year|date)$", re.IGNORECASE,
+)
+_NON_ADDITIVE = re.compile(
+    r"\b(average|avg|weighted|ratio|rate|margin|growth|yield|remaining)\b"
+    r"|\bper(?:[ -]+\w+){0,3}[ -]+(?:share|unit|employee|capita)\b"
+    r"|\beps\b", re.IGNORECASE,
+)
+_PRICE_COLUMN = re.compile(r"\bunit[ -]price\b|\bprice[ -]per\b", re.IGNORECASE)
+_BALANCE_SNAPSHOT = re.compile(
+    r"\b(?:opening|closing|beginning|ending|end[ -]of[ -](?:period|year|month))\s+balance\b",
+    re.IGNORECASE,
+)
+_REMAINING_AUTHORIZATION = re.compile(r"\b(?:may|can)\s+(?:yet|still)\s+be\s+purchased\b",
+                                     re.IGNORECASE)
+
+
+def aggregate_kind(text: str) -> str | None:
+    """Recognize short table labels, not arbitrary prose mentioning totals."""
+    text = text.strip().strip(":() ")
+    if len(text.split()) > 8 or _PROSE_VERB.search(text) or not TOTAL_LABEL.search(text):
+        return None
+    return "subtotal" if _SUBTOTAL.search(text) or text.lower().startswith("sub-total") else "total"
 FOOTNOTE_LABEL = re.compile(
     r"^\s*(\*|†|‡|§|\(\d+\)|\[\d+\]|[¹²³⁴⁵⁶⁷⁸⁹⁰])"
 )
@@ -45,8 +77,9 @@ def classify_row_kind(row: list, label_col: int = 0) -> str:
         c for i, c in enumerate(row)
         if i != label_col and c not in (None, "", "-", "–", "—")
     ]
-    if text and TOTAL_LABEL.search(text):
-        return "subtotal" if _SUBTOTAL.search(text) else "total"
+    kind = aggregate_kind(text)
+    if kind:
+        return kind
     if text and FOOTNOTE_LABEL.match(text) and not others:
         return "footnote"
     if text and not others:
@@ -86,6 +119,11 @@ class TableValidation:
         return {k: v.to_dict() for k, v in self.checks.items()}
 
     @property
+    def structural_errors(self) -> bool:
+        return any(d.get("blocking") and not d["passed"]
+                   for d in self.checks["structural"].details)
+
+    @property
     def evidence(self) -> bool:
         """True when arithmetic or prose actually applied.
 
@@ -107,6 +145,8 @@ def assign_table_status(
     reextracted: bool = False,
 ) -> str:
     """Map a validation result to a manifest_tables status."""
+    if validation.structural_errors:
+        return "untrusted"
     if not validation.evidence:
         return "unchecked"
     if validation.confidence < threshold:
@@ -131,9 +171,12 @@ def _coerce_all(raw: RawTable, threshold: float,
     return out
 
 
-def _label_column(raw: RawTable, cols: dict[int, CoercedColumn]) -> int:
+def label_column(raw: RawTable, numeric_columns: set[int]) -> int:
+    """Use an actual populated text column; empty title columns are not labels."""
     for idx in range(raw.n_cols):
-        if not cols[idx].is_numeric:
+        if idx not in numeric_columns and any(
+            idx < len(row) and not is_null_cell(row[idx]) for row in raw.rows
+        ):
             return idx
     return 0
 
@@ -142,48 +185,99 @@ def _total_rows(raw: RawTable, label_col: int) -> list[int]:
     hits = []
     for i, row in enumerate(raw.rows):
         cell = row[label_col] if label_col < len(row) else None
-        if cell and TOTAL_LABEL.search(str(cell)):
+        if cell and aggregate_kind(str(cell)):
             hits.append(i)
     return hits
 
 
 def _check_arithmetic_column(
-    values: list, totals: list[int], rel_tol: float, abs_tol: float
+    values: list, totals: list[int], rel_tol: float, abs_tol: float,
+    *, subtotals: set[int] | None = None,
 ) -> list[dict]:
-    """Check each total row against the line items since the previous total."""
+    """Check segments, carrying subtotals into a final total without double counting."""
     results = []
-    prev = -1
-    for t in totals:
-        expected = values[t]
-        items = [v for v in values[prev + 1 : t] if v is not None]
-        prev = t
-        if expected is None or len(items) < 2:
+    subtotals = subtotals or set()
+    total_set = set(totals)
+    segment: list[int] = []
+    completed_segments: list[int] = []
+    for t, expected in enumerate(values):
+        if t not in total_set:
+            if expected is not None:
+                segment.append(t)
             continue
-        s = sum(items)
+        rows = segment if t in subtotals else completed_segments + segment
+        segment = []
+        if t in subtotals:
+            completed_segments.append(t)
+        else:
+            completed_segments = []
+        if expected is None or len(rows) < 2:
+            continue
+        s = sum(values[i] for i in rows if values[i] is not None)
         tol = max(rel_tol * abs(expected), abs_tol)
         results.append({
             "total_row": t, "expected": expected, "sum": s,
-            "tolerance": tol, "passed": abs(s - expected) <= tol,
+            "tolerance": tol, "passed": abs(s - expected) <= tol, "rows": rows,
         })
     return results
+
+
+def _identifier_column(raw: RawTable, idx: int) -> bool:
+    return bool(_IDENTIFIER.fullmatch(raw.header[idx].strip()))
+
+
+def _non_additive_column(raw: RawTable, idx: int, col: CoercedColumn) -> str | None:
+    if _identifier_column(raw, idx):
+        return "identifier"
+    header = raw.header[idx]
+    if (_NON_ADDITIVE.search(header) or _PRICE_COLUMN.search(header)
+            or _BALANCE_SNAPSHOT.search(header) or _REMAINING_AUTHORIZATION.search(header)):
+        return "non_additive_measure"
+    percent = (col.rule and "percent" in col.rule.features) or re.search(
+        r"%|\bpercent(?:age)?\b", header, re.IGNORECASE)
+    if (percent or _YEAR.fullmatch(header.strip()) or header.strip().lower() in ("", "value")) \
+            and _NON_ADDITIVE.search(raw.caption or ""):
+        return "non_additive_measure"
+    if percent and not re.search(r"\b(share|mix|composition|allocation|distribution|proportion)\b"
+                                 r"|%\s*of\s+total\b",
+                                 header, re.IGNORECASE):
+        return "percentage_without_additive_share_semantics"
+    return None
 
 
 def check_arithmetic(raw: RawTable, cols: dict[int, CoercedColumn],
                      rel_tol: float, abs_tol: float) -> GroupResult:
     g = GroupResult()
-    label_col = _label_column(raw, cols)
+    if raw.kind == "text_lines":
+        return g
+    label_col = label_column(raw, {idx for idx, col in cols.items() if col.is_numeric})
     totals = _total_rows(raw, label_col)
+    subtotals = {i for i in totals if aggregate_kind(str(raw.rows[i][label_col])) == "subtotal"}
     for idx, col in cols.items():
         if not col.is_numeric or idx == label_col:
             continue
-        checks = _check_arithmetic_column(col.values, totals, rel_tol, abs_tol)
+        reason = _non_additive_column(raw, idx, col)
+        if reason:
+            g.details.append({"column": idx, "applicable": False, "skipped": reason})
+            continue
+        checks = _check_arithmetic_column(col.values, totals, rel_tol, abs_tol,
+                                          subtotals=subtotals)
+        applicable_checks = []
         for c in checks:
+            labels = [str(raw.rows[i][label_col] or "")
+                      for i in c["rows"] + [c["total_row"]]]
+            if any(_NON_ADDITIVE.search(label) or _BALANCE_SNAPSHOT.search(label)
+                   for label in labels):
+                g.details.append({"column": idx, "total_row": c["total_row"],
+                                  "applicable": False, "skipped": "non_additive_metric_rows"})
+                continue
+            applicable_checks.append(c)
             g.applicable += 1
             g.passed += bool(c["passed"])
             g.details.append({"column": idx, **c})
         # percent columns: items should sum to ~100 when the total row says ~100
         if col.rule and "percent" in col.rule.features:
-            for c in checks:
+            for c in applicable_checks:
                 if c["expected"] is not None and abs(c["expected"] - 100.0) <= 1.0:
                     g.applicable += 1
                     ok = abs(c["sum"] - 100.0) <= max(100 * rel_tol, abs_tol)
@@ -210,7 +304,28 @@ def check_structural(raw: RawTable, cols: dict[int, CoercedColumn]) -> GroupResu
     too_wide = [i for i, row in enumerate(raw.rows) if len(row) > raw.n_cols]
     g.passed += not too_wide
     g.details.append({"check": "grid_width", "rows_too_wide": too_wide,
-                      "passed": not too_wide})
+                      "passed": not too_wide, "blocking": True})
+
+    # A named, empty leading column in a numeric table may be a page title
+    # captured as a header (seen on the EU ledger). Blank spacer columns and
+    # text-only form layouts are not evidence of a misaligned extraction.
+    # Preserve every source column; alternate extraction is still required
+    # when the numeric/title pattern supplies evidence of a malformed grid.
+    populated = [idx for idx in range(raw.n_cols) if any(
+        idx < len(row) and not is_null_cell(row[idx]) for row in raw.rows)]
+    empty_leading = list(range(min(populated))) if populated else []
+    numeric_measures = any(
+        col.is_numeric and not _identifier_column(raw, idx)
+        for idx, col in cols.items()
+    )
+    suspicious = [idx for idx in empty_leading if raw.header[idx].strip()] \
+        if numeric_measures else []
+    g.applicable += 1
+    ok = bool(raw.header) and not suspicious
+    g.passed += ok
+    g.details.append({"check": "no_empty_leading_columns", "columns": suspicious,
+                      "retained_empty_columns": empty_leading,
+                      "passed": ok, "blocking": True})
 
     # No repeated header rows inside the body (missed multi-page merge symptom).
     g.applicable += 1
@@ -220,7 +335,8 @@ def check_structural(raw: RawTable, cols: dict[int, CoercedColumn]) -> GroupResu
         if len(row) == raw.n_cols and [_norm(c) for c in row] == header_norm
     ]
     g.passed += not repeats
-    g.details.append({"check": "no_header_repeats", "rows": repeats, "passed": not repeats})
+    g.details.append({"check": "no_header_repeats", "rows": repeats,
+                      "passed": not repeats, "blocking": True})
 
     # Monotonic date-like columns.
     for idx in range(raw.n_cols):
@@ -239,6 +355,53 @@ def _norm(cell: str | None) -> str:
     return re.sub(r"\s+", " ", (cell or "").strip().lower())
 
 
+_PROSE_CONTEXT_CHARS = 12000
+
+
+def _prose_excerpt(text: str, anchors: list[str], limit: int) -> str:
+    """Bound long pages around claim identifiers instead of dropping their tail."""
+    if len(text) <= limit:
+        return text
+    folded = text.casefold()
+    spans = []
+    for anchor in anchors:
+        anchor = anchor.strip().casefold()
+        if not anchor:
+            continue
+        start = 0
+        for _ in range(3):
+            hit = folded.find(anchor, start)
+            if hit < 0:
+                break
+            spans.append((max(0, hit - 600), min(len(text), hit + len(anchor) + 600)))
+            start = hit + len(anchor)
+    if not spans:
+        return text[:limit]
+    merged: list[tuple[int, int]] = []
+    for start, end in sorted(spans):
+        if merged and start <= merged[-1][1]:
+            merged[-1] = (merged[-1][0], max(merged[-1][1], end))
+        else:
+            merged.append((start, end))
+    return "\n[excerpt gap]\n".join(text[start:end] for start, end in merged)[:limit]
+
+
+def _prose_context(page_texts: dict[int, str], page: int, anchors: list[str]) -> str:
+    # The row's page takes priority; a long previous page must not displace
+    # the very page whose values are being checked.
+    excerpts = []
+    remaining = _PROSE_CONTEXT_CHARS
+    for p in (page, page - 1, page + 1):
+        text = page_texts.get(p, "").strip()
+        prefix = f"[Page {p}]\n"
+        if not text or remaining <= len(prefix):
+            continue
+        excerpt = prefix + _prose_excerpt(text, anchors, remaining - len(prefix))
+        excerpts.append(excerpt)
+        remaining -= len(excerpt) + 2
+    return "\n\n".join(excerpts)
+
+
 def check_prose(
     raw: RawTable,
     cols: dict[int, CoercedColumn],
@@ -247,11 +410,17 @@ def check_prose(
     k: int,
     seed: int = 0,
 ) -> GroupResult:
-    """Sampled sub-LM cross-check of numeric cells vs nearby prose (§3.3)."""
+    """Cross-check claims against independent narrative, excluding table renders.
+
+    ``page_texts`` contains prose only (the writer enforces this). Absence
+    of corroboration is not a contradiction and supplies no trust evidence.
+    """
     g = GroupResult()
+    if raw.kind == "text_lines":
+        return g
     numeric_cells = [
         (i, idx, cols[idx].values[i])
-        for idx, col in cols.items() if col.is_numeric
+        for idx, col in cols.items() if col.is_numeric and not _identifier_column(raw, idx)
         for i in range(len(raw.rows)) if cols[idx].values[i] is not None
     ]
     if not numeric_cells:
@@ -259,23 +428,46 @@ def check_prose(
     rng = random.Random(seed)
     sample = rng.sample(numeric_cells, min(k, len(numeric_cells)))
     prompts = []
+    claims = []
+    numeric_columns = {idx for idx, col in cols.items() if col.is_numeric}
     for i, idx, value in sample:
         page = raw.row_page(i)
-        context = "\n".join(
-            page_texts.get(p, "") for p in (page - 1, page, page + 1)
-        ).strip()[:12000]
+        row_labels = [str(cell) for c, cell in enumerate(raw.rows[i])
+                      if c not in numeric_columns and cell]
+        raw_value = raw.rows[i][idx]
+        context = _prose_context(
+            page_texts, page, row_labels + [str(raw_value), raw.header[idx], raw.caption or ""])
+        detail = {"row": i, "column": idx, "page": page, "value": value,
+                  "raw_value": raw_value, "row_labels": row_labels,
+                  "column_name": raw.header[idx]}
+        if not context:
+            g.details.append({**detail, "applicable": False, "skipped": "no_independent_prose"})
+            continue
+        claims.append(detail)
         prompts.append(
-            f"Document excerpt:\n{context}\n\n"
-            f"Question: Does the prose above state or imply the value {value} "
-            f"(from a table, column '{raw.header[idx]}')? Answer YES, NO, or UNCLEAR."
+            f"Independent document prose (table renderings excluded):\n{context}\n\n"
+            f"Table claim to check, not evidence: page {page}; caption {raw.caption!r}; "
+            f"row labels {row_labels!r}; column {raw.header[idx]!r}; "
+            f"raw cell {raw_value!r}; interpreted numeric value {value}; "
+            f"caption unit multiplier {caption_scale(raw.caption)}.\n"
+            "Question: Does the prose above state or imply this particular table claim? "
+            "Compare the same entity, measure, period and units; a matching number alone "
+            "does not establish agreement. Answer YES only for supporting prose; "
+            "NO only for explicit conflicting prose about the same claim; UNCLEAR if "
+            "the value is absent, the prose is unrelated, or identity/units are ambiguous. "
+            "A value appearing only in the table claim is UNCLEAR, never YES or NO. "
+            "Answer only YES, NO, or UNCLEAR."
         )
+    if not prompts:
+        return g
     answers = ask(prompts)
-    for (i, idx, value), ans in zip(sample, answers, strict=True):
+    for detail, ans in zip(claims, answers, strict=True):
         if ans is None:
+            g.details.append({**detail, "applicable": False, "skipped": "unclear_or_no_support"})
             continue  # UNCLEAR — no evidence either way
         g.applicable += 1
         g.passed += bool(ans)
-        g.details.append({"row": i, "column": idx, "value": value, "agrees": ans})
+        g.details.append({**detail, "applicable": True, "agrees": ans})
     return g
 
 
@@ -315,7 +507,7 @@ def validate_table(
     arithmetic = check_arithmetic(raw, cols, rel_tol, abs_tol)
 
     # §9 rollback: retry failing columns with the opposite style.
-    failing = {d["column"] for d in arithmetic.details if not d["passed"]}
+    failing = {d["column"] for d in arithmetic.details if d.get("passed") is False}
     if failing:
         improved = False
         for idx in failing:
@@ -333,8 +525,10 @@ def validate_table(
             trial = dict(cols)
             trial[idx] = retry
             re_arith = check_arithmetic(raw, trial, rel_tol, abs_tol)
-            before = [d for d in arithmetic.details if d.get("column") == idx and not d["passed"]]
-            after = [d for d in re_arith.details if d.get("column") == idx and not d["passed"]]
+            before = [d for d in arithmetic.details
+                      if d.get("column") == idx and d.get("passed") is False]
+            after = [d for d in re_arith.details
+                     if d.get("column") == idx and d.get("passed") is False]
             if before and not after:
                 cols[idx] = retry
                 overrides[str(idx)] = flipped

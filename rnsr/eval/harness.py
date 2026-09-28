@@ -46,17 +46,26 @@ def _corpus_for(sources: list[Path], cache_dir: Path, settings: Settings) -> Pat
 
     Cached artifacts are validated before reuse — an interrupted ingest must
     trigger a rebuild, never an empty environment (seen live)."""
+    from rnsr.ingest.cost_estimate import resolve_transcriber
     from rnsr.ingest.pipeline import ingest
 
-    h = sha256()
+    transcriber, model = resolve_transcriber(settings)
+    # Ingestion fixes and transcription settings must not reuse older artifacts
+    # that omitted pages. Keep previous caches intact for diagnosis.
+    # v3 preserves headerless first rows and checks independent prose only.
+    identity = {"version": 3, "transcribe_scans": settings.transcribe_scans,
+                "transcriber_model": model}
+    h = sha256(json.dumps(identity, sort_keys=True).encode())
     for s in sorted(sources):
-        h.update(Path(s).read_bytes())
+        source = Path(s)
+        h.update(json.dumps((str(source.resolve()), sha256(source.read_bytes()).hexdigest()))
+                 .encode())
     out = cache_dir / f"corpus_{h.hexdigest()[:16]}.db"
     if out.exists() and not _corpus_valid(out, len(sources)):
         out.unlink()
     if not out.exists():
         cache_dir.mkdir(parents=True, exist_ok=True)
-        ingest(sources, out, config=settings)
+        ingest(sources, out, config=settings, transcriber=transcriber)
     return out
 
 
@@ -65,7 +74,7 @@ def _text_corpus_for(context: str, cache_dir: Path, settings: Settings) -> Path:
     reuse the same context window)."""
     from rnsr.ingest.pipeline import ingest_text
 
-    h = sha256(context.encode()).hexdigest()[:16]
+    h = sha256(b"rnsr-text-corpus-v2\0" + context.encode()).hexdigest()[:16]
     out = cache_dir / f"corpus_text_{h}.db"
     if out.exists() and not _corpus_valid(out, n_sources=1):
         out.unlink()
@@ -156,6 +165,7 @@ async def run_eval(
 
     async def process(item: EvalItem) -> EvalResult:
         t0 = time.monotonic()
+        error_type = None
         try:
             if system in ("bm25-rag", "vector-rag", "rerank-rag", "graph-rag"):
                 async with ingest_lock:
@@ -179,6 +189,7 @@ async def run_eval(
             trajectory_path = qr.trajectory_path
             result_tier = qr.evidence.tier if getattr(qr, "evidence", None) else None
         except Exception as e:   # e.g. Docling ConversionError on one filing
+            error_type = type(e).__name__
             predicted, status = None, "error"
             ledger = {"spend_usd": 0.0, "sub_calls": 0}
             iterations, trajectory_path, result_tier = 0, None, None
@@ -205,6 +216,7 @@ async def run_eval(
             trajectory_path=trajectory_path,
             expect=getattr(item, "expect", "value"),
             tier=result_tier,
+            error_type=error_type,
         )
 
     with open(results_path, "a") as out:

@@ -5,8 +5,10 @@ import json
 import pytest
 
 from rnsr.config import Settings
+from rnsr.harness.budget import BudgetLedger
 from rnsr.harness.loop import EnvSpec, RootRunner
 from rnsr.harness.recovery import rank_candidates
+from rnsr.harness.trajectory import TrajectoryWriter
 from rnsr.llm.mock import MockLLM
 
 
@@ -23,6 +25,24 @@ CLASSIC = EnvSpec(mode="classic", context="Fact: the 2023 total was 3234. " * 50
 
 
 class TestFinalPath:
+    async def test_sub_batch_routes_explicit_model_and_records_actual_usage(self, tmp_path):
+        root = MockLLM(default="root-label")
+        sub = MockLLM(default="sub-label")
+        runner = make_runner(root, sub)
+        ledger = BudgetLedger.from_settings(runner.settings)
+        with TrajectoryWriter(tmp_path, "model-routing") as trajectory:
+            handler = runner._rpc_handlers(ledger, trajectory)["llm_batch"]
+            normal = await handler({"prompts": ["classify A"], "model": "sub"})
+            stronger = await handler({"prompts": ["classify B"], "model": "root"})
+            with pytest.raises(ValueError, match="configured sub or root"):
+                await handler({"prompts": ["classify C"], "model": "unknown-model"})
+        assert normal["results"] == ["sub-label"]
+        assert stronger["results"] == ["root-label"]
+        assert normal["response_metadata"][0]["model"] == "mock-sub"
+        assert stronger["response_metadata"][0]["model"] == "mock-root"
+        assert len(sub.calls) == len(root.calls) == 1
+        assert ledger.sub_calls == 2
+
     async def test_three_turn_trajectory(self, tmp_path):
         root = MockLLM().script(
             "```python\nprint(len(context))\n```",
@@ -134,15 +154,42 @@ class TestRecoveryRanking:
 
 
 class TestRootResilience:
-    async def test_hung_root_call_does_not_eat_wall_budget(self, tmp_path):
-        # root client hangs longer than the per-call timeout; with a tiny
-        # wall budget both attempts time out and the loop ends gracefully
-        # instead of stalling for the provider SDK's 10-minute default.
-        root = MockLLM(delay_s=3.0, default="```python\nFINAL('late')\n```")
-        result = await make_runner(root, max_wall_s=0.5).run(
+    async def test_hung_root_call_does_not_eat_wall_budget(self, tmp_path, monkeypatch):
+        import asyncio
+        from pathlib import Path
+        from types import SimpleNamespace
+        from unittest.mock import AsyncMock
+
+        from rnsr.harness.budget import BudgetLedger
+
+        # Isolate provider timeout behavior from subprocess startup and host
+        # load. The provider really waits until asyncio.timeout cancels it;
+        # only the budget clock is controlled, expiring on that cancellation.
+        started, cancelled = asyncio.Event(), asyncio.Event()
+
+        async def hang(*args, **kwargs):
+            started.set()
+            try:
+                await asyncio.Event().wait()
+            finally:
+                cancelled.set()
+
+        sandbox = SimpleNamespace(start=AsyncMock(), close=AsyncMock(), vars=AsyncMock())
+        monkeypatch.setattr("rnsr.harness.loop.SandboxedRepl", lambda **kwargs: sandbox)
+        monkeypatch.setattr(BudgetLedger, "wall_s", property(
+            lambda self: self.max_wall_s if cancelled.is_set() else 0.0))
+        root = MockLLM()
+        monkeypatch.setattr(root, "complete", hang)
+        result = await make_runner(root, max_wall_s=0.01).run(
             "q", CLASSIC, run_dir=tmp_path)
+        assert started.is_set() and cancelled.is_set()
         assert result.status == "budget_exhausted"
         assert result.breached_cap == "root_timeout"
+        assert result.answer is None
+        events = [json.loads(line) for line in Path(result.trajectory_path).read_text().splitlines()]
+        failures = [event for event in events if event["kind"] == "root_call_failed"]
+        assert len(failures) == 1 and failures[0]["error"].startswith("TimeoutError:")
+        sandbox.close.assert_awaited_once()
 
     async def test_recovery_parses_name_inside_reasoning(self, tmp_path):
         root = MockLLM(default="```python\nanswer = 3234\nllm_map(['confirm'])\n```")

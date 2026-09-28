@@ -45,11 +45,27 @@ class TestArithmetic:
     def test_subtotal_segments(self):
         v = validate_table(_table([
             ["A", "10"], ["B", "20"], ["Subtotal", "30"],
-            ["C", "5"], ["D", "5"], ["Total", "10"],
+            ["C", "5"], ["D", "5"], ["Total", "40"],
         ]))
         arith = v.checks["arithmetic"]
         assert arith.applicable == 2
         assert arith.passed == 2
+
+    def test_separate_totals_restart_groups(self):
+        v = validate_table(_table([
+            ["A", "10"], ["B", "20"], ["Total", "30"],
+            ["C", "5"], ["D", "5"], ["Total", "10"],
+        ]))
+        assert v.checks["arithmetic"].applicable == v.checks["arithmetic"].passed == 2
+
+    def test_subtotal_then_adjustment_checks_grand_total(self):
+        rows = [["A", "1234.5"], ["B", "800"], ["Subtotal", "2034.5"],
+                ["Adjustment", "-34.5"], ["Total", "2000"]]
+        good = validate_table(_table(rows)).checks["arithmetic"]
+        assert good.applicable == good.passed == 2
+        rows[-1][1] = "2034.5"
+        bad = validate_table(_table(rows)).checks["arithmetic"]
+        assert bad.applicable == 2 and bad.passed == 1
 
     def test_no_total_rows_not_applicable(self):
         v = validate_table(_table([["A", "10"], ["B", "20"]]))
@@ -87,6 +103,12 @@ class TestStyleRollback:
 
 
 class TestStructural:
+    def test_empty_table_with_declared_columns_is_not_malformed(self):
+        from rnsr.ingest.validate import assign_table_status
+        v = validate_table(_table([]))
+        assert not v.structural_errors
+        assert assign_table_status(v, 0.7) == "unchecked"
+
     def test_repeated_header_in_body_flagged(self):
         v = validate_table(_table([
             ["A", "1"],
@@ -155,3 +177,78 @@ class TestProse:
     def test_skipped_without_checker(self):
         v = validate_table(_table([["A", "1"], ["B", "2"], ["Total", "3"]]))
         assert v.checks["prose"].applicable == 0
+
+
+class TestApplicability:
+    def test_account_balances_and_price_adjustment_amounts_remain_additive(self):
+        for header, rows in [
+            (["Account", "Balance"], [["Cash", "10"], ["Savings", "20"], ["Total", "30"]]),
+            (["Component", "Amount"], [["Asset cost", "100"],
+                                       ["Purchase price adjustment", "-10"], ["Total", "90"]]),
+            (["Item", "Total price"], [["A", "100"], ["B", "200"], ["Total", "300"]]),
+        ]:
+            raw = _table(rows, header=header)
+            good = validate_table(raw).checks["arithmetic"]
+            assert good.applicable == good.passed == 1
+            raw.rows[-1][-1] = "999"
+            bad = validate_table(raw).checks["arithmetic"]
+            assert bad.applicable == 1 and bad.passed == 0
+
+    def test_rollforward_balance_snapshots_are_not_summed(self):
+        raw = _table([["Opening balance", "100"], ["Cash movement", "20"],
+                      ["Closing balance", "120"], ["Total", "120"]])
+        assert validate_table(raw).checks["arithmetic"].applicable == 0
+
+    def test_prices_balances_and_identifiers_are_not_summed(self):
+        raw = _table([
+            ["Jan", "1", "10", "3.50", "100"],
+            ["Feb", "2", "20", "4.00", "80"],
+            ["Total", "3", "30", "3.83", "80"],
+        ], header=["Month", "Record ID", "Shares purchased", "Average price", "Remaining balance"])
+        arithmetic = validate_table(raw).checks["arithmetic"]
+        assert arithmetic.applicable == arithmetic.passed == 1
+        assert {x["column"] for x in arithmetic.details if x.get("passed") is not None} == {2}
+        raw.rows[-1][2] = "999"
+        bad = validate_table(raw).checks["arithmetic"]
+        assert bad.applicable == 1 and bad.passed == 0
+
+    def test_growth_rates_are_not_shares(self):
+        v = validate_table(_table([["A", "10%"], ["B", "20%"], ["Total", "15%"]],
+                                  header=["Segment", "Organic growth %"]))
+        assert v.checks["arithmetic"].applicable == 0
+
+    def test_remaining_repurchase_authorization_is_a_snapshot(self):
+        v = validate_table(_table([["April", "100"], ["May", "80"], ["Total May", "80"]],
+                                  header=["Period", "Maximum Approximate Dollar Value of Shares "
+                                          "that May Yet Be Purchased under the Plans or Programs"]))
+        assert v.checks["arithmetic"].applicable == 0
+
+    def test_total_may_is_a_date_label_not_a_prose_modal(self):
+        v = validate_table(_table([["A", "10"], ["B", "20"], ["Total May 2018", "30"]]))
+        assert v.checks["arithmetic"].applicable == v.checks["arithmetic"].passed == 1
+
+    def test_mixed_metric_summary_is_not_an_assets_checksum(self):
+        v = validate_table(_table([
+            ["Net sales", "32765"], ["Net income", "5349"],
+            ["Earnings per share", "8.89"], ["Dividends per 3M common share", "5.44"],
+            ["Total assets", "36500"],
+        ], header=["Metric", "2018"]))
+        assert v.checks["arithmetic"].applicable == 0
+
+    def test_exhibit_identifiers_do_not_generate_numeric_prose_questions(self):
+        def ask(_):
+            raise AssertionError("Identifiers are not quantities")
+        v = validate_table(_table([["4.1", "Agreement A"], ["4.2", "Agreement B"]],
+                                  header=["Exhibit", "Description"]), prose_checker=ask)
+        assert v.checks["prose"].applicable == 0
+
+    def test_structural_failure_cannot_be_trusted_by_passing_prose(self):
+        from rnsr.ingest.validate import assign_table_status
+        raw = _table([[None, "Rent", "1234.5"], [None, "Power", "800"],
+                      [None, "Subtotal", "2034.5"], [None, "Adjustment", "-34.5"],
+                      [None, "Total", "2000"]],
+                     header=["NORDIC GmbH", "Ledger Konto", "Extract Betrag"])
+        v = validate_table(raw, prose_checker=lambda ps: [True] * len(ps))
+        assert v.checks["arithmetic"].applicable == v.checks["arithmetic"].passed == 2
+        assert v.structural_errors
+        assert assign_table_status(v, 0.7) == "untrusted"

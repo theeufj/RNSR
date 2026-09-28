@@ -131,7 +131,8 @@ class TestBuildDataTable:
 
 class TestMultipageMerge:
     def _fragment(self, page, rows):
-        return RawTable(page=page, header=["Item", "Amount"], rows=rows, extractor="docling")
+        return RawTable(page=page, header=["Item", "Amount"], rows=rows, extractor="docling",
+                        caption="Revenue" if page == 1 else "Revenue (continued)")
 
     def test_merges_consecutive_repeated_headers(self):
         parts = [
@@ -181,3 +182,47 @@ class TestMultipageMerge:
         ).fetchall()
         assert rows == [("A", 1, 1), ("B", 1, 1), ("C", 2, 2)]
         assert (built.page_start, built.page_end) == (1, 2)
+
+    def test_uncaptioned_and_same_page_tables_stay_separate(self):
+        for pages, captions in [((1, 2), (None, None)),
+                                 ((1, 1), ("Revenue", "Revenue (continued)")),
+                                 ((1, 2), ("Original revenue", "Restated revenue (continued)"))]:
+            parts = [RawTable(page=p, header=["Item", "Amount"], rows=[["A", str(i)]], caption=c)
+                     for i, (p, c) in enumerate(zip(pages, captions, strict=True))]
+            assert len(merge_multipage(parts)) == 2
+
+    def test_matching_named_adjacent_fragments_need_no_continued_marker(self):
+        first = self._fragment(1, [["A", "10"]])
+        second = self._fragment(2, [["B", "20"]])
+        first.caption = second.caption = "Revenue"
+        assert len(merge_multipage([first, second])) == 1
+
+    def test_explicit_continuation_preserves_each_row_origin(self, conn):
+        first = RawTable(page=1, header=["Item", "Amount"], rows=[["A", "1"]],
+                         bbox=(1, 2, 3, 4), caption="Revenue", extractor="docling")
+        second = RawTable(page=2, header=first.header, rows=[["B", "2"]],
+                          bbox=None, caption="Revenue (continued)", extractor="vision")
+        combined = merge_multipage([first, second])[0]
+        assert first.rows == [["A", "1"]] and first.row_pages is None
+        assert combined.row_bbox(1) is None
+        assert combined.row_extractor(1) == "vision"
+        built = build_data_table(conn, "doc1", 1, combined)
+        rows = conn.execute(f'SELECT _page, _bbox, _extractor FROM "{built.name}"').fetchall()
+        assert rows == [(1, "[1, 2, 3, 4]", "docling"), (2, "[]", "vision")]
+        assert built.extractor == "mixed"
+
+    def test_explicit_unknown_row_bbox_does_not_inherit_table_bbox(self):
+        table = RawTable(page=1, header=["Item"], rows=[["A"]],
+                         bbox=(1, 2, 3, 4), row_bboxes=[None])
+        assert table.row_bbox(0) is None
+
+
+def test_aggregate_labels_after_phantom_empty_column(conn):
+    table = RawTable(page=1, header=["NORDIC GmbH", "Ledger Konto", "Extract Betrag"],
+                     rows=[[None, "Rent", "100"], [None, "Power", "20"],
+                           [None, "Subtotal", "120"], [None, "Adjustment", "-5"],
+                           [None, "Total", "115"]])
+    built = build_data_table(conn, "doc1", 1, table)
+    assert (built.n_data_rows, built.n_total_rows) == (3, 2)
+    assert conn.execute(f'SELECT SUM(extract_betrag) FROM "{built.name}" '
+                        "WHERE _row_kind='data'").fetchone()[0] == 115

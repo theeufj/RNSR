@@ -39,6 +39,12 @@ def test_env_overrides(monkeypatch, tmp_path):
     assert s.root_model == "claude-sonnet-4-6"
 
 
+def test_explicit_dotenv_file(tmp_path):
+    dotenv_path = tmp_path / ".env"
+    dotenv_path.write_text("RNSR_MAX_ROOT_ITERS=7\n")
+    assert Settings.from_env(dotenv_path).max_root_iters == 7
+
+
 def test_legacy_provider_env(monkeypatch, tmp_path):
     monkeypatch.chdir(tmp_path)
     monkeypatch.delenv("RNSR_PROVIDER", raising=False)

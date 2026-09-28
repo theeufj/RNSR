@@ -15,6 +15,9 @@ from collections.abc import Iterator, Mapping
 
 class LazyDoc(Mapping):
     def __init__(self, conn: sqlite3.Connection, cache_size: int = 32):
+        from rnsr.env.evidence import SourceContext
+
+        self.context = SourceContext(conn, self)
         self._conn = conn
         self._cache: OrderedDict[str, str] = OrderedDict()
         self._cache_size = cache_size

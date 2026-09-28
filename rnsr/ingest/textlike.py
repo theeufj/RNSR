@@ -265,12 +265,15 @@ def parse_html(path: str | Path, doc_id: str | None = None) -> ParsedDocument:
 
 
 def parse_image(path: str | Path, doc_id: str | None = None) -> ParsedDocument:
-    """Standalone scan: no text layer, flagged for VLM transcription."""
+    """Image frames have no text layer; flag every page for transcription."""
+    from PIL import Image
+
     path = Path(path)
     parsed = _document(path, doc_id, "image")
     parsed.content_sha256 = parsed.sha256
-    parsed.scanned_pages = [1]
-    parsed.n_pages = 1
+    with Image.open(path) as image:
+        parsed.n_pages = getattr(image, "n_frames", 1)
+    parsed.scanned_pages = list(range(1, parsed.n_pages + 1))
     return parsed
 
 

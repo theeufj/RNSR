@@ -4,7 +4,8 @@ Every miss is assigned exactly one cause so engineering effort lands
 where accuracy is actually lost:
 
   gold       reviewer marked the gold itself as wrong
-  budget     the loop never produced a `final` (exhausted / recovered / error)
+  budget     the loop exhausted a budget or recovered without a final
+  execution  setup/provider/runtime failed without a completed answer
   format     substance matches after normalisation; the string form does not
   ingest     the gold's document, page, or table never made it into the artifact
   retrieval  the gold evidence was in the artifact but never surfaced to the loop
@@ -20,9 +21,9 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
 from rnsr.eval.metrics import EvalResult, as_number, normalize_answer, score_answer
-from rnsr.harness.trajectory import read_trajectory
+from rnsr.harness.trajectory import read_trajectory, trajectory_stem
 
-CAUSES = ("gold", "budget", "format", "ingest", "retrieval", "reasoning")
+CAUSES = ("gold", "budget", "format", "ingest", "retrieval", "reasoning", "execution")
 
 _LABEL_PREFIX = re.compile(
     r"^(?:answer|label|the answer is|final answer)\s*[:\-]\s*", re.I)
@@ -171,6 +172,7 @@ def _health_blocks_gold(meta: dict, health: dict | None,
     exposure = meta.get("exposure") or ""
 
     failed = health.get("parse_failed") or []
+    failed = failed if isinstance(failed, list) else []
     failed_ids = {str(x.get("doc_id") or x.get("source") or x) for x in failed} \
         if failed and isinstance(failed[0], dict) else {str(x) for x in failed}
     if gold_doc and any(gold_doc in x or x in gold_doc for x in failed_ids):
@@ -179,6 +181,7 @@ def _health_blocks_gold(meta: dict, health: dict | None,
     untranscribed = health.get("scanned_pages_untranscribed") or []
     if exposure == "scanned_page" and untranscribed:
         return "gold depends on a scanned page that was not transcribed"
+    untranscribed = untranscribed if isinstance(untranscribed, list) else []
     if gold_doc and gold_page is not None:
         for entry in untranscribed:
             if isinstance(entry, dict):
@@ -238,8 +241,14 @@ def classify_miss(
         cause, reason = "ok", "answer agrees with gold"
     elif reviewer_mark and reviewer_mark.strip().lower() in _GOLD_ERROR:
         cause, reason = "gold", "reviewer marked the gold as wrong"
-    elif result.status not in ("final",):
+    elif result.status == "error" and (
+            result.error_type in {"CorpusHealthError", "IngestError", "TableValidationError"}
+            or (health or {}).get("grade") == "blocked"):
+        cause, reason = "ingest", f"corpus preparation blocked answering ({result.error_type or 'blocked health'})"
+    elif result.status in ("budget_exhausted", "recovered"):
         cause, reason = "budget", f"loop status is {result.status!r}, not final"
+    elif result.status != "final":
+        cause, reason = "execution", f"execution failed ({result.error_type or result.status})"
     elif format_only_miss(result.predicted, result.gold):
         cause, reason = "format", "normalised / tie-set match; string form differs"
     else:
@@ -328,11 +337,18 @@ def _find_trajectory(run_dir: Path, qid: str, result: EvalResult) -> Path | None
         alt = run_dir / result.trajectory_path
         if alt.exists():
             return alt
+    stems = [trajectory_stem(qid)]
+    # Older runs used readable mixed-case IDs; retain safe basename lookup,
+    # without interpreting a dataset ID as a relative or absolute path.
+    if (qid and len(qid.encode("utf-8")) <= 180 and qid not in {".", ".."}
+            and not any(c in qid for c in ("/", "\\", "\0"))):
+        stems.append(qid)
     for folder in (run_dir / "trajectories", run_dir):
-        for suffix in (".jsonl", ".jsonl.enc"):
-            candidate = folder / f"{qid}{suffix}"
-            if candidate.exists():
-                return candidate
+        for stem in stems:
+            for suffix in (".jsonl", ".jsonl.enc"):
+                candidate = folder / f"{stem}{suffix}"
+                if candidate.is_file() and candidate.resolve().parent == folder.resolve():
+                    return candidate
     return None
 
 

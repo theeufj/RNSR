@@ -41,8 +41,8 @@ class _NormalizedDoc:
                 self.offsets.append(i)
         self.text = "".join(chars)
 
-    def find(self, needle: str) -> tuple[int, int] | None:
-        i = self.text.find(needle)
+    def find(self, needle: str, start: int = 0) -> tuple[int, int] | None:
+        i = self.text.find(needle, start)
         if i < 0:
             return None
         j = i + len(needle) - 1
@@ -105,32 +105,50 @@ class Verifier:
             self._cache[doc_id] = _NormalizedDoc(self._doc[doc_id], self._check_deadline)
         return self._cache[doc_id]
 
-    def verify(self, answer: str, quotes: list[str]) -> dict:
-        """-> {"passed": bool, "quotes": [{quote, matched, doc_id, char_start,
-        char_end}...]}. Passes only if every quote matches somewhere."""
+    def verify(self, answer: str, quotes: list[str], *, doc_id: str | None = None) -> dict:
+        """Check lexical occurrence, optionally restricted to one source document.
+
+        Context and bounded alternative matches make source ambiguity visible;
+        ``passed`` alone does not establish that a quote supports the answer's
+        entity, date, property, or polarity.
+        """
         if isinstance(quotes, str):
             quotes = [quotes]
         results = []
         for quote in quotes:
             self._check_deadline()
-            needle = _normalize_needle(str(quote))
-            hit = None
+            needle = _normalize_needle(str(quote), self._check_deadline)
+            matches = []
             if needle:
                 self._ensure_index()
-                row = self._index.execute(
-                    "SELECT doc_id FROM normalized WHERE instr(text, ?) > 0 LIMIT 1",
-                    (needle,)).fetchone()
-                if row:
-                    doc_id = row[0]
-                    span = self._norm_doc(doc_id).find(needle)
-                    if span:
-                        hit = {"doc_id": doc_id, "char_start": span[0],
-                               "char_end": span[1]}
+                sql = 'SELECT doc_id FROM normalized WHERE instr(text, ?) > 0'
+                params = [needle]
+                if doc_id is not None:
+                    sql += ' AND doc_id=?'
+                    params.append(doc_id)
+                rows = self._index.execute(sql + ' ORDER BY doc_id LIMIT 9', params)
+                for row in rows:
+                    source_id = row[0]
+                    normalized = self._norm_doc(source_id)
+                    offset = normalized.text.find(needle)
+                    while offset >= 0 and len(matches) < 9:
+                        start = normalized.offsets[offset]
+                        end = normalized.offsets[offset + len(needle) - 1] + 1
+                        hit = {'doc_id': source_id, 'char_start': start, 'char_end': end}
+                        context = getattr(self._doc, 'context', None)
+                        if context is not None:
+                            hit['source_context'] = context(source_id, char_start=start, char_end=end)
+                        matches.append(hit)
+                        offset = normalized.text.find(needle, offset + 1)
+                    if len(matches) >= 9:
+                        break
             self._check_deadline()
-            results.append({"quote": str(quote), "matched": hit is not None,
-                            **(hit or {})})
+            results.append({'quote': str(quote), 'matched': bool(matches),
+                            **(matches[0] if matches else {}),
+                            'matches': matches[:8], 'matches_truncated': len(matches) > 8})
         return {
-            "passed": bool(results) and all(r["matched"] for r in results),
-            "answer": str(answer),
-            "quotes": results,
+            'passed': bool(results) and all(r['matched'] for r in results),
+            'answer': str(answer),
+            'quotes': results,
+            'check': 'lexical_source_match',
         }

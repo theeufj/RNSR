@@ -1,0 +1,149 @@
+{
+  "description": "Exact public CUAD shadow-review provider responses from 2026-09-23. Expected verdicts test parsing only, not correctness or legal interpretation; no benchmark gold included.",
+  "cases": [
+    {
+      "case": "01-cuad-a18ca96f",
+      "model": "claude-haiku-4-5",
+      "response_text": "```json\n{\n  \"reviews\": [\n    {\n      \"field_id\": \"f0\",\n      \"verdict\": \"supported\",\n      \"evidence_ids\": [\"f0q0m0\", \"f0q1m0\"],\n      \"reason\": \"Evidence f0q0m0 establishes that Section 2.1(a) grants MMT a license under 'SIGA Intellectual Property.' Evidence f0q1m0 directly supports the answer's core claim by showing that the definitions of SIGA Know-How, Patents, and Trademarks explicitly include intellectual property 'Controlled by SIGA or its Affiliates as of the Effective Date,' confirming the license grant includes affiliate-controlled intellectual property, not just SIGA's own IP.\"\n    }\n  ]\n}\n```",
+      "response_sha256": "584645981680cc1799b146cc539dcd007b1bf7dc4105ac77df46b65a2f2af517",
+      "field_id": "f0",
+      "available_evidence_ids": [
+        "f0q0m0",
+        "f0q1m0"
+      ],
+      "expected_verdict": "supported",
+      "expected_evidence_ids": [
+        "f0q0m0",
+        "f0q1m0"
+      ]
+    },
+    {
+      "case": "02-cuad-39bfbbaf",
+      "model": "claude-haiku-4-5",
+      "response_text": "```json\n{\n  \"reviews\": [\n    {\n      \"field_id\": \"f0\",\n      \"verdict\": \"contradicted\",\n      \"evidence_ids\": [\"f0q0m0\", \"f0q1m0\"],\n      \"reason\": \"The answer characterizes the non-competition and non-solicitation clauses as 'exclusivity-related clauses,' but the question specifically defines exclusivity as exclusive dealing commitments (procuring all requirements from one party, prohibitions on licensing/selling to third parties, or prohibitions on collaborating with other parties). The provided evidence shows non-compete and non-solicit restrictions, which are restrictive covenants but do not constitute exclusive dealing commitments as defined. Non-compete and non-solicit clauses restrict the seller's own activities post-closing; they do not create an affirmative exclusive dealing relationship where one party commits to procure exclusively from the other or prohibits the buyer from working with competitors. The answer mischaracterizes the nature of these clauses relative to the exclusivity definition supplied.\"\n    }\n  ]\n}\n```",
+      "response_sha256": "1ef7982c7ff5930deab00fc408a78fb4a48813a9e351f904e3bdacffc40cee7f",
+      "field_id": "f0",
+      "available_evidence_ids": [
+        "f0q0m0",
+        "f0q1m0"
+      ],
+      "expected_verdict": "contradicted",
+      "expected_evidence_ids": [
+        "f0q0m0",
+        "f0q1m0"
+      ]
+    },
+    {
+      "case": "03-cuad-2f873622",
+      "model": "claude-haiku-4-5",
+      "response_text": "```json\n{\n  \"reviews\": [\n    {\n      \"field_id\": \"f0\",\n      \"verdict\": \"supported\",\n      \"evidence_ids\": [\"f0q0m0\"],\n      \"reason\": \"The evidence directly supports the answer's identification of Section 7.3 as relevant to IP ownership. The quoted text confirms that new Patents or Trademarks filed/registered by SIGA become SIGA property (deemed 'SIGA Patent' or 'SIGA Trademark') and are subject to rights granted to MMT under Section 2.1. This establishes the contractual mechanism by which IP created by one party (SIGA) becomes subject to counterparty (MMT) rights, matching the question's scope regarding IP ownership assignment and rights transfer upon creation events.\"\n    }\n  ]\n}\n```",
+      "response_sha256": "7fa6e4a8af9304b0f972b9051dac18bc0ed2df9276b220e939e8115b0afe121a",
+      "field_id": "f0",
+      "available_evidence_ids": [
+        "f0q0m0"
+      ],
+      "expected_verdict": "supported",
+      "expected_evidence_ids": [
+        "f0q0m0"
+      ]
+    },
+    {
+      "case": "04-cuad-d44845ff",
+      "model": "claude-haiku-4-5",
+      "response_text": "```json\n{\n  \"reviews\": [\n    {\n      \"field_id\": \"f0\",\n      \"verdict\": \"supported\",\n      \"evidence_ids\": [\"f0q0m0\"],\n      \"reason\": \"The provided evidence directly quotes the exact answer text, which contains a date specification (February 20, 2020) in an 'IN WITNESS WHEREOF' attestation clause. This clause establishes when the agreement is executed and thus relates to the effective date of the contract, making it appropriate content for lawyer review regarding contract effectiveness.\"\n    }\n  ]\n}\n```",
+      "response_sha256": "af8bd73b5261bb2549fa135d39700acfcfa16ff20a07da72dcbd0fa39468ad40",
+      "field_id": "f0",
+      "available_evidence_ids": [
+        "f0q0m0"
+      ],
+      "expected_verdict": "supported",
+      "expected_evidence_ids": [
+        "f0q0m0"
+      ]
+    },
+    {
+      "case": "05-cuad-7273fd15",
+      "model": "claude-haiku-4-5",
+      "response_text": "```json\n{\n  \"reviews\": [\n    {\n      \"field_id\": \"f0\",\n      \"verdict\": \"supported\",\n      \"evidence_ids\": [\"f0q0m0\"],\n      \"reason\": \"The evidence directly supports the answer's identification of a non-compete restriction. Section 2.3 explicitly prohibits MMT from commercializing competing products in the defined Field within the Territory during the Term. The evidence also confirms the material qualification that the restriction does not apply to MMT's Affiliates, including Pfizer. The answer accurately reflects the geographic (Territory), business/technology (Field, Competing Product), and temporal (Term) scope of the restriction as stated in the contract excerpt.\"\n    }\n  ]\n}\n```",
+      "response_sha256": "c0cf924c8fe3c43515e1f453d3d02b4deacec3c9c325a8c0ad96a6ec73478dcd",
+      "field_id": "f0",
+      "available_evidence_ids": [
+        "f0q0m0"
+      ],
+      "expected_verdict": "supported",
+      "expected_evidence_ids": [
+        "f0q0m0"
+      ]
+    },
+    {
+      "case": "06-cuad-78569d97",
+      "model": "claude-haiku-4-5",
+      "response_text": "```json\n{\n  \"reviews\": [\n    {\n      \"field_id\": \"f0\",\n      \"verdict\": \"supported\",\n      \"evidence_ids\": [\"f0q0m0\"],\n      \"reason\": \"The provided evidence directly supports the answer's core claim that the contract does not include a maximum dollar amount cap on liability or a time limitation for bringing claims. The quoted Section 9.5 excerpt addresses exclusions of damage types (indirect, consequential, special, punitive, etc.) but contains no language establishing a monetary cap or temporal deadline for claims. The answer accurately identifies what the clause does (exclude certain damage categories with exceptions) and what it does not contain (dollar amount cap or time limitation), both of which are directly verifiable from the supplied evidence.\"\n    }\n  ]\n}\n```",
+      "response_sha256": "b92ac7fee924affc6522c6eb3d787e9c50eeb8e51ea489d2f2783c6d4cf8dba9",
+      "field_id": "f0",
+      "available_evidence_ids": [
+        "f0q0m0"
+      ],
+      "expected_verdict": "supported",
+      "expected_evidence_ids": [
+        "f0q0m0"
+      ]
+    },
+    {
+      "case": "07-cuad-4184ad90",
+      "model": "claude-haiku-4-5",
+      "response_text": "```json\n{\n  \"reviews\": [\n    {\n      \"field_id\": \"f0\",\n      \"verdict\": \"supported\",\n      \"evidence_ids\": [\"f0q0m0\"],\n      \"reason\": \"The provided evidence directly quotes the contract's opening clause identifying the agreement date as May 31, 2019, designated as the 'Effective Date'. This excerpt fully addresses the requested contract date information.\"\n    }\n  ]\n}\n```",
+      "response_sha256": "c21e93b760692bead601bf4020ae9930b30ace183a73bc5aa3f60032fc3af202",
+      "field_id": "f0",
+      "available_evidence_ids": [
+        "f0q0m0"
+      ],
+      "expected_verdict": "supported",
+      "expected_evidence_ids": [
+        "f0q0m0"
+      ]
+    },
+    {
+      "case": "08-cuad-1949a165",
+      "model": "claude-haiku-4-5",
+      "response_text": "```json\n{\n  \"reviews\": [\n    {\n      \"field_id\": \"f0\",\n      \"verdict\": \"supported\",\n      \"evidence_ids\": [\"f0q0m0\"],\n      \"reason\": \"The provided evidence directly quotes the contract language identifying the Effective Date as November 20, 2007. The answer correctly highlights the relevant contractual language specifying when the agreement becomes effective, which is precisely what the question requests for lawyer review.\"\n    }\n  ]\n}\n```",
+      "response_sha256": "587a010181320c9c6d082fb32369591742d7f31d483cc82b53ca86beea523e82",
+      "field_id": "f0",
+      "available_evidence_ids": [
+        "f0q0m0"
+      ],
+      "expected_verdict": "supported",
+      "expected_evidence_ids": [
+        "f0q0m0"
+      ]
+    },
+    {
+      "case": "09-cuad-89841b69",
+      "model": "claude-haiku-4-5",
+      "response_text": "```json\n{\n  \"reviews\": [\n    {\n      \"field_id\": \"f0\",\n      \"verdict\": \"insufficient\",\n      \"evidence_ids\": [\"f0q0m0\"],\n      \"reason\": \"The provided excerpt addresses exclusion of representations and warranties (Section 8.5), but does not establish the duration of any warranty. The clause explicitly disclaims warranties rather than defining their temporal scope. To answer the warranty duration question, evidence would need to identify an affirmative warranty provision and specify its time period. The absence of warranty duration language in this disclaimer section does not confirm whether such a clause exists elsewhere in the contract.\"\n    }\n  ]\n}\n```",
+      "response_sha256": "6fd0403f8ad1f8f7c29e30a558888dba4106f874610f8ed70c512500ea76ecc2",
+      "field_id": "f0",
+      "available_evidence_ids": [
+        "f0q0m0"
+      ],
+      "expected_verdict": "insufficient",
+      "expected_evidence_ids": [
+        "f0q0m0"
+      ]
+    },
+    {
+      "case": "10-cuad-8d2f50b3",
+      "model": "claude-haiku-4-5",
+      "response_text": "```json\n{\n  \"reviews\": [\n    {\n      \"field_id\": \"f0\",\n      \"verdict\": \"supported\",\n      \"evidence_ids\": [\"f0q0m0\"],\n      \"reason\": \"The provided excerpt is a Joint Filing Agreement under Rule 13d-1(k) of the Securities Exchange Act of 1934. The document contains no governing law clause specifying which state or country's law governs interpretation of the contract. The excerpt shows only the filing agreement confirmation language and does not reference any governing law provision. The answer 'No such clause.' is supported by the absence of such language in the supplied evidence.\"\n    }\n  ]\n}\n```",
+      "response_sha256": "999a04461c122f81a3f75e8feec1d2f31ef3b4e0c6ffd0fa7751826c5e39fe7f",
+      "field_id": "f0",
+      "available_evidence_ids": [
+        "f0q0m0"
+      ],
+      "expected_verdict": "supported",
+      "expected_evidence_ids": [
+        "f0q0m0"
+      ]
+    }
+  ]
+}

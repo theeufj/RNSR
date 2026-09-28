@@ -29,6 +29,7 @@ class EvalResult:
     cause: str | None = None    # miss cause from rnsr.eval.autopsy; None if correct
     tier: str | None = None     # trust tier from AnswerEvidence; None if unknown
     retrieval_hit: bool | None = None  # gold doc appeared in any search/open
+    error_type: str | None = None      # preserve setup failure class for autopsy
 
     def to_dict(self) -> dict:
         return asdict(self)

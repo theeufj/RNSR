@@ -10,7 +10,7 @@ import pytest
 
 from rnsr.db.artifact import CorpusDB
 from rnsr.ingest.model import Element, ParsedDocument, RawTable
-from rnsr.ingest.pipeline import ingest
+from rnsr.ingest.pipeline import ingest, ingest_text
 
 
 def _fake_parse(path):
@@ -152,3 +152,97 @@ class TestAtomicity:
         assert out.exists()
         assert report.out_db == str(out)
         assert not out.with_suffix(".db.ingesting").exists()
+
+
+def test_plain_text_total_mentions_preserve_all_lines_and_healthy_corpus(tmp_path):
+    text = "First clause.\nSecond clause.\nThird clause.\nTotal payments are due monthly."
+    out = tmp_path / "lines.db"
+    ingest_text({"agreement": text}, out)
+    with CorpusDB(out, mode="rw") as corpus:
+        from rnsr.ingest.health import load_health
+        assert load_health(corpus).grade == "ok"
+        table = corpus.manifest_dict()["tables"][0]["table_name"]
+        rows = corpus.conn.execute(f'SELECT line_no, text, _row_kind FROM "{table}"').fetchall()
+        assert [tuple(row) for row in rows] == [(i, line, "data")
+                                                for i, line in enumerate(text.splitlines(), 1)]
+        status, checks = corpus.conn.execute(
+            "SELECT status, checks_json FROM manifest_tables").fetchone()
+        import json
+        assert status == "unchecked"
+        assert json.loads(checks)["arithmetic"]["applicable"] == 0
+        with pytest.raises(sqlite3.IntegrityError, match="immutable"):
+            corpus.conn.execute(f'UPDATE "{table}" SET text="changed"')
+
+
+def test_malformed_ledger_forces_fallback_even_when_prose_passes(tmp_path, monkeypatch):
+    from rnsr.config import Settings
+    from rnsr.ingest.pipeline import _extract_best_table
+
+    clean = RawTable(page=1, header=["Konto", "Betrag"], extractor="pdfplumber",
+                     rows=[["Rent", "1234.5"], ["Power", "800"], ["Subtotal", "2034.5"],
+                           ["Adjustment", "-34.5"], ["Total", "2000"]])
+    bad = RawTable(page=1, header=["NORDIC GmbH", "Ledger Konto", "Extract Betrag"],
+                   rows=[[None, *row] for row in clean.rows])
+    calls = []
+
+    def alternate(path, current, *, target, vision):
+        calls.append(target)
+        return clean
+
+    monkeypatch.setattr("rnsr.ingest.pipeline.reextract", alternate)
+    chosen, validation, status, attempts = _extract_best_table(
+        tmp_path / "ledger.pdf", bad, Settings(), lambda ps: [True] * len(ps), None, {})
+    assert calls == [bad]
+    assert chosen.header == ["Konto", "Betrag"]
+    assert not validation.structural_errors and status == "reextracted"
+    assert len(attempts) == 2
+
+
+def test_multipage_failed_total_cannot_be_replaced_by_one_page(tmp_path, monkeypatch):
+    from rnsr.config import Settings
+    from rnsr.ingest.pipeline import _extract_best_table
+
+    original = RawTable(page=1, header=["Item", "Amount"],
+                        rows=[["A", "10"], ["B", "20"], ["Total", "999"]],
+                        row_pages=[1, 2, 2])
+
+    def forbidden(*args, **kwargs):
+        raise AssertionError("A single-page fallback must not replace a multipage grid")
+
+    monkeypatch.setattr("rnsr.ingest.pipeline.reextract", forbidden)
+    chosen, _, status, attempts = _extract_best_table(
+        tmp_path / "multi.pdf", original, Settings(), None, None, {})
+    assert chosen is original and len(chosen.rows) == 3
+    assert status == "untrusted" and len(attempts) == 1
+
+
+def test_reextracted_grid_controls_stored_schema_coercion_and_provenance(tmp_path, monkeypatch):
+    import json
+
+    original = RawTable(page=1, header=["Phantom title", "Label", "Value"],
+                        rows=[[None, "A", "1.234,50"], [None, "B", "800,00"],
+                              [None, "Total", "2.034,50"]], bbox=(1, 2, 30, 40))
+    replacement = RawTable(page=1, header=["Account name", "Amount (EUR)"],
+                           rows=[row[1:] for row in original.rows],
+                           bbox=(5, 6, 20, 30), extractor="pdfplumber")
+    monkeypatch.setattr("rnsr.ingest.pipeline.reextract",
+                        lambda *args, **kwargs: replacement)
+    parsed = ParsedDocument(doc_id="ledger", source_path="ledger.pdf", sha256="a" * 64,
+                            parser="test", n_pages=1, tables=[original],
+                            elements=[Element("text", "Ledger", 1)])
+    out = tmp_path / "ledger.db"
+    report = ingest([tmp_path / "ledger.pdf"], out, parse=lambda _: parsed)
+    assert report.tables[0].status == "reextracted"
+    with CorpusDB(out) as corpus:
+        meta = corpus.manifest_dict()["tables"][0]
+        assert [c["name"] for c in meta["schema"]] == ["account_name", "amount_eur"]
+        numeric = meta["schema"][1]
+        assert numeric["raw_col"] == "amount_eur__raw"
+        assert numeric["coercion_rule"]["style"] == "eu"
+        rows = corpus.conn.execute(
+            "SELECT amount_eur, amount_eur__raw, _page, _bbox, _extractor, _row_kind "
+            "FROM t_ledger_001 ORDER BY rowid").fetchall()
+        assert rows[0][0:3] == (1234.5, "1.234,50", 1)
+        assert json.loads(rows[0][3]) == [5, 6, 20, 30]
+        assert rows[0][4:] == ("pdfplumber", "data")
+        assert rows[-1][-1] == "total"

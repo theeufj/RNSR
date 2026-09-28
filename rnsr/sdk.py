@@ -23,6 +23,7 @@ provider resolution — pass it as ``runner=``.
 from __future__ import annotations
 
 import asyncio
+import copy
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -106,14 +107,22 @@ def make_runner(settings: Settings | None = None) -> RootRunner:
 
 
 def corpus_env(corpus_db: str | Path, *,
-               settings: Settings | None = None) -> EnvSpec:
+               settings: Settings | None = None,
+               metric_contract: dict | None = None) -> EnvSpec:
     """Build the docdb EnvSpec for a corpus artifact (manifest included).
 
     Enforces the corpus health gate: a blocked corpus raises
     ``CorpusHealthError`` unless ``settings.allow_degraded``.
+    ``metric_contract`` is an optional trusted caller formula/source policy
+    for a single question, never a model-generated proposal.
     """
     from rnsr.ingest.health import enforce_health, load_health
 
+    if metric_contract is not None:
+        from rnsr.env.metric_contract import MetricContract
+
+        metric_contract = copy.deepcopy(metric_contract)
+        MetricContract(metric_contract)  # Validate before any provider work.
     settings = settings or Settings.from_env()
     with CorpusDB(corpus_db) as c:
         manifest = c.manifest_dict()
@@ -124,7 +133,7 @@ def corpus_env(corpus_db: str | Path, *,
 
     playbook = discover_playbook(Path(corpus_db).parent, Path(corpus_db).with_suffix(""))
     return EnvSpec(mode="docdb", corpus_db=str(corpus_db), manifest=manifest,
-                   playbook=playbook)
+                   playbook=playbook, metric_contract=metric_contract)
 
 
 async def answer(
@@ -136,17 +145,20 @@ async def answer(
     run_dir: str | Path | None = None,
     query_id: str | None = None,
     abstain_below: AbstainBelow = "off",
+    metric_contract: dict | None = None,
 ) -> QueryResult:
     """Answer one question against a corpus.db via the RLM loop.
 
     Returns the full QueryResult: ``.answer`` (None when the loop failed),
     ``.status`` ('final' | 'recovered' | 'budget_exhausted' | 'error'),
     budget ``.ledger``, and ``.trajectory_path`` for the audit record.
+    A caller-issued ``metric_contract`` restricts finals to its fixed source
+    formula or explicit NOT_FOUND; the default leaves this policy disabled.
     """
     publish_answer(None, None, abstain_below)
-    settings = settings or getattr(runner, "settings", None)
+    settings = settings or getattr(runner, "settings", None) or Settings.from_env()
+    env = corpus_env(corpus_db, settings=settings, metric_contract=metric_contract)
     runner = runner or make_runner(settings)
-    env = corpus_env(corpus_db, settings=settings or runner.settings)
     result = await runner.run(question, env, run_dir=run_dir, query_id=query_id)
     health = (env.manifest or {}).get("health")
     result.health = health
@@ -209,6 +221,8 @@ async def answer_batch(
     """
     if min(batch_size, concurrency, consensus) < 1:
         raise ValueError("batch_size, concurrency and consensus must be positive")
+    if env is not None and env.metric_contract is not None:
+        raise ValueError("metric contracts are unsupported for answer_batch; use answer per question")
     publish_answer(None, None, abstain_below)  # validate before provider work
     qs = list(questions)
     qids = list(question_ids) if question_ids is not None else [f"q{i:03d}" for i in range(len(qs))]
@@ -320,9 +334,10 @@ async def answer_batch(
             for i in range(len(qs))]
 
 
-def answer_sync(question: str, corpus_db: str | Path, **kwargs) -> QueryResult:
+def answer_sync(question: str, corpus_db: str | Path, *,
+                metric_contract: dict | None = None, **kwargs) -> QueryResult:
     """Synchronous wrapper for answer() — for sync workers (Celery, scripts)."""
-    return asyncio.run(answer(question, corpus_db, **kwargs))
+    return asyncio.run(answer(question, corpus_db, metric_contract=metric_contract, **kwargs))
 
 
 def answer_batch_sync(questions: Sequence[str], corpus_db: str | Path,

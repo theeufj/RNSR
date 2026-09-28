@@ -21,6 +21,7 @@ from rnsr.config import Settings
 from rnsr.env.sandbox import SandboxedRepl
 from rnsr.errors import SandboxError
 from rnsr.harness.budget import BudgetLedger
+from rnsr.harness.claim_review import review_final
 from rnsr.harness.evidence import AnswerEvidence, from_final
 from rnsr.harness.negative_audit import audit_negatives
 from rnsr.harness.prompts.base import (
@@ -29,6 +30,7 @@ from rnsr.harness.prompts.base import (
     render_transcript,
 )
 from rnsr.harness.recovery import recover_variable
+from rnsr.harness.root_call import complete_root
 from rnsr.harness.trajectory import TrajectoryWriter
 from rnsr.llm.base import LLMClient
 from rnsr.llm.batch import map_prompts
@@ -49,6 +51,11 @@ class EnvSpec:
     corpus_db: str | None = None    # docdb: artifact path
     manifest: dict | None = None    # docdb: rendered into the system prompt
     playbook: object | None = None  # rnsr.harness.playbook.Playbook | None
+    # Optional caller-supplied task definitions; never benchmark gold.
+    category_definitions: str | None = None
+    # Opt-in caller-approved source selectors/formula for one numeric answer.
+    # This is task policy, never a model proposal or benchmark gold.
+    metric_contract: dict | None = None
 
 
 @dataclass
@@ -174,6 +181,13 @@ class RootRunner:
     def _rpc_handlers(self, ledger: BudgetLedger, trajectory: TrajectoryWriter) -> dict:
         async def llm_batch(request: dict) -> dict:
             prompts = request["prompts"]
+            requested_model = request.get("model", "sub")
+            if requested_model in ("sub", self.sub_model):
+                client, resolved_model, role = self.sub_client, self.sub_model, "sub"
+            elif requested_model in ("root", self.root_model):
+                client, resolved_model, role = self.root_client, self.root_model, "root"
+            else:
+                raise ValueError("llm_batch model must be the configured sub or root model")
             remaining = ledger.max_sub_calls - ledger.sub_calls
             if len(prompts) > remaining:
                 raise RuntimeError(
@@ -181,15 +195,24 @@ class RootRunner:
                     f"{remaining} remaining"
                 )
             responses = await map_prompts(
-                self.sub_client, prompts, model=self.sub_model,
+                client, prompts, model=resolved_model,
                 concurrency=self.settings.sub_concurrency,
                 on_usage=ledger.add_usage,
                 on_attempt=ledger.reserve_sub_call,
                 deadline=ledger._t0 + ledger.max_wall_s,
             )
             trajectory.event("sub_batch", n=len(prompts),
-                             failed=sum(r is None for r in responses))
-            return {"results": [r.text if r else "" for r in responses]}
+                             failed=sum(r is None for r in responses),
+                             model_role=role, resolved_model=resolved_model)
+            return {
+                "results": [r.text if r else "" for r in responses],
+                "response_metadata": [
+                    {"model": r.model, "input_tokens": r.usage.input_tokens,
+                     "output_tokens": r.usage.output_tokens,
+                     "cost_usd": r.usage.cost_usd} if r else {}
+                    for r in responses
+                ],
+            }
 
         async def log(request: dict) -> dict:
             data = {k: v for k, v in request.items() if k not in ("kind", "op", "event")}
@@ -210,6 +233,8 @@ class RootRunner:
                   run_dir: str | Path | None = None,
                   query_id: str | None = None,
                   batch_questions: list[tuple[str, str]] | None = None) -> QueryResult:
+        if env.metric_contract is not None and (env.mode != "docdb" or batch_questions is not None):
+            raise ValueError("metric contracts require one DocDB question; batch/classic are unsupported")
         batch_qids = [qid for qid, _ in batch_questions] if batch_questions else None
         s = self.settings
         ledger = BudgetLedger.from_settings(s)
@@ -230,12 +255,14 @@ class RootRunner:
                                playbook=env.playbook)
         n_documents = len((env.manifest or {}).get("documents") or [])
         init_extra = {"enable_embeddings": self.embed_client is not None
-                      and n_documents >= s.embed_auto_on_docs}
+                      and n_documents >= s.embed_auto_on_docs,
+                      "metric_contract": env.metric_contract}
         sandbox = SandboxedRepl(rpc_handlers=self._rpc_handlers(ledger, trajectory),
                                 fs_guard=s.sandbox_fs_guard)
         turns: list[tuple[str, str]] = []
         final: dict | None = None
         seen_candidates: dict[str, int] = {}
+        observed_outputs: set[str] = set()
         damped = False
         completeness_checked = False
         negatives_audited = False
@@ -326,6 +353,30 @@ class RootRunner:
                                  stdout=cell.stdout[:2000], error=cell.error,
                                  final=cell.final, rpc_count=cell.rpc_count)
 
+                # The model writes the whole cell before any of it executes.
+                # A literal FINAL below a calculation can therefore contradict
+                # its actual result. Deliver new output before accepting that
+                # draft; never treat a generated comment as an observation.
+                unseen_output = bool(cell.stdout.strip()) and cell.stdout not in observed_outputs
+                observed_outputs.add(cell.stdout)
+                if cell.final is not None and unseen_output:
+                    fname = "FINAL_BATCH" if batch_qids else "FINAL"
+                    trajectory.event("final_observation_review", draft=cell.final.get("value"))
+                    remaining = max(0, int(ledger.remaining_wall_s()))
+                    iters_left = max(0, ledger.max_root_iters - ledger.root_iters)
+                    turns.append((code, observation + (
+                        f"\n[harness] {fname} is pending review: this cell produced "
+                        "new output that you had not seen when writing its answer. "
+                        "Read the actual results above. Reconcile your draft with "
+                        "the returned evidence, counts and comparisons; comments "
+                        "and assumed results are not evidence. If output is "
+                        "truncated, print only the relevant result. Then submit "
+                        f"{fname} in a separate cell using the computed variables "
+                        "where possible, without repeating the investigation. "
+                        f"Budget remaining: ~{remaining}s, {iters_left} iterations."
+                    )))
+                    continue
+
                 if cell.final is not None:
                     gap = None
                     if not completeness_checked:
@@ -366,7 +417,7 @@ class RootRunner:
                             query_id=query_id, batch_size=len(batch_qids or [query_id]))
                         metrics().incr("final_pushbacks")
                         fname = "FINAL_BATCH" if batch_qids else "FINAL"
-                        turns.append((code, (
+                        turns.append((code, observation + "\n" + (
                             f"[harness] {fname} not accepted yet — the "
                             f"answer seems incomplete: {gap} Address this "
                             f"and call {fname} again (or resubmit "
@@ -411,6 +462,19 @@ class RootRunner:
                         trajectory.event("damping", value=key[:200])
                 turns.append((code, observation))
 
+            if s.claim_review_enabled and env.mode == "docdb":
+                try:
+                    review = await review_final(
+                        final, batch_questions or [(query_id, question)],
+                        batch=bool(batch_questions), client=self.sub_client,
+                        model=self.sub_model, ledger=ledger,
+                        category_definitions=env.category_definitions, seed=s.llm_seed)
+                except Exception as exc:
+                    # Advisory instrumentation must never change acceptance.
+                    # CancelledError deliberately propagates through this guard.
+                    review = {"advisory": True, "status": "error",
+                              "error_type": type(exc).__name__}
+                trajectory.event("claim_review", **review)
             trajectory.event("final", **final)
             return self._finish(final, "final", ledger, trajectory, turns,
                                 evidence=_signals(final=final, status="final"))
@@ -596,31 +660,13 @@ class RootRunner:
 
     async def _root_complete(self, prompt: str, system: str,
                              ledger: BudgetLedger, trajectory) -> object | None:
-        """Root call with a harness-side timeout tied to the wall budget.
-
-        Provider SDK defaults allow requests to hang for up to 10 minutes —
-        long enough for one stuck call to eat the entire §7 wall cap (seen
-        live on FinanceBench). Three attempts with backoff (transient
-        network loss killed back-to-back attempts, also seen live), each
-        capped, then give up so recovery still has budget to run.
-        """
-        for attempt in (1, 2, 3):
-            timeout = min(120.0, ledger.remaining_wall_s())
-            if timeout <= 0 or ledger.spend_usd >= ledger.max_spend_usd:
-                return None
-            try:
-                async with asyncio.timeout(timeout):
-                    return await self.root_client.complete(
-                        prompt, model=self.root_model, system=system,
-                        max_tokens=8192, seed=self.settings.llm_seed,
-                    )
-            except Exception as e:  # timeout or any provider error
-                trajectory.event("root_call_failed", attempt=attempt,
-                                 timeout_s=timeout, error=f"{type(e).__name__}: {e}"[:200])
-                backoff = min(5.0 * attempt, ledger.remaining_wall_s() / 4)
-                if backoff > 0.1:
-                    await asyncio.sleep(backoff)
-        return None
+        """Bound queueing and provider retries while reserving recovery time."""
+        return await complete_root(
+            self.root_client, prompt, model=self.root_model, system=system,
+            ledger=ledger, trajectory=trajectory, seed=self.settings.llm_seed,
+            timeout_s=self.settings.root_timeout_s,
+            attempts=self.settings.root_max_attempts,
+        )
 
     async def _completeness_gap(self, question: str, final: dict,
                                 ledger: BudgetLedger) -> str | None:

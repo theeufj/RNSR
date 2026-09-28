@@ -24,6 +24,16 @@ and batch related items into a single prompt of up to {batch_chars} \
 characters when the judgment allows it.
 - Use the model only for semantics. Anything countable, comparable, or \
 arithmetic must be computed in code, not asked of the model.
+- A cell executes AFTER you write it: you have not yet observed its query \
+results, classifications or counts. Print the relevant evidence first and \
+read the returned output before drawing a conclusion in a later cell. \
+Build numerical and comparison answers directly from computed variables; \
+never replace them with assumed numbers or a hardcoded relationship.
+- Match the exact question: check the requested entity, period and \
+property against the source context. A related concept or matching word \
+does not establish the requested property. For classification questions, \
+apply the full category definition to the evidence, including its \
+qualifications and exclusions; do not broaden it to fit a nearby concept.
 - Counting/aggregation over many items (classify-then-count, most/least \
 frequent, "how many are X"): label EVERY item individually — one item per \
 llm_map prompt (or semantic_annotate over an items table) — then count in \
@@ -81,14 +91,48 @@ re-annotate into a new column with votes=3 rather than inheriting noise.
 regex, BM25 full-text, sub-LM term expansion. Escalates automatically. \
 Every hit has keys: rung, kind ('sql'|'chunk'|'estimate'), text, page, \
 provenance. SQL hits additionally carry table and rows (the full row \
-dict); chunk hits carry score. Check hit['kind'] before assuming shape.
+dict); chunk hits carry score. Hits also carry source_context with the \
+governing section and canonical source span. Check hit['kind'] before \
+assuming shape. A nearby following heading can belong to the NEXT \
+section, not the matching row.
+- source_context(doc_id=None, *, char_start=None, char_end=None, page=None, \
+table=None, rowid=None, max_chars=600): inspect the source heading and \
+surrounding text for a document span or table row. When a question specifies \
+an entity or period, inspect this context before selecting a value. If a \
+heading is unavailable, read the original document rather than guessing.
 - verify(answer, quotes): exact string-match of supporting quotes against \
-source text.
+source text; matching only proves the quote exists. Inspect its source_context \
+and multiple matches to confirm the evidence addresses the requested scope.
 - In this environment FINAL takes quotes: FINAL(answer, quotes=["..."]) — \
 1-3 short verbatim source quotes backing the answer, verified by code; a \
 FINAL with failing quotes is rejected back to you. Copy quote text exactly \
 from search hits or doc. Computed values (SQL aggregates, ratios) also \
 need source evidence: use FINAL_VAR(variable, quotes=["source excerpt"]).
+- Optional source-bound arithmetic for derived numeric answers: \
+source_number(table, rowid, column) returns an original numeric cell's id, \
+value, raw value and exact source span. calculate(operation, operand_ids) \
+supports sum, subtract, multiply, divide and percent (multiply by 100), \
+using only source or previous result ids. calculation(id) reads a record; \
+FINAL_CALC(result_id) returns its numeric value, independently checked in \
+the parent. Example: a=source_number(table, 1, 'amount'); \
+b=source_number(table, 2, 'amount'); r=calculate('divide', [a['id'], b['id']]); \
+FINAL_CALC(r['id']). It requires uniquely located canonical source rows; \
+units/periods are unknown unless supplied as unit_span/period_span dicts \
+with exact char_start/char_end in that source document. Those spans prove \
+text occurrence, not compatible units, periods, or the correct formula. \
+Do not invent replacement operands. With metric_contract=None, FINAL/FINAL_VAR remain valid \
+but do not certify a calculation's source-to-result derivation.
+- If metric_contract is configured, it is a caller-declared source/formula \
+policy for this single numeric question. Inspect it, then use \
+r=calculate_metric(); FINAL_CALC(r['id']). Its exact sources and formula \
+are enforced by the parent; changing the displayed dict cannot change the \
+policy. A missing formula or unavailable required source means \
+FINAL('NOT_FOUND'). Other FINAL/FINAL_VAR answers and generic calculated \
+results are rejected in this mode. The caller's declared financial \
+convention is not itself proof that the source defines the requested metric. \
+The coverage bridge preserves its raw ratio unless the caller explicitly \
+sets nonpositive_numerator='zero'; that convention retains the raw numerator \
+and ratio in the proof and requires a positive denominator.
 - When manifest.duplicates is present, prefer the latest version of a \
 document and cite both the current and the superseded copies.
 

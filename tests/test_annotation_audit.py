@@ -5,6 +5,7 @@ import json
 import re
 import sqlite3
 
+import numpy as np
 import pytest
 
 from rnsr.env.annotate import Annotator
@@ -206,5 +207,314 @@ async def test_sandbox_forwards_label_contract_to_parent(corpus):
         assert result.ok, result.error
         assert result.stdout.strip() == "0 3"
         assert len(calls) == 2
+    finally:
+        await repl.close()
+
+
+def classify(annotator, **kwargs):
+    return annotator.classify(
+        "t_labels_001", "decision", "Classify every instance; use the full vocabulary.",
+        allowed_labels=["yes", "no", "unclear"], where="1", expected_count=3, **kwargs)
+
+
+def test_strict_classification_certifies_exact_scope_and_zero_count_categories(conn):
+    annotator = Annotator(conn, reply, model_identities={"sub": "test:model-a"})
+    result = classify(annotator)
+    assert result["certified"] and result["total"] == 3
+    assert result["counts"] == {"no": 0, "unclear": 0, "yes": 3}
+    assert result["unresolved_rowids"] == []
+    assert result["model_identity"] == "test:model-a"
+    assert annotator.classification_counts("t_labels_001", "decision")["counts"] == result["counts"]
+    assert classify(annotator)["noop"] is True
+
+
+@pytest.mark.parametrize("where,expected", [("1", 2), ("item != 'third'", 3)])
+def test_strict_classification_rejects_extra_or_missing_instances_before_calls(conn, where, expected):
+    annotator = Annotator(conn, lambda _: pytest.fail("must not call provider"))
+    with pytest.raises(ValueError, match="instance count mismatch"):
+        annotator.classify("t_labels_001", "decision", "classify",
+                           allowed_labels=["yes", "no"], where=where, expected_count=expected)
+    assert conn.execute("SELECT count(*) FROM annotation_log").fetchone()[0] == 0
+
+
+@pytest.mark.parametrize("kwargs", [
+    {"where": None}, {"where": ""}, {"expected_count": None},
+    {"expected_count": True}, {"expected_count": -1}, {"allowed_labels": None},
+    {"allowed_labels": []}, {"votes": 0}, {"votes": 2.5},
+])
+def test_strict_contract_is_required_before_calls(conn, kwargs):
+    annotator = Annotator(conn, lambda _: pytest.fail("must not call provider"))
+    options = {"where": "1", "expected_count": 3, "allowed_labels": ["yes", "no"]}
+    options.update(kwargs)
+    with pytest.raises(ValueError):
+        annotator.classify("t_labels_001", "decision", "classify", **options)
+
+
+@pytest.mark.parametrize("expected", [3, np.int64(3), np.int32(3), np.uint64(3)])
+def test_integral_count_scalars_use_the_same_json_safe_contract(conn, expected):
+    annotator = Annotator(conn, reply)
+    options = {"allowed_labels": ["yes", "no"], "where": "1"}
+    first = annotator.classify("t_labels_001", "decision", "classify",
+                               expected_count=expected, **options)
+    assert first["certified"] and first["total"] == 3
+    contract = usage(conn)["annotation_state"]["classification"]
+    assert type(contract["expected_count"]) is int and contract["expected_count"] == 3
+    # Native and dataframe-derived counts identify the exact same cache entry.
+    again = annotator.classify("t_labels_001", "decision", "classify",
+                               expected_count=3, **options)
+    assert again["noop"] and again["annotation_version"] == first["annotation_version"]
+
+
+@pytest.mark.parametrize("expected", [True, False, np.bool_(True), 3.0, 3.5,
+                                       np.float64(3), "3", -1, np.int64(-1)])
+def test_nonintegral_or_negative_counts_are_rejected_before_calls(conn, expected):
+    annotator = Annotator(conn, lambda _: pytest.fail("must not call provider"))
+    with pytest.raises(ValueError, match="expected_count must be a nonnegative integer"):
+        annotator.classify("t_labels_001", "decision", "classify",
+                           allowed_labels=["yes", "no"], where="1", expected_count=expected)
+    assert conn.execute("SELECT count(*) FROM annotation_log").fetchone()[0] == 0
+
+
+def test_integral_scalar_count_still_requires_exact_instance_coverage(conn):
+    annotator = Annotator(conn, lambda _: pytest.fail("must not call provider"))
+    with pytest.raises(ValueError, match="instance count mismatch"):
+        annotator.classify("t_labels_001", "decision", "classify",
+                           allowed_labels=["yes", "no"], where="1", expected_count=np.int64(2))
+
+
+@pytest.mark.parametrize("expression", ["3", "np.int64(3)", "np.int32(3)", "np.uint64(3)"])
+async def test_sandbox_classification_accepts_integral_count(corpus, expression):
+    from rnsr.env.sandbox import SandboxedRepl
+
+    async def rpc(request):
+        return reply(request)
+
+    async with SandboxedRepl(rpc_handlers={"llm_batch": rpc}) as repl:
+        await repl.start(mode="docdb", corpus_db=str(corpus))
+        result = await repl.exec_cell(
+            "import numpy as np\n"
+            "r = semantic_classify('t_labels_001', 'decision', 'classify', "
+            f"allowed_labels=['yes', 'no'], where='1', expected_count={expression})\n"
+            "print(r['certified'], r['total'])")
+        assert result.ok, result.error
+        assert result.stdout.strip() == "True 3"
+
+
+@pytest.mark.parametrize("expression", ["True", "np.bool_(True)", "3.0", "3.5", "'3'"])
+async def test_sandbox_classification_rejects_nonintegral_count(corpus, expression):
+    from rnsr.env.sandbox import SandboxedRepl
+
+    async def rpc(request):
+        pytest.fail("must not call provider")
+
+    async with SandboxedRepl(rpc_handlers={"llm_batch": rpc}) as repl:
+        await repl.start(mode="docdb", corpus_db=str(corpus))
+        result = await repl.exec_cell(
+            "import numpy as np\n"
+            "semantic_classify('t_labels_001', 'decision', 'classify', "
+            f"allowed_labels=['yes', 'no'], where='1', expected_count={expression})")
+        assert not result.ok and "expected_count must be a nonnegative integer" in result.error
+
+
+def test_strict_selection_must_use_source_columns(conn):
+    annotator = Annotator(conn, reply)
+    annotator.annotate("t_labels_001", "old_label", "classify")
+    with pytest.raises(sqlite3.DatabaseError):
+        annotator.classify("t_labels_001", "decision", "classify",
+                           allowed_labels=["yes", "no"], where="old_label='yes'", expected_count=3)
+
+
+def test_empty_explicit_instance_set_has_certified_zero_counts_without_calls(conn):
+    annotator = Annotator(conn, lambda _: pytest.fail("must not call provider"))
+    result = annotator.classify("t_labels_001", "decision", "classify",
+                                allowed_labels=["yes", "no"], where="0", expected_count=0)
+    assert result["certified"] and result["counts"] == {"no": 0, "yes": 0}
+    assert result["total"] == 0
+
+
+@pytest.mark.parametrize("case", ["invalid", "missing", "tie", "partial"])
+def test_unresolved_labels_block_certification(conn, case):
+    calls = []
+
+    def rpc(request):
+        calls.append(request)
+        label = ("invalid" if case == "invalid" or (case == "partial" and len(calls) > 1)
+                 else "no" if case == "tie" and len(calls) == 2 else "yes")
+        return reply(request, label, omit=(3,) if case == "missing" else ())
+
+    annotator = Annotator(conn, rpc)
+    result = classify(annotator, votes=2 if case == "tie" else 3)
+    assert result["certified"] is False
+    assert result["unresolved_rowids"]
+    assert "counts" not in result
+    with pytest.raises(ValueError, match="unresolved"):
+        annotator.classification_counts("t_labels_001", "decision")
+
+
+def test_complete_but_semantically_wrong_labels_are_distinct_from_coverage(conn):
+    annotator = Annotator(conn, lambda request: reply(request, "no"))
+    result = classify(annotator)
+    # A scope/schema proof cannot assert correctness of model judgments.
+    independent_gold = {1: "yes", 2: "yes", 3: "yes"}
+    labels = dict(conn.execute("SELECT rowid, decision FROM t_labels_001"))
+    assert result["certified"] and result["coverage"] == 1.0
+    assert sum(labels[k] == v for k, v in independent_gold.items()) == 0
+
+
+def test_force_failure_clears_previous_selected_labels(conn):
+    annotator = Annotator(conn, reply)
+    classify(annotator)
+    annotator.rpc = lambda request: reply(request, "invalid")
+    result = classify(annotator, force=True)
+    assert result["failed"] == 3 and not result["certified"]
+    assert conn.execute("SELECT decision FROM t_labels_001").fetchall() == [(None,)] * 3
+    with pytest.raises(ValueError, match="unresolved"):
+        annotator.classification_counts("t_labels_001", "decision")
+
+
+def test_freeform_force_failure_also_clears_previous_selected_labels(conn):
+    annotator = Annotator(conn, reply)
+    annotator.annotate("t_labels_001", "decision", "classify")
+    annotator.rpc = lambda request: {"results": ["malformed"] * len(request["prompts"])}
+    result = annotator.annotate("t_labels_001", "decision", "classify", force=True)
+    assert result["failed"] == 3
+    assert conn.execute("SELECT decision FROM t_labels_001").fetchall() == [(None,)] * 3
+
+
+def test_overwriting_column_invalidates_historical_cache_entry(conn):
+    calls = []
+
+    def rpc(request):
+        calls.append(request)
+        return reply(request, "no" if len(calls) == 2 else "yes")
+
+    annotator = Annotator(conn, rpc)
+    annotator.annotate("t_labels_001", "decision", "instruction A")
+    annotator.annotate("t_labels_001", "decision", "instruction B")
+    restored = annotator.annotate("t_labels_001", "decision", "instruction A")
+    assert not restored.get("noop") and len(calls) == 3
+    assert conn.execute("SELECT decision FROM t_labels_001").fetchall() == [("yes",)] * 3
+
+
+def test_resolved_model_identity_controls_cross_instance_cache(conn):
+    first = Annotator(conn, reply, model_identities={"sub": "provider:model-a"})
+    first.annotate("t_labels_001", "decision", "classify")
+    same = Annotator(conn, lambda _: pytest.fail("must reuse verified result"),
+                     model_identities={"sub": "provider:model-a"})
+    assert same.annotate("t_labels_001", "decision", "classify")["noop"]
+    changed = Annotator(conn, lambda request: reply(request, "no"),
+                        model_identities={"sub": "provider:model-b"})
+    assert not changed.annotate("t_labels_001", "decision", "classify").get("noop")
+    assert conn.execute("SELECT decision FROM t_labels_001").fetchall() == [("no",)] * 3
+
+
+def test_unresolved_role_identity_cannot_reuse_across_instances(conn):
+    Annotator(conn, reply).annotate("t_labels_001", "decision", "classify")
+    new = Annotator(conn, lambda request: reply(request, "no"))
+    assert not new.annotate("t_labels_001", "decision", "classify").get("noop")
+
+
+def test_batch_context_and_label_contract_changes_invalidate_cache(conn):
+    annotator = Annotator(conn, reply)
+    annotator.annotate("t_labels_001", "decision", "classify", batch_size=3,
+                       allowed_labels=["yes", "no"])
+    assert not annotator.annotate("t_labels_001", "decision", "classify", batch_size=1,
+                                  allowed_labels=["yes", "no"]).get("noop")
+    assert not annotator.annotate("t_labels_001", "decision", "classify", batch_size=1,
+                                  allowed_labels=["yes", "no", "unclear"]).get("noop")
+
+
+def test_counts_refuse_non_strict_or_replaced_annotations(conn):
+    annotator = Annotator(conn, reply)
+    annotator.annotate("t_labels_001", "free_form", "classify")
+    with pytest.raises(ValueError, match="strict contract"):
+        annotator.classification_counts("t_labels_001", "free_form")
+    classify(annotator)
+    annotator.annotate("t_labels_001", "decision", "different interpretation")
+    with pytest.raises(ValueError, match="strict contract"):
+        annotator.classification_counts("t_labels_001", "decision")
+
+
+def test_counts_and_cache_refuse_changed_active_values(conn):
+    annotator = Annotator(conn, reply)
+    classify(annotator)
+    conn.execute("UPDATE t_labels_001 SET decision='no' WHERE rowid=1")
+    conn.commit()
+    with pytest.raises(ValueError, match="labels changed"):
+        annotator.classification_counts("t_labels_001", "decision")
+    assert not classify(annotator).get("noop")
+    assert annotator.classification_counts("t_labels_001", "decision")["counts"]["yes"] == 3
+
+
+def test_forced_publication_gets_a_new_version_even_if_sqlite_reuses_log_id(conn):
+    annotator = Annotator(conn, reply)
+    first = classify(annotator)
+    second = classify(annotator, force=True)
+    assert first["annotation_version"] != second["annotation_version"]
+    assert first["selection_sha256"] == second["selection_sha256"]
+    assert first["labels_sha256"] == second["labels_sha256"]
+
+
+def test_label_digest_distinguishes_reassignment_with_equal_counts(conn):
+    assignments = {1: "yes", 2: "no", 3: "unclear"}
+
+    def rpc(request):
+        return {"results": ["\n".join(f"{rowid}. {assignments[int(rowid)]}" for rowid in
+                re.findall(r"^(\d+)\. \{", prompt, re.MULTILINE))
+                for prompt in request["prompts"]]}
+
+    annotator = Annotator(conn, rpc)
+    first = classify(annotator)
+    assignments.update({1: "no", 2: "yes"})
+    second = classify(annotator, force=True)
+    assert first["counts"] == second["counts"]
+    assert first["selection_sha256"] == second["selection_sha256"]
+    assert first["labels_sha256"] != second["labels_sha256"]
+    assert second["labels_sha256"] == usage(conn)["annotation_state"]["labels_sha256"]
+
+
+def test_subset_counts_exclude_old_labels_outside_contract(conn):
+    annotator = Annotator(conn, reply)
+    classify(annotator)
+    annotator.rpc = lambda request: reply(request, "no")
+    subset = annotator.classify("t_labels_001", "decision", "classify selected instances",
+                                where="item != 'third'", expected_count=2,
+                                allowed_labels=["yes", "no"])
+    assert subset["counts"] == {"no": 2, "yes": 0}
+    assert conn.execute("SELECT decision FROM t_labels_001 WHERE item='third'").fetchone() == ("yes",)
+
+
+def test_new_unrelated_annotation_does_not_invalidate_source_proof(conn):
+    annotator = Annotator(conn, reply)
+    classify(annotator)
+    annotator.annotate("t_labels_001", "other_property", "different property")
+    assert classify(annotator)["noop"]
+    assert annotator.classification_counts("t_labels_001", "decision")["total"] == 3
+
+
+async def test_sandbox_strict_classification_and_parent_count_certificate(corpus):
+    from rnsr.env.sandbox import SandboxedRepl
+
+    calls = []
+
+    async def rpc(request):
+        calls.append(request)
+        return reply(request)
+
+    repl = SandboxedRepl(rpc_handlers={"llm_batch": rpc})
+    await repl.start(mode="docdb", corpus_db=str(corpus))
+    try:
+        rejected = await repl.exec_cell(
+            "semantic_classify('t_labels_001', 'decision', 'classify', "
+            "allowed_labels=['yes', 'no'], where='1', expected_count=4)")
+        assert not rejected.ok and not calls
+        result = await repl.exec_cell(
+            "r = semantic_classify('t_labels_001', 'decision', 'classify', "
+            "allowed_labels=['yes', 'no'], where='1', expected_count=3)\n"
+            "c = classification_counts('t_labels_001', 'decision')\n"
+            "print(r['certified'], c['total'], c['counts']['yes'], c['counts']['no'])")
+        assert result.ok, result.error
+        assert result.stdout.strip() == "True 3 3 0"
+        assert len(calls) == 3
     finally:
         await repl.close()

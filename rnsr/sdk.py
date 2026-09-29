@@ -388,6 +388,7 @@ async def score_answers(
     judge: bool = False,
     settings: Settings | None = None,
     tiers: dict[str, str] | None = None,
+    contexts: dict | None = None,
 ) -> RegressionReport:
     """Score field answers against a golden set (the `rnsr regress` core).
 
@@ -397,22 +398,39 @@ async def score_answers(
     string failures only (agreement can only go up). Returns a
     RegressionReport — check ``.passed`` against ``min_accuracy`` and
     ``.write(dir)`` for the artifact files.
+    ``contexts`` maps field IDs to actual questions or FieldContext values,
+    including explicit output requirements where available. File goldens
+    supply their question metadata automatically. Without question context,
+    judge decisions are recorded as unavailable rather than using IDs as
+    questions. Context is evaluator-only and never reaches answer generation.
     """
-    from rnsr.eval.regression import judge_disagreements, load_golden, score_run
+    from rnsr.eval.regression import (
+        judge_disagreements,
+        load_field_contexts,
+        load_golden,
+        merge_field_contexts,
+        score_run,
+    )
 
     if not isinstance(golden, dict):
+        contexts = merge_field_contexts(load_field_contexts(golden), contexts or {})
         golden = load_golden(golden)
     report = score_run(
         golden, field_answers, min_accuracy=min_accuracy,
         max_false_positive_rate=max_false_positive_rate,
         min_high_tier_accuracy=min_high_tier_accuracy,
         tiers=tiers,
+        contexts=contexts,
     )
     if judge and any(not r.agrees for r in report.results):
         from rnsr.llm.router import Router
 
-        sub = Router(settings or Settings.from_env()).resolve("sub")
-        await judge_disagreements(report, sub.client, sub.model)
+        try:
+            sub = Router(settings or Settings.from_env()).resolve("sub")
+        except Exception as exc:
+            await judge_disagreements(report, None, "", setup_error=exc)
+        else:
+            await judge_disagreements(report, sub.client, sub.model)
     return report
 
 

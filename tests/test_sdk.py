@@ -9,6 +9,7 @@ import re
 import pytest
 
 import rnsr
+from rnsr.config import Settings
 from rnsr.harness.loop import RootRunner
 from rnsr.ingest.model import Element, ParsedDocument
 from rnsr.ingest.pipeline import ingest
@@ -37,7 +38,11 @@ def corpus(tmp_path):
 def make_runner(root: MockLLM, sub: MockLLM | None = None) -> RootRunner:
     return RootRunner(root_client=root, root_model="mock-root",
                       sub_client=sub or MockLLM(default="COMPLETE"),
-                      sub_model="mock-sub")
+                      sub_model="mock-sub",
+                      # These tests exercise SDK plumbing, not claim review.
+                      # Their deliberately synthetic answers are not supported
+                      # by their placeholder citations.
+                      settings=Settings(claim_review_enabled=False))
 
 
 class TestPackageSurface:

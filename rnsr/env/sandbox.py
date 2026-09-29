@@ -196,7 +196,7 @@ class SandboxedRepl:
                     if reply.get("kind") == "rpc":
                         rpc_count += 1
                         if (pause_provider_rpc_timeout
-                                and reply.get("op") in {"llm_batch", "annotate"}):
+                                and reply.get("op") in {"llm_batch", "annotate", "classify"}):
                             remaining_local_s = deadline - time.monotonic()
                             if remaining_local_s <= 0:
                                 raise TimeoutError
@@ -231,15 +231,18 @@ class SandboxedRepl:
             raise SandboxError(f"sandbox died: {type(e).__name__}") from e
 
     async def _serve_rpc(self, request: dict, *, deadline: float | None = None) -> None:
-        handler = (self._annotate if request.get("op") == "annotate"
+        handler = (self._annotate if request.get("op") in {"annotate", "classify", "classification_counts"}
+                   else self._classification if request.get("op") == "classification_final"
                    else self._calculation if request.get("op") == "calculation"
                    else self.rpc_handlers.get(request.get("op", "")))
         if handler is None:
             self._send({"error": f"no handler for rpc op {request.get('op')!r}"})
             return
         try:
-            body = (await self._calculation(request, deadline=deadline)
-                    if request.get("op") == "calculation" else await handler(request))
+            if request.get('op') in {'calculation', 'classification_final'}:
+                body = await handler(request, deadline=deadline)
+            else:
+                body = await handler(request)
             self._send({"error": None, **body})
         except PermanentProviderError:
             # Authentication/configuration failures cannot be repaired by
@@ -286,10 +289,18 @@ class SandboxedRepl:
                     corpus.conn, rpc,
                     char_budget=self._init_options.get("sub_call_char_budget", 200_000),
                     default_batch_size=self._init_options.get("annotate_batch_size", 40),
+                    model_identities=self._init_options.get('model_identities'),
                     cancelled=cancelled.is_set)
-                result = annotator.annotate(**{key: request[key] for key in (
-                    "table", "new_col", "prompt", "where", "batch_size",
-                    "model", "force", "votes", "allowed_labels") if key in request})
+                if request.get('op') == 'classification_counts':
+                    result = annotator.classification_counts(request.get('table'), request.get('column'))
+                else:
+                    classify = request.get('op') == 'classify'
+                    method = annotator.classify if classify else annotator.annotate
+                    keys = ("table", "new_col", "prompt", "where", "batch_size",
+                            "model", "force", "votes", "allowed_labels")
+                    if classify:
+                        keys += ('expected_count',)
+                    result = method(**{key: request[key] for key in keys if key in request})
                 return {"result": result}
 
         try:
@@ -305,6 +316,25 @@ class SandboxedRepl:
                 != self._source_generation):
             raise ValueError("source changed; restart the sandbox session")
 
+    async def _classification(self, request: dict, *, deadline: float | None = None) -> dict:
+        if self._corpus is None:
+            raise ValueError('classification aggregates require a docdb session')
+        from rnsr.env.classification import classification_final
+
+        if request.keys() - {'kind', 'op', 'table', 'column', 'operation', 'labels'}:
+            raise ValueError('unsupported classification arguments; counts cannot be supplied')
+        try:
+            with self._calculations.deadline(deadline):
+                self._corpus.conn.execute('BEGIN')
+                self._check_source()
+                answer, report = classification_final(self._corpus.conn, **{
+                    key: request[key] for key in ('table', 'column', 'operation', 'labels') if key in request},
+                    cancelled=lambda: deadline is not None and time.monotonic() >= deadline)
+                self._calculations._check_deadline()
+                return {'result': {'answer': answer, 'verification': report}}
+        finally:
+            self._corpus.conn.rollback()
+
     async def _calculation(self, request: dict, *, deadline: float | None = None) -> dict:
         if self._corpus is None or self._calculations is None:
             raise ValueError("source calculations require a docdb session")
@@ -312,6 +342,10 @@ class SandboxedRepl:
         actions = {
             'source': (self._calculations.source_number,
                        {'table', 'rowid', 'column', 'unit_span', 'period_span'}),
+            'source_text': (self._calculations.source_text_number,
+                            {'doc_id', 'char_start', 'char_end', 'unit_span', 'period_span'}),
+            'financial': (self._calculations.calculate_financial, {'metric', 'inputs', 'convention'}),
+            'render': (self._calculations.resolve_finals, {'template', 'results', 'decimals'}),
             'compute': (self._calculations.calculate, {'operation', 'operand_ids'}),
             'get': (self._calculations.get, {'record_id'}),
             'metric': (self._calculations.calculate_metric, set()),
@@ -356,6 +390,24 @@ class SandboxedRepl:
                     if isinstance(report, dict) and report.get('check') == 'source_bound_calculation':
                         value, report = self._calculations.resolve_final(report.get('calculation_id'), value)
                         final['value'], final['verification'] = value, report
+                    elif isinstance(report, dict) and report.get('check') == 'source_bound_calculations':
+                        actual, proof = self._calculations.resolve_finals(
+                            report.get('template'), report.get('results'), decimals=report.get('decimals'))
+                        if value != actual:
+                            raise ValueError('answer differs from parent-rendered calculation values')
+                        final['verification'] = proof
+                    elif isinstance(report, dict) and report.get('check') == 'classification_aggregate':
+                        from rnsr.env.classification import classification_final
+
+                        self._calculations.validate_legacy_final(value)
+                        actual, proof = classification_final(self._corpus.conn,
+                            report.get('table'), report.get('column'), report.get('operation'),
+                            report.get('labels'), cancelled=lambda: time.monotonic() >= deadline)
+                        if report.get('annotation_version') != proof['classification']['annotation_version']:
+                            raise ValueError('classification annotation changed after the draft was computed')
+                        if value != actual:
+                            raise ValueError('answer differs from parent classification aggregate')
+                        final['verification'] = proof
                     else:
                         batch = isinstance(value, dict)
                         abstention = self._calculations.validate_legacy_final(value)

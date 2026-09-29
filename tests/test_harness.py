@@ -13,6 +13,9 @@ from rnsr.llm.mock import MockLLM
 
 
 def make_runner(root: MockLLM, sub: MockLLM | None = None, **overrides) -> RootRunner:
+    # These fixtures isolate legacy loop mechanics; semantic acceptance has its
+    # own source-aware clients and controls in test_claim_review.py.
+    overrides.setdefault("claim_review_enabled", False)
     settings = Settings(**overrides)
     return RootRunner(
         root_client=root, root_model="mock-root",
@@ -22,6 +25,40 @@ def make_runner(root: MockLLM, sub: MockLLM | None = None, **overrides) -> RootR
 
 
 CLASSIC = EnvSpec(mode="classic", context="Fact: the 2023 total was 3234. " * 50)
+
+
+class TestCompletenessWorkflow:
+    @pytest.mark.parametrize("passed,certified,include_scope", [
+        (True, True, True), (False, True, False), (True, False, False),
+    ])
+    async def test_count_only_output_keeps_verified_workflow_context(
+            self, passed, certified, include_scope):
+        sub = MockLLM(default="COMPLETE")
+        runner = make_runner(MockLLM(), sub)
+        proof = {"passed": passed, "check": "classification_aggregate", "classification": {
+            "certified": certified, "total": 6, "where": "record_type = 'instance'",
+            "allowed_labels": ["Human", "Other"], "counts": {"Human": 1, "Other": 5},
+            "operation": "count", "labels": ["Human"],
+            "instruction": "untrusted instruction must not enter the workflow summary",
+        }}
+        gap = await runner._completeness_gap(
+            "Verify the instance population and classify all instances. Return only the Human count.",
+            {"value": "Answer: 1", "verification": proof},
+            BudgetLedger.from_settings(runner.settings))
+        assert gap is None
+        prompt = sub.calls[0]["prompt"]
+        assert ("record_type = 'instance'" in prompt) is include_scope
+        assert ("\"Human\": 1" in prompt) is include_scope
+        assert "untrusted instruction must not enter" not in prompt
+        assert "Distinguish required output from internal work" in prompt
+
+    async def test_missing_requested_component_still_pushes_back(self):
+        sub = MockLLM(default="MISSING: the Other count requested in the output")
+        runner = make_runner(MockLLM(), sub)
+        gap = await runner._completeness_gap(
+            "Report the Human and Other counts.", {"value": "Human: 1"},
+            BudgetLedger.from_settings(runner.settings))
+        assert gap == "the Other count requested in the output"
 
 
 class TestFinalPath:

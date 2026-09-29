@@ -53,9 +53,9 @@ TIES before answering — if several labels share the extreme count, the \
 answer is ALL of them, listed.
 - When asked for a date or deadline, compute and return the actual \
 calendar date — never a relative formula like "28 days from the notice".
-- When you have the answer, call FINAL(answer) for a textual answer or \
-FINAL_VAR(variable) to return a computed value. Do this as soon as the \
-answer is verified once — do not re-verify what has already been checked.
+- When you have a supported answer, submit it using the appropriate final \
+tool. A draft may be returned with a specific evidence or calculation gap; \
+resolve that gap using new evidence instead of resubmitting the same claim.
 """
 
 _CLASSIC = """\
@@ -75,18 +75,26 @@ grep/slice it like any string).
 - `manifest`: dict describing everything — documents, per-table schemas, \
 row counts, confidence scores, and which tables are untrusted. Trust its \
 confidence flags: for an untrusted table, read `doc` text instead.
-- semantic_annotate(table, new_col, prompt, where=None, votes=1): one \
-batched sub-LM pass over rows; writes results back as a real column you \
-can then use in SQL. The cheapest way to turn a semantic property into \
-something exactly queryable. ALWAYS use votes=3 when creating a label \
-column that any count or comparison will depend on — it labels every row \
-three times in different orders and keeps the per-row majority, cancelling \
-most classification noise. This matters doubly because annotation columns \
-persist and later questions reuse them: a single-pass column poisons every \
-future count over it. If a needed column already exists, check its quality \
-before trusting it: annotation_log records each column's prompt — if it \
-was created without votes and your question hinges on exact counts, \
-re-annotate into a new column with votes=3 rather than inheriting noise.
+- semantic_annotate(table, new_col, prompt, where=None, votes=1, \
+allowed_labels=None, model='sub'): general semantic annotations. For ANY \
+classify-then-count/comparison task, use semantic_classify instead: \
+semantic_classify(table, new_col, prompt, allowed_labels=[ALL task labels], \
+where='explicit instance predicate', expected_count=verified_instance_count, \
+votes=3, model='sub'). Count actual task instances first, excluding headers \
+and footers, and reconcile with the source's declared count when present. \
+Never shrink a multiclass vocabulary to the two labels being compared. \
+An incomplete vote set, invalid category, tie, or wrong row count cannot \
+certify an aggregate. Inspect failed/disputed rows and repair the definition \
+or evidence; repeated votes may share the same semantic mistakes. model='root' \
+is available for a targeted independent judgment, not automatic truth. \
+classification_counts(table,column) revalidates source/version/labels and \
+returns exact counts. FINAL_CLASSIFICATION(table,column,'count',[label]), \
+'compare',[left,right], or 'least'/'most' with no labels computes the final \
+answer in the parent, including ALL tied labels. It proves coverage and \
+arithmetic, not that individual classifications are semantically correct. \
+For a user/date subset, create a strict classification of that exact subset; \
+do not aggregate a different annotation scope. Legacy columns require a \
+fresh strict classification before their counts can be certified.
 - search(query, rung=None, k=10): tiered search — SQL-aware routing, \
 regex, BM25 full-text, sub-LM term expansion. Escalates automatically. \
 Every hit has keys: rung, kind ('sql'|'chunk'|'estimate'), text, page, \
@@ -108,10 +116,10 @@ and multiple matches to confirm the evidence addresses the requested scope.
 FINAL with failing quotes is rejected back to you. Copy quote text exactly \
 from search hits or doc. Computed values (SQL aggregates, ratios) also \
 need source evidence: use FINAL_VAR(variable, quotes=["source excerpt"]).
-- Optional source-bound arithmetic for derived numeric answers: \
+- Source-bound arithmetic for derived numeric answers: \
 source_number(table, rowid, column) returns an original numeric cell's id, \
 value, raw value and exact source span. calculate(operation, operand_ids) \
-supports sum, subtract, multiply, divide and percent (multiply by 100), \
+supports sum, mean, subtract, multiply, divide and percent (multiply by 100), \
 using only source or previous result ids. calculation(id) reads a record; \
 FINAL_CALC(result_id) returns its numeric value, independently checked in \
 the parent. Example: a=source_number(table, 1, 'amount'); \
@@ -120,8 +128,30 @@ FINAL_CALC(r['id']). It requires uniquely located canonical source rows; \
 units/periods are unknown unless supplied as unit_span/period_span dicts \
 with exact char_start/char_end in that source document. Those spans prove \
 text occurrence, not compatible units, periods, or the correct formula. \
-Do not invent replacement operands. With metric_contract=None, FINAL/FINAL_VAR remain valid \
-but do not certify a calculation's source-to-result derivation.
+For prose inputs, source_text_number(doc_id,char_start,char_end,unit_span=..., \
+period_span=...) binds a single original numeric span; it cannot accept a \
+model-supplied number. Do not invent replacement operands. Derived numerical \
+claims require this parent calculation evidence, even when the arithmetic \
+looks simple. FINAL/FINAL_VAR are for directly supported textual answers; \
+they do not certify a calculation's source-to-result derivation.
+- FINAL_CALCS('The prior ratio was {{prior}} and the current ratio is {{current}}.', \
+{{'prior': prior_result_id, 'current': current_result_id}}, decimals=2) renders \
+multiple parent-owned calculations into an answer. The template cannot contain \
+numeric literals, attribute lookups or format expressions; use named placeholders. \
+Rounding is applied by the parent and raw values remain in the evidence. \
+Source units, periods, input roles and formulas accompany the answer for review.
+- calculate_financial(metric, inputs, convention=...) computes an explicit \
+financial definition using source/result IDs. Supported roles: working_capital \
+with total (current_assets,current_liabilities) or operating \
+(operating_current_assets,operating_current_liabilities); quick_ratio with \
+liquid_assets (cash,short_term_investments,receivables,current_liabilities) or \
+cash_receivables (cash,receivables,current_liabilities); gross_margin with \
+gross_profit_over_revenue (gross_profit,revenue); inventory_turnover with \
+year_end (cost_of_sales,ending_inventory) or average \
+(cost_of_sales,beginning_inventory,ending_inventory); effective_tax_rate with \
+tax_over_pretax_income (income_tax_expense,pretax_income). All underlying inputs \
+need source-bound unit and period spans. State the chosen convention; source \
+occurrence alone does not establish the correct economic definition.
 - If metric_contract is configured, it is a caller-declared source/formula \
 policy for this single numeric question. Inspect it, then use \
 r=calculate_metric(); FINAL_CALC(r['id']). Its exact sources and formula \
@@ -142,16 +172,19 @@ MANIFEST:
 
 _FINANCIAL_ADDON = """\
 Analysis discipline for financial questions:
-- When a metric has multiple standard conventions (e.g. average vs \
-year-end denominator for turnover ratios), compute both and lead with the \
-simpler year-end convention, mentioning the other.
+- Determine the requested metric and its convention from the question and \
+source before calculating. Distinguish total from operating working capital, \
+and average from year-end inventory. If the convention is genuinely unspecified \
+and affects the result, calculate and label the alternatives; do not silently \
+choose whichever looks plausible. Do not infer missing line items are zero.
 - Standard formula conventions unless the question says otherwise: \
 quick ratio = (cash & equivalents + short-term investments + receivables) \
 / current liabilities (exclude inventory AND prepaid expenses); working \
 capital = current assets - current liabilities; capital intensity = total \
 assets / revenue (a business is capital-intensive when this is high or \
-ROA is low, not merely when capex is large); any coverage ratio with \
-negative or zero earnings in the numerator is 0, not a negative number.
+ROA is low, not merely when capex is large). Preserve negative computed \
+values. A zero-floor convention must be explicitly declared by the caller \
+or supported by the requested metric's definition, never invented afterward.
 - When the answer is a ratio or derived figure, your FINAL answer must \
 state the formula and the input line items used — not just the number.
 - Units are what the document says they are: trust column headers (e.g. \
@@ -169,6 +202,10 @@ computed value to it BEFORE answering. A mismatch means one of them is \
 wrong — find out which; do not answer with an unreconciled computation.
 - For yes/no judgment questions, state the yes/no explicitly and ground it \
 in the computed figure and conventional thresholds, not optimism.
+- For increase/decrease or other directional questions, explicit comparative \
+narrative can establish the direction without separately disclosed amounts. \
+Retrieve the correct annual/quarterly context; do not answer NOT_FOUND solely \
+because an exact ratio cannot be calculated when the question asks only direction.
 - Before FINALizing a claim about which item/segment is largest, smallest, \
 or changed most: enumerate EVERY candidate in code with its value \
 (including negative and 'Corporate'/'Other' rows), print the full ranked \

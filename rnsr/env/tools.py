@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from numbers import Integral
 
 
 def build_namespace(corpus_db: str, child, init_msg: dict) -> dict:
@@ -60,6 +61,34 @@ def build_namespace(corpus_db: str, child, init_msg: dict) -> dict:
         with CorpusDB(corpus_db, mode="ro") as refreshed:
             manifest.update(refreshed.manifest_dict())
         return result["result"]
+
+    def semantic_classify(table, new_col, prompt, *, allowed_labels, where, expected_count,
+                          model="sub", votes=3, batch_size=None, force=False):
+        # DataFrame counts are commonly NumPy integers. Normalize before the
+        # JSON RPC transport; accepting strings or floats would weaken scope checks.
+        if (not isinstance(expected_count, Integral) or isinstance(expected_count, bool)
+                or expected_count < 0):
+            raise ValueError("expected_count must be a nonnegative integer")
+        expected_count = int(expected_count)
+        result = child.rpc({'op': 'classify', 'table': table, 'new_col': new_col,
+                            'prompt': prompt, 'allowed_labels': allowed_labels, 'where': where,
+                            'expected_count': expected_count, 'model': model, 'votes': votes,
+                            'batch_size': batch_size, 'force': force})
+        with CorpusDB(corpus_db, mode='ro') as refreshed:
+            manifest.update(refreshed.manifest_dict())
+        return result['result']
+
+    def classification_counts(table, column):
+        return child.rpc({'op': 'classification_counts', 'table': table, 'column': column})['result']
+
+    def FINAL_CLASSIFICATION(table, column, operation, labels=None):  # noqa: N802
+        from rnsr.env.final_answer import FinalAnswer
+
+        arguments = {'table': table, 'column': column, 'operation': operation, 'labels': labels}
+        result = child.rpc({'op': 'classification_final', **arguments})['result']
+        raise FinalAnswer(result['answer'], is_var=True,
+                          verification={'check': 'classification_aggregate', **arguments,
+                                        'annotation_version': result['verification']['classification']['annotation_version']})
 
     def schema_map(table_a: str, table_b: str) -> list[dict]:
         """Sub-LM *proposals* for column correspondences — never auto-applied."""
@@ -124,6 +153,15 @@ def build_namespace(corpus_db: str, child, init_msg: dict) -> dict:
         return child.rpc({'op': 'calculation', 'action': 'compute',
                           'operation': operation, 'operand_ids': operand_ids})['result']
 
+    def source_text_number(doc_id, char_start, char_end, *, unit_span=None, period_span=None):
+        return child.rpc({'op': 'calculation', 'action': 'source_text', 'doc_id': doc_id,
+                          'char_start': char_start, 'char_end': char_end,
+                          'unit_span': unit_span, 'period_span': period_span})['result']
+
+    def calculate_financial(metric, inputs, *, convention):
+        return child.rpc({'op': 'calculation', 'action': 'financial', 'metric': metric,
+                          'inputs': inputs, 'convention': convention})['result']
+
     def calculation(result_id):
         return child.rpc({'op': 'calculation', 'action': 'get',
                           'record_id': result_id})['result']
@@ -141,11 +179,22 @@ def build_namespace(corpus_db: str, child, init_msg: dict) -> dict:
         """Execute the exact caller-issued metric contract, when configured."""
         return child.rpc({'op': 'calculation', 'action': 'metric'})['result']
 
+    def FINAL_CALCS(template, results, *, decimals=None):  # noqa: N802
+        from rnsr.env.final_answer import FinalAnswer
+
+        arguments = {'template': template, 'results': results, 'decimals': decimals}
+        result = child.rpc({'op': 'calculation', 'action': 'render', **arguments})['result']
+        raise FinalAnswer(result[0], is_var=True,
+                          verification={'check': 'source_bound_calculations', **arguments})
+
     return {
         "db": conn,
         "doc": doc,
         "manifest": manifest,
         "semantic_annotate": semantic_annotate,
+        "semantic_classify": semantic_classify,
+        "classification_counts": classification_counts,
+        "FINAL_CLASSIFICATION": FINAL_CLASSIFICATION,
         "search": ladder.search,
         "verify": verifier.verify,
         "source_context": doc.context,
@@ -154,9 +203,12 @@ def build_namespace(corpus_db: str, child, init_msg: dict) -> dict:
         "FINAL": FINAL,  # overrides the unverified classic-mode FINAL
         "FINAL_BATCH": FINAL_BATCH,  # ditto, with per-field quote checks
         "source_number": source_number,
+        "source_text_number": source_text_number,
         "calculate": calculate,
+        "calculate_financial": calculate_financial,
         "calculation": calculation,
         "FINAL_CALC": FINAL_CALC,
+        "FINAL_CALCS": FINAL_CALCS,
         "calculate_metric": calculate_metric,
         "metric_contract": init_msg.get("metric_contract"),
     }

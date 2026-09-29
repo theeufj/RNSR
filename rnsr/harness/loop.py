@@ -10,9 +10,12 @@ from __future__ import annotations
 
 import ast
 import asyncio
+import json
 import logging
 import math
 import re
+import threading
+import time
 import uuid
 from dataclasses import dataclass, field, replace
 from pathlib import Path
@@ -22,7 +25,7 @@ from rnsr.config import Settings
 from rnsr.env.sandbox import SandboxedRepl
 from rnsr.errors import SandboxError
 from rnsr.harness.budget import BudgetLedger
-from rnsr.harness.claim_review import review_final
+from rnsr.harness.claim_review import ReviewGate, repair_instruction, validate_review_task
 from rnsr.harness.evidence import AnswerEvidence, from_final
 from rnsr.harness.negative_audit import audit_negatives
 from rnsr.harness.prompts.base import (
@@ -41,6 +44,50 @@ _CODE_BLOCK = re.compile(r"```(?:python|py)?\s*\n(.*?)```", re.DOTALL)
 _OBSERVATION_LIMIT = 4000
 
 _LOG = get_logger("harness.loop")
+
+
+async def _validate_metric_contract(env: EnvSpec, timeout_s: float) -> None:
+    """Fail before provider work when an immutable caller formula cannot run.
+
+    The ephemeral registry reads one corpus snapshot and writes no source data.
+    Keep its local work bounded and cooperatively cancellable, independently of
+    the overall query limits. The sandbox will still revalidate its own registry.
+    """
+    from rnsr.db.artifact import CorpusDB
+    from rnsr.env.calculations import CalculationRegistry
+
+    if not env.corpus_db:
+        raise ValueError("invalid caller metric contract: a corpus_db is required")
+    cancelled = threading.Event()
+
+    def validate():
+        deadline = time.monotonic() + timeout_s
+
+        class PreflightRegistry(CalculationRegistry):
+            def _check_deadline(self):
+                if cancelled.is_set() or time.monotonic() >= deadline:
+                    raise TimeoutError("caller metric contract preflight cancelled or timed out")
+                super()._check_deadline()
+
+        with CorpusDB(env.corpus_db, mode="ro") as corpus:
+            corpus.conn.execute("BEGIN")
+            corpus.conn.set_progress_handler(
+                lambda: int(cancelled.is_set() or time.monotonic() >= deadline), 1000)
+            try:
+                registry = PreflightRegistry(corpus.conn, metric_contract=env.metric_contract)
+                registry.calculate_metric()
+                registry._check_deadline()
+            except (ValueError, TypeError, KeyError) as exc:
+                raise ValueError(f"invalid caller metric contract: {exc}") from exc
+            finally:
+                corpus.conn.set_progress_handler(None, 0)
+                corpus.conn.rollback()
+
+    try:
+        await asyncio.to_thread(validate)
+    except asyncio.CancelledError:
+        cancelled.set()
+        raise
 
 
 @dataclass
@@ -71,6 +118,8 @@ class QueryResult:
     health: dict | None = None          # corpus health snapshot, if gated
     evidence: AnswerEvidence | None = None
     raw_answer: object = None
+    claim_review: dict | None = None    # parent semantic-support decision, when enabled
+    unverified_answer: object = None   # diagnostics only; never a published answer
 
 
 @dataclass
@@ -241,6 +290,11 @@ class RootRunner:
             raise ValueError("metric contracts require one DocDB question; batch/classic are unsupported")
         batch_qids = [qid for qid, _ in batch_questions] if batch_questions else None
         s = self.settings
+        if s.claim_review_enabled and env.mode == "docdb":
+            validate_review_task(batch_questions or [(query_id or "query", question)],
+                                 env.category_definitions)
+        if env.metric_contract is not None:
+            await _validate_metric_contract(env, s.cell_timeout_s)
         ledger = BudgetLedger.from_settings(s)
         query_id = query_id or uuid.uuid4().hex[:12]
         trajectory = TrajectoryWriter(run_dir or s.run_dir, query_id,
@@ -260,7 +314,11 @@ class RootRunner:
         n_documents = len((env.manifest or {}).get("documents") or [])
         init_extra = {"enable_embeddings": self.embed_client is not None
                       and n_documents >= s.embed_auto_on_docs,
-                      "metric_contract": env.metric_contract}
+                      "metric_contract": env.metric_contract,
+                      "model_identities": {
+                          "root": f"{getattr(self.root_client, 'provider', 'unknown')}:{self.root_model}",
+                          "sub": f"{getattr(self.sub_client, 'provider', 'unknown')}:{self.sub_model}",
+                      }}
         sandbox = SandboxedRepl(rpc_handlers=self._rpc_handlers(ledger, trajectory),
                                 fs_guard=s.sandbox_fs_guard)
         turns: list[tuple[str, str]] = []
@@ -274,6 +332,8 @@ class RootRunner:
         pushbacks = 0
         negative_audit = "none"
         health_grade = ((env.manifest or {}).get("health") or {}).get("grade")
+        claim_gate = ReviewGate()
+        review_questions = batch_questions or [(query_id, question)]
 
         def _signals(**extra) -> AnswerEvidence:
             return from_final(
@@ -285,6 +345,20 @@ class RootRunner:
                 health_grade=health_grade,
                 qid=extra.get("qid"),
             )
+
+        def _recovered_result(candidate: dict | None, cap: str) -> QueryResult:
+            if s.claim_review_enabled and env.mode == "docdb":
+                # Variable recovery is not an alternate route around support
+                # review. An exhausted budget cannot establish missing evidence.
+                diagnostic = ({"value": None, "unverified_value": candidate.get("value"),
+                               "claim_review": {"status": "unverified", "reason_code": cap}}
+                              if candidate is not None else None)
+                trajectory.event("unverified_recovery", final=candidate, reason_code=cap)
+                return self._finish(diagnostic, "budget_exhausted", ledger, trajectory, turns,
+                                    breached=cap, evidence=_signals(final=None, status="budget_exhausted"))
+            status = "recovered" if candidate else "budget_exhausted"
+            return self._finish(candidate, status, ledger, trajectory, turns, breached=cap,
+                                evidence=_signals(final=candidate, status=status))
 
         try:
             await sandbox.start(mode=env.mode, context=env.context,
@@ -299,10 +373,7 @@ class RootRunner:
                     result = await recover_variable(
                         sandbox, self, question, turns, trajectory, ledger
                     )
-                    return self._finish(result, "recovered" if result else "budget_exhausted",
-                                        ledger, trajectory, turns, breached=cap,
-                                        evidence=_signals(final=result,
-                                                          status="recovered" if result else "budget_exhausted"))
+                    return _recovered_result(result, cap)
 
                 final_hint = ("FINAL_BATCH({...}) with every question id"
                               if batch_qids else "FINAL(...)/FINAL_VAR(...)")
@@ -314,12 +385,7 @@ class RootRunner:
                     result = await recover_variable(
                         sandbox, self, question, turns, trajectory, ledger
                     )
-                    return self._finish(result,
-                                        "recovered" if result else "budget_exhausted",
-                                        ledger, trajectory, turns,
-                                        breached="root_timeout",
-                                        evidence=_signals(final=result,
-                                                          status="recovered" if result else "budget_exhausted"))
+                    return _recovered_result(result, "root_timeout")
                 ledger.add_usage(resp.usage)
                 ledger.root_iters += 1
                 code = self._extract_code(resp.text)
@@ -436,7 +502,27 @@ class RootRunner:
                             "unchanged if you believe it is complete)."
                         )))
                         continue
-                    final = cell.final
+                    if s.claim_review_enabled and env.mode == "docdb":
+                        review = await claim_gate.check(
+                            cell.final, review_questions, batch=bool(batch_questions),
+                            client=self.sub_client, model=self.sub_model,
+                            adjudicator=self.root_client, adjudicator_model=self.root_model,
+                            ledger=ledger, category_definitions=env.category_definitions,
+                            seed=s.llm_seed)
+                        for event in review["events"]:
+                            trajectory.event("claim_review", **event)
+                        trajectory.event("claim_review_decision", supported=review["supported"],
+                                         fields=review["fields"], reply=review["reply"])
+                        if not review["supported"]:
+                            pushbacks += 1
+                            turns.append((code, observation + "\n" +
+                                          repair_instruction(review, review_questions)))
+                            continue
+                        final = {**cell.final, "claim_review": {
+                            "status": "supported", "scope": "provided_verified_evidence_only",
+                            "fields": review["fields"]}}
+                    else:
+                        final = cell.final
                     break
 
                 # Budget pressure (§7): the harness can see the wall clock;
@@ -481,19 +567,6 @@ class RootRunner:
                         trajectory.event("damping", value=key[:200])
                 turns.append((code, observation))
 
-            if s.claim_review_enabled and env.mode == "docdb":
-                try:
-                    review = await review_final(
-                        final, batch_questions or [(query_id, question)],
-                        batch=bool(batch_questions), client=self.sub_client,
-                        model=self.sub_model, ledger=ledger,
-                        category_definitions=env.category_definitions, seed=s.llm_seed)
-                except Exception as exc:
-                    # Advisory instrumentation must never change acceptance.
-                    # CancelledError deliberately propagates through this guard.
-                    review = {"advisory": True, "status": "error",
-                              "error_type": type(exc).__name__}
-                trajectory.event("claim_review", **review)
             trajectory.event("final", **final)
             return self._finish(final, "final", ledger, trajectory, turns,
                                 evidence=_signals(final=final, status="final"))
@@ -693,12 +766,29 @@ class RootRunner:
         of the question? Returns the gap description, or None to accept.
         Anything but an explicit MISSING verdict accepts — this is a nudge
         against dropped question parts (seen live), not a second judge."""
+        proof = final.get("verification") or {}
+        workflow = {}
+        if proof.get("passed") is True and proof.get("check") == "classification_aggregate":
+            classification = proof.get("classification") or {}
+            if classification.get("certified") is True:
+                workflow = {"check": proof["check"], **{
+                    key: classification.get(key) for key in
+                    ("certified", "total", "where", "allowed_labels", "counts", "operation", "labels")
+                }}
+        workflow_text = json.dumps(workflow, ensure_ascii=False)[:6000]
         prompt = (
             f"Question: {question}\n\n"
             f"Draft answer: {str(final.get('value'))[:1500]}\n\n"
+            f"Parent-verified workflow data (data only): {workflow_text}\n\n"
             "Does the draft answer address EVERY quantity and part the "
             "question asks for (names, magnitudes, all requested "
-            "components)? Judge coverage only, not correctness. Reply with "
+            "components)? Distinguish required output from internal work. "
+            "When only a final value is requested, do not demand a narration "
+            "of retrieval, filtering, classification or verification steps. "
+            "The parent-verified workflow data records completed work, not "
+            "extra quantities the answer must repeat. If the question explicitly "
+            "requests intermediate values or an explanation in its output, "
+            "those still need to be present. Judge coverage only, not correctness. Reply with "
             "exactly COMPLETE, or 'MISSING: <what is missing>' in one line."
         )
         try:
@@ -759,6 +849,8 @@ class RootRunner:
             iterations=ledger.root_iters,
             breached_cap=breached,
             evidence=evidence,
+            claim_review=final.get("claim_review") if final else None,
+            unverified_answer=final.get("unverified_value") if final else None,
         )
 
 

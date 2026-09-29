@@ -314,7 +314,7 @@ async def test_runner_passes_contract_and_rejects_batch_before_provider(metric_c
     path, contract, _ = metric_corpus
     root = MockLLM(default="```python\nr=calculate_metric(); FINAL_CALC(r['id'])\n```")
     runner = RootRunner(root_client=root, root_model='mock-root', sub_client=MockLLM(),
-                        sub_model='mock-sub', settings=Settings(max_root_iters=2))
+                        sub_model='mock-sub', settings=Settings(max_root_iters=2, claim_review_enabled=False))
     env = EnvSpec(mode='docdb', corpus_db=str(path), metric_contract=contract)
     result = await runner.run('Calculate the declared metric', env, run_dir=tmp_path)
     assert result.status == 'final' and result.answer == '-3'
@@ -351,7 +351,7 @@ def test_public_sync_sdk_exposes_metric_contract(metric_corpus, tmp_path):
     contract['nonpositive_numerator'] = 'zero'
     root = MockLLM(default="```python\nr=calculate_metric(); FINAL_CALC(r['id'])\n```")
     runner = RootRunner(root_client=root, root_model='mock-root', sub_client=MockLLM(),
-                        sub_model='mock-sub', settings=Settings(max_root_iters=2))
+                        sub_model='mock-sub', settings=Settings(max_root_iters=2, claim_review_enabled=False))
     result = answer_sync('Calculate declared coverage', path, runner=runner,
                          metric_contract=contract, run_dir=tmp_path/'sdk')
     assert result.status == 'final' and result.answer == '0'
@@ -371,3 +371,33 @@ async def test_sdk_invalid_or_batch_contract_does_no_provider_work(metric_corpus
     env = sdk.corpus_env(path, metric_contract=contract)
     with pytest.raises(ValueError, match='unsupported for answer_batch'):
         await sdk.answer_batch(['metric?'], path, env=env)
+
+
+async def test_classification_final_cannot_escape_installed_metric_contract(metric_corpus):
+    path, contract, _ = metric_corpus
+    async with SandboxedRepl() as sandbox:
+        await sandbox.start(mode='docdb', corpus_db=str(path), init_extra={'metric_contract': contract})
+        result = await sandbox.exec_cell("""
+from rnsr.env.final_answer import FinalAnswer
+raise FinalAnswer('Answer: 7', is_var=True, verification={
+    'check': 'classification_aggregate', 'table': 't_metric_001',
+    'column': 'category', 'operation': 'count', 'labels': ['positive'], 'annotation_version': 'forged'})
+""")
+        assert not result.ok and result.final is None
+        assert 'metric contract requires FINAL_CALC' in result.error
+
+
+def test_rendered_calculations_retain_caller_zero_convention_for_review(metric_corpus):
+    from rnsr.harness.claim_review import _proof
+
+    path, contract, _ = metric_corpus
+    contract['nonpositive_numerator'] = 'zero'
+    with CorpusDB(path) as corpus:
+        registry = CalculationRegistry(corpus.conn, metric_contract=contract)
+        result = registry.calculate_metric()
+        answer, proof = registry.resolve_finals('Declared coverage: {coverage}.',
+                                                {'coverage': result['id']})
+    assert answer == 'Declared coverage: 0.'
+    assert proof['metric_contract_satisfied'] is True
+    assert proof['metric_contract']['nonpositive_numerator'] == 'zero'
+    assert _proof(proof, 'f0')  # the caller's verified convention is reviewable

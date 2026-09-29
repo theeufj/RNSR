@@ -42,9 +42,10 @@ class Settings:
     cell_timeout_s: float = 120.0   # local cell work; uncapped queries exclude provider waits
     root_timeout_s: float = 120.0   # active provider call, excluding governor queue
     root_max_attempts: int = 3      # only for explicitly bounded queries; uncapped retries continue
-    # One bounded advisory review after quote verification; never blocks FINAL
-    # or upgrades trust. Opt-in until support-review quality is evaluated.
-    claim_review_enabled: bool = False
+    # Review source support before accepting DocDB finals. Unsupported drafts
+    # receive evidence-specific repair instructions; zero query caps stay unlimited.
+    # False retains the legacy lexical-only acceptance path for controlled studies.
+    claim_review_enabled: bool = True
 
     # --- run-level provider governance (rnsr.llm.governor) ---
     # Optional budgets above cap ONE query; these cap the run. 0 disables a limit.

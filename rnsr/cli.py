@@ -632,6 +632,10 @@ def regress_cmd(
     item_map: Path | None = typer.Option(None, "--map",
                                          help="item map from build-questions; "
                                               "fans group answers out to fields"),
+    questions: Path | None = typer.Option(
+        None, "--questions", exists=True,
+        help="question CSV or JSON with field IDs and optional explicit output requirements; "
+             "provides evaluator context without changing answers or gold"),
     out_dir: Path | None = typer.Option(None, "--out"),
     min_accuracy: float = typer.Option(0.0, "--min-accuracy",
                                        help="exit 2 below this field accuracy"),
@@ -658,9 +662,11 @@ def regress_cmd(
     from rnsr.eval.regression import (
         judge_disagreements,
         load_field_answers,
+        load_field_contexts,
         load_golden,
         load_golden_notes,
         load_status_tiers,
+        merge_field_contexts,
         score_run,
     )
     from rnsr.forms.fanout import fan_out
@@ -687,6 +693,7 @@ def regress_cmd(
         raise typer.BadParameter("provide --answers and --golden, or --from-review")
 
     gold = load_golden(golden)
+    contexts = load_field_contexts(golden)
     if item_map:
         items = _json.loads(item_map.read_text())["items"]
         with open(answers, newline="", encoding="utf-8") as f:
@@ -697,8 +704,11 @@ def regress_cmd(
         field_answers, notes = fan_out(items, [r[col] for r in rows])
         for note in notes:
             console.print(f"[yellow]parse note:[/yellow] {note}")
+        contexts = merge_field_contexts(contexts, load_field_contexts(item_map))
     else:
         field_answers = load_field_answers(answers)
+    if questions:
+        contexts = merge_field_contexts(contexts, load_field_contexts(questions))
 
     status_csv = answers.parent / "answers_status.csv"
     report = score_run(
@@ -707,12 +717,17 @@ def regress_cmd(
         min_high_tier_accuracy=min_high_tier_accuracy,
         notes=load_golden_notes(golden),
         tiers=load_status_tiers(status_csv),
+        contexts=contexts,
     )
     if judge and any(not r.agrees for r in report.results):
         from rnsr.llm.router import Router
 
-        sub = Router(Settings.from_env()).resolve("sub")
-        asyncio.run(judge_disagreements(report, sub.client, sub.model))
+        try:
+            sub = Router(Settings.from_env()).resolve("sub")
+        except Exception as exc:
+            asyncio.run(judge_disagreements(report, None, "", setup_error=exc))
+        else:
+            asyncio.run(judge_disagreements(report, sub.client, sub.model))
 
     summary = report.summary()
     sub_correct, sub_total = report.substantive
@@ -725,7 +740,7 @@ def regress_cmd(
     console.print(f"  high-tier accuracy: {summary['high_tier_accuracy']:.1%}")
     console.print(f"  review recall: {summary['review_recall']:.1%}  "
                   f"auto-accept: {summary['auto_accept_rate']:.1%}")
-    console.print(f"  resolved by judge: {summary['scored_by_judge']}")
+    console.print(f"  judged decisions: {summary['scored_by_judge']}")
     for d in summary["disagreements"]:
         console.print(f"[red]DIFF[/red] {d['field_id']}\n"
                       f"    golden: {d['golden']!r}\n"

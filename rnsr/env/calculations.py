@@ -10,6 +10,7 @@ import contextlib
 import copy
 import hashlib
 import json
+import re
 import secrets
 import sqlite3
 import time
@@ -223,7 +224,9 @@ class CalculationRegistry:
         for source_id in source_ids:
             fact = self._lookup(source_id)
             source = fact['source']
-            current = self._read_cell(source['table'], source['rowid'], source['column'])
+            current = (self._read_text_number(source['doc_id'], source['char_start'], source['char_end'])
+                       if source.get('kind') == 'text' else
+                       self._read_cell(source['table'], source['rowid'], source['column']))
             if any(current[key] != fact[key] for key in ('value', 'raw_value', 'source', 'quote')):
                 raise ValueError("calculation source value or evidence changed")
             for field in ('unit_source', 'period_source'):
@@ -234,10 +237,10 @@ class CalculationRegistry:
 
     def calculate(self, operation: str, operand_ids: list[str]) -> dict:
         self._check_deadline()
-        arities = {'sum': (1, MAX_OPERANDS), 'subtract': (2, 2),
+        arities = {'sum': (1, MAX_OPERANDS), 'mean': (1, MAX_OPERANDS), 'subtract': (2, 2),
                    'multiply': (2, 2), 'divide': (2, 2), 'percent': (1, 1)}
         if not isinstance(operation, str) or operation not in arities:
-            raise ValueError("operation must be sum, subtract, multiply, divide or percent")
+            raise ValueError("operation must be sum, mean, subtract, multiply, divide or percent")
         lo, hi = arities[operation]
         if not isinstance(operand_ids, list) or not lo <= len(operand_ids) <= hi:
             raise ValueError("wrong number of calculation operands")
@@ -255,6 +258,8 @@ class CalculationRegistry:
                 ctx.rounding = ROUND_HALF_EVEN
                 if operation == 'sum':
                     value = sum(values, Decimal(0))
+                elif operation == 'mean':
+                    value = sum(values, Decimal(0)) / len(values)
                 elif operation == 'subtract':
                     value = values[0] - values[1]
                 elif operation == 'multiply':
@@ -283,6 +288,94 @@ class CalculationRegistry:
         result = copy.deepcopy(record)
         self._check_deadline()
         return result
+
+    def _read_text_number(self, doc_id: str, char_start: int, char_end: int) -> dict:
+        span = self._span(doc_id, char_start, char_end)
+        raw = span['text']
+        if len(raw) > 128 or not re.fullmatch(
+                r'(?:[-+−]?\d+(?:,\d{3})*(?:\.\d+)?|\(\d+(?:,\d{3})*(?:\.\d+)?\))', raw):
+            raise ValueError('source text span must contain exactly one numeric literal, without units')
+        # Occurrence of "10" inside "-10", "(10)", "1.10" or "10,000"
+        # is not evidence for positive ten. Resolve the whole surrounding
+        # numeric token, retaining its sign/grouping before accepting offsets.
+        source_end = self.conn.execute('SELECT max(char_end) FROM doc_text WHERE doc_id=?',
+                                       (doc_id,)).fetchone()[0]
+        window_start = max(0, char_start - 256)
+        window = self._span(doc_id, window_start, min(source_end, char_end + 256))['text']
+        tokens = re.finditer(
+            r'(?<![\w.,])(?:\(\s*(?:[-+−]\s*)?\d+(?:,\d{3})*(?:\.\d+)?\s*\)'
+            r'|(?:[-+−]\s*)?\d+(?:,\d{3})*(?:\.\d+)?)(?![\w]|\.\d|,\d)', window)
+        if not any((window_start + token.start(), window_start + token.end()) == (char_start, char_end)
+                   for token in tokens):
+            raise ValueError('source text span must include the complete numeric token and its sign')
+        normalized = raw.replace(',', '').replace('−', '-')
+        if normalized.startswith('('):
+            normalized = '-' + normalized[1:-1]
+        generation = self._generation_by_id.get(doc_id)
+        if generation is None:
+            raise ValueError('source text document is not registered')
+        context = self._context(doc_id=doc_id, char_start=char_start, char_end=char_end)
+        return {'value': _render(_decimal(normalized)), 'raw_value': raw, 'quote': raw,
+                'source': {'kind': 'text', 'doc_id': doc_id, 'char_start': char_start,
+                           'char_end': char_end, 'page': context['page'],
+                           'heading_paths': context['heading_paths'],
+                           'source_span_id': span['source_span_id'],
+                           'generation_sha256': _digest(generation)}}
+
+    def source_text_number(self, doc_id: str, char_start: int, char_end: int, *,
+                           unit_span: dict | None = None, period_span: dict | None = None) -> dict:
+        """Bind one original numeric span when a source is prose, not a typed table."""
+        self._check_generation()
+        cell = self._read_text_number(doc_id, char_start, char_end)
+        unit, period = (self._metadata_span(s, doc_id) for s in (unit_span, period_span))
+        return self._store({'kind': 'source', **cell,
+                            'unit': unit['text'] if unit else None,
+                            'period': period['text'] if period else None,
+                            'unit_source': unit, 'period_source': period,
+                            'metadata_check': 'source_text_only; scope not semantically verified'}, 'src_')
+
+    def calculate_financial(self, metric: str, inputs: dict[str, str], *, convention: str) -> dict:
+        from rnsr.env.financial import financial_metric
+
+        return financial_metric(self, metric, inputs, convention=convention)
+
+    def resolve_finals(self, template: str, results: dict[str, str], *,
+                       decimals: int | None = None) -> tuple[str, dict]:
+        """Render numerical claims from immutable calculations, not model literals."""
+        from rnsr.env.financial import render_calculations
+
+        if not isinstance(results, dict) or not results or len(results) > 16:
+            raise ValueError('calculation answer requires 1-16 named results')
+        records, reports, values = {}, [], {}
+        for name, result_id in results.items():
+            result = self.get(result_id)
+            value, report = self.resolve_final(result_id, result['value'])
+            values[name] = value
+            reports.append(report)
+            records.update({record['id']: record for record in report['records']})
+        answer = render_calculations(template, values, decimals=decimals)
+        quotes = []
+        seen = set()
+        for report in reports:
+            for quote in report['quotes']:
+                identity = (quote['doc_id'], quote['char_start'], quote['char_end'])
+                if identity not in seen:
+                    quotes.append(quote)
+                    seen.add(identity)
+        proof = {'passed': True, 'check': 'source_bound_calculations',
+                        'answer': answer, 'quotes': quotes, 'records': list(records.values()),
+                        'calculation_answers': {
+                            name: {'value': value, 'calculation_id': results[name],
+                                   'rendered_value': render_calculations('{value}', {'value': value},
+                                                                        decimals=decimals)}
+                            for name, value in values.items()},
+                        'claim_support': 'not_checked'}
+        if self._metric_contract is not None:
+            # Each component was resolved against the same caller contract
+            # above; retain its authority through narrative rendering too.
+            proof['metric_contract'] = self._metric_contract.describe()
+            proof['metric_contract_satisfied'] = True
+        return answer, proof
 
     def calculate_metric(self) -> dict:
         """Execute the caller's fixed formula; model-supplied operands are not accepted."""
@@ -337,6 +430,9 @@ class CalculationRegistry:
         for fact in facts:
             source = fact['source']
             quotes.append({'quote': fact['quote'], 'matched': True,
+                           'source_context': self._context(
+                               doc_id=source['doc_id'], char_start=source['char_start'],
+                               char_end=source['char_end']),
                            **{key: source[key] for key in ('doc_id', 'char_start', 'char_end')}})
         # Include the entire bounded expression graph, not just the last step.
         graph = {}

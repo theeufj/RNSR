@@ -15,7 +15,9 @@ import math
 import re
 import sqlite3
 import time
+import uuid
 from datetime import UTC, datetime
+from numbers import Integral
 
 from rnsr.db import schema
 
@@ -133,20 +135,41 @@ _SOURCE_GENERATION = (
 
 
 def _selection_digest(generation, rows) -> str:
-    payload = [list(generation), [list(row) for row in rows]]
+    # Annotation columns are derived state, not a new source generation.
+    # Adding a different annotation must not invalidate an unchanged source.
+    source_schema = json.loads(generation[0])
+    source_schema["columns"] = [c for c in source_schema["columns"] if not c.get("annotation")]
+    payload = [[source_schema, *generation[1:]], [list(row) for row in rows]]
     return hashlib.sha256(json.dumps(payload, default=str, ensure_ascii=False).encode()).hexdigest()
+
+
+def _labels_digest(rows) -> str:
+    return hashlib.sha256(json.dumps([list(row) for row in rows],
+                                     ensure_ascii=False).encode()).hexdigest()
 
 
 class Annotator:
     def __init__(self, conn: sqlite3.Connection, rpc, *,
                  char_budget: int = 200_000, default_batch_size: int = 40,
-                 cancelled=lambda: False):
+                 cancelled=lambda: False, model_identities: dict[str, str] | None = None):
         self.conn = conn
         self.rpc = rpc
         self.char_budget = char_budget
         self.default_batch_size = default_batch_size
         self.cancelled = cancelled
+        self.model_identities = dict(model_identities or {})
+        # A role such as "sub" is not a model identity. Without trusted role
+        # resolution, reuse is safe only within this Annotator instance.
+        self._unresolved_identity = uuid.uuid4().hex
         self.usage = {"calls": 0, "prompts": 0}
+
+    def _model_identity(self, model: str) -> str:
+        identity = self.model_identities.get(model)
+        if identity is not None:
+            if not isinstance(identity, str) or not identity.strip():
+                raise ValueError("resolved annotation model identity must be nonempty")
+            return identity
+        return f"unresolved:{self._unresolved_identity}:{model}"
 
     def _ask(self, prompts: list[str], model: str) -> tuple[list[str], list[dict]]:
         if self.cancelled():
@@ -216,7 +239,8 @@ class Annotator:
                     values.update(parsed)
         return values, attempts
 
-    def _read_selection(self, table: str, sql: str, where: str | None):
+    def _read_selection(self, table: str, sql: str, where: str | None,
+                        allowed_columns: set[str] | None = None):
         """A bounded predicate over this table, without subqueries or unions."""
         if where is not None and (not isinstance(where, str) or len(where) > 10_000):
             raise ValueError("annotation where must be a SQL predicate of at most 10000 characters")
@@ -238,7 +262,9 @@ class Annotator:
                 selects += 1
                 return sqlite3.SQLITE_OK if selects == 1 else sqlite3.SQLITE_DENY
             if action == sqlite3.SQLITE_READ:
-                return sqlite3.SQLITE_OK if arg1 == table else sqlite3.SQLITE_DENY
+                permitted = arg1 == table and (allowed_columns is None
+                                              or arg2.casefold() in allowed_columns)
+                return sqlite3.SQLITE_OK if permitted else sqlite3.SQLITE_DENY
             if action == sqlite3.SQLITE_FUNCTION:
                 return (sqlite3.SQLITE_OK if (arg2 or arg1 or "").lower() in safe_functions
                         else sqlite3.SQLITE_DENY)
@@ -256,7 +282,8 @@ class Annotator:
     def annotate(self, table: str, new_col: str, prompt: str, *,
                  where: str | None = None, batch_size: int | None = None,
                  model: str = "sub", force: bool = False, votes: int = 1,
-                 allowed_labels: list[str] | tuple[str, ...] | None = None) -> dict:
+                 allowed_labels: list[str] | tuple[str, ...] | None = None,
+                 _expected_count: int | None = None) -> dict:
         """votes>1 runs the labeling pass that many times with different
         (seeded) item orders and writes the per-row majority. These passes
         share a model and prompt; their errors need not be independent.
@@ -271,16 +298,31 @@ class Annotator:
             raise ValueError("annotations require a registered extracted table")
         columns = decode_table_schema(row[0]).columns
         annotated = {c.name for c in columns if c.annotation}
-        physical = {r[1].casefold() for r in self.conn.execute(
+        physical_names = {r[1].casefold(): r[1] for r in self.conn.execute(
             f"PRAGMA table_info({schema.quote_ident(table)})")}
+        physical = set(physical_names)
         source = physical - {name.casefold() for name in annotated}
         source |= {"rowid", "oid", "_rowid_"}
         if (not isinstance(new_col, str) or not new_col or new_col.startswith("_")
                 or new_col.endswith("__raw") or new_col.casefold() in source):
             raise ValueError("annotation cannot overwrite a source or provenance column")
+        # SQLite identifiers are case-insensitive. One physical column must
+        # have one active audit history, even when a caller changes casing.
+        new_col = physical_names.get(new_col.casefold(), new_col)
         if not isinstance(prompt, str) or not prompt.strip():
             raise ValueError("annotation prompt must be nonempty text")
         allowed_labels = _allowed_labels(allowed_labels)
+        strict = _expected_count is not None
+        if strict:
+            if (not isinstance(_expected_count, int) or isinstance(_expected_count, bool)
+                    or _expected_count < 0):
+                raise ValueError("expected_count must be a nonnegative integer")
+            if not allowed_labels:
+                raise ValueError("classification requires the complete allowed_labels vocabulary")
+            if not isinstance(where, str) or not where.strip():
+                raise ValueError("classification requires an explicit instance-selection predicate")
+            if not isinstance(votes, int) or isinstance(votes, bool) or not 1 <= votes <= 5:
+                raise ValueError("classification votes must be an integer between 1 and 5")
         self.usage = {"calls": 0, "prompts": 0}
         batch_size = self.default_batch_size if batch_size is None else batch_size
         if not isinstance(batch_size, int) or not 1 <= batch_size <= 1000:
@@ -289,7 +331,10 @@ class Annotator:
         prompt_key = f"{prompt}|votes={votes}"
         if allowed_labels is not None:
             prompt_key += "|allowed_labels=" + json.dumps(allowed_labels, ensure_ascii=False)
+        if strict:
+            prompt_key += f"|classification_expected_count={_expected_count}"
         prompt_sha = hashlib.sha256(prompt_key.encode()).hexdigest()
+        model_identity = self._model_identity(model)
 
         prior_sql = (
             "SELECT rows_written, rows_failed, created_at, usage_json FROM annotation_log WHERE "
@@ -297,21 +342,42 @@ class Annotator:
             "AND ifnull(where_clause,'')=?")
         prior_key = (table, new_col, prompt_sha, model, where or "")
         prior = self.conn.execute(prior_sql, prior_key).fetchone()
-        if prior is not None and not force:
-            return {"noop": True, "rows": prior[0], "failed": prior[1],
-                    "coverage": None,
-                    "note": "identical annotation already applied; pass force=True to redo"}
 
         src_cols = _source_columns(self.conn, table, annotated)
         sql = (f"SELECT rowid, {', '.join(schema.quote_ident(c) for c in src_cols)} "
                f"FROM {schema.quote_ident(table)}")
         if where:
             sql += f" WHERE {where}"
-        rows = self._read_selection(table, sql, where)
-        if not rows:
+        sql += " ORDER BY rowid"
+        allowed_columns = ({c.casefold() for c in src_cols} | set(schema.PROVENANCE_COLUMNS)
+                           | {"rowid", "oid", "_rowid_", "source_page"}) if strict else None
+        rows = self._read_selection(table, sql, where, allowed_columns)
+        if strict and len(rows) != _expected_count:
+            raise ValueError(f"classification instance count mismatch: selected {len(rows)}, "
+                             f"expected {_expected_count}")
+        if not rows and not strict:
             return {"rows": 0, "failed": 0, "coverage": 0.0, "sample": []}
 
         source_digest = _selection_digest(row, rows)
+        latest = self.conn.execute(
+            "SELECT id, prompt_sha256, model, where_clause, usage_json FROM annotation_log "
+            "WHERE table_name=? AND column=? ORDER BY id DESC LIMIT 1", (table, new_col)).fetchone()
+        if latest and prior is not None and not force:
+            old = json.loads(latest[4]).get("annotation_state", {})
+            if (latest[1:4] == (prompt_sha, model, where)
+                    and old.get("model_identity") == model_identity
+                    and old.get("batch_size") == batch_size
+                    and old.get("source_sha256") == source_digest
+                    and old.get("complete") is True
+                    and self._current_labels_digest(table, new_col, rows)
+                    == old.get("labels_sha256")):
+                result = {"noop": True, "rows": prior[0], "failed": prior[1],
+                          "coverage": 1.0,
+                          "note": "current annotation and source verified; pass force=True to redo"}
+                if strict:
+                    result.update(self.classification_counts(table, new_col))
+                    result["unresolved_rowids"] = []
+                return result
         rendered = [
             (row[0], json.dumps(dict(zip(src_cols, row[1:], strict=True)), default=str))
             for row in rows
@@ -323,7 +389,7 @@ class Annotator:
 
         tallies: dict[int, list[str]] = {}
         vote_audit = []
-        for vote in range(votes):
+        for vote in range(votes) if rows else ():
             ordered = list(rendered)
             if vote > 0:
                 random.Random(vote).shuffle(ordered)
@@ -346,6 +412,9 @@ class Annotator:
             for label in labels:
                 counts[label] = counts.get(label, 0) + 1
             best = max(counts.values())
+            if strict and (len(labels) != votes or best <= votes // 2):
+                # A partial pass or tied plurality is not a completed label.
+                continue
             # tie -> earliest vote's label (labels[] preserves vote order)
             values[rowid] = next(la for la in labels if counts[la] == best)
 
@@ -355,10 +424,23 @@ class Annotator:
             "source": {"doc_id": row[1], "sha256": row[2], "content_sha256": row[3],
                        "selection_sha256": source_digest, "row_count": len(rows)},
             "instruction_sha256": hashlib.sha256(prompt.encode()).hexdigest(),
-            "aggregation": "plurality_of_valid_votes; ties_use_earliest_valid_vote",
+            "aggregation": ("all_votes_valid_and_strict_majority; otherwise_unresolved" if strict
+                            else "plurality_of_valid_votes; ties_use_earliest_valid_vote"),
             "partial_vote_rowids": [r[0] for r in rows if 0 < len(tallies.get(r[0], [])) < votes],
             "failed_rowids": [r[0] for r in rows if r[0] not in values],
             "votes": vote_audit,
+        }
+        unresolved = [r[0] for r in rows if r[0] not in values]
+        self.usage["annotation_state"] = {
+            "version": 2, "annotation_version": uuid.uuid4().hex,
+            "model_identity": model_identity, "batch_size": batch_size,
+            "source_sha256": source_digest,
+            "rowids": [r[0] for r in rows],
+            "labels_sha256": _labels_digest([(r[0], values.get(r[0])) for r in rows]),
+            "complete": not unresolved,
+            "classification": ({"expected_count": _expected_count,
+                                "allowed_labels": list(allowed_labels),
+                                "where": where} if strict else None),
         }
         if self.cancelled():
             raise RuntimeError("annotation cancelled")
@@ -371,17 +453,19 @@ class Annotator:
             current = self.conn.execute(_SOURCE_GENERATION, (table,)).fetchone()
             if current is None or list(current) != list(row):
                 raise ValueError("annotation source changed while labeling; retry against current source")
-            current_rows = self._read_selection(table, sql, where)
+            current_rows = self._read_selection(table, sql, where, allowed_columns)
             if _selection_digest(current, current_rows) != source_digest:
                 raise ValueError("annotation source changed while labeling; retry against current source")
             schema.add_annotation_column(self.conn, table, new_col)
+            # Every new run replaces the selected labels, including failures.
+            # Leaving an earlier value here would masquerade as a fresh result.
             self.conn.executemany(
                 f"UPDATE {schema.quote_ident(table)} SET {schema.quote_ident(new_col)} = ? "
                 "WHERE rowid = ?",
-                [(v, rowid) for rowid, v in values.items()],
+                [(values.get(r[0]), r[0]) for r in rows],
             )
             failed = len(rows) - len(values)
-            if force:
+            if prior is not None:
                 # Read the latest log under the publishing lock; another
                 # trusted annotation may have completed during provider calls.
                 prior = self.conn.execute(prior_sql, prior_key).fetchone()
@@ -405,5 +489,103 @@ class Annotator:
             raise
 
         sample = list(values.items())[:5]
-        return {"rows": len(values), "failed": failed,
-                "coverage": round(len(values) / len(rows), 4), "sample": sample}
+        result = {"rows": len(values), "failed": failed,
+                  "coverage": round(len(values) / len(rows), 4) if rows else 1.0,
+                  "sample": sample}
+        if strict:
+            result.update(certified=not unresolved, unresolved_rowids=unresolved)
+            if not unresolved:
+                result.update(self.classification_counts(table, new_col))
+        return result
+
+    def _current_labels_digest(self, table, column, rows):
+        selected = {r[0] for r in rows}
+        labels = self.conn.execute(
+            f"SELECT rowid, {schema.quote_ident(column)} FROM {schema.quote_ident(table)} "
+            "ORDER BY rowid").fetchall()
+        return _labels_digest([r for r in labels if r[0] in selected])
+
+    def classify(self, table: str, new_col: str, prompt: str, *,
+                 allowed_labels: list[str] | tuple[str, ...], where: str,
+                 expected_count: int, model: str = "sub", votes: int = 3,
+                 batch_size: int | None = None, force: bool = False) -> dict:
+        """Classify an explicit instance universe under a closed vocabulary.
+
+        Certification establishes complete, valid, source-bound labels and
+        exact aggregation, not semantic correctness of model judgments.
+        """
+        if (not isinstance(expected_count, Integral) or isinstance(expected_count, bool)
+                or expected_count < 0):
+            raise ValueError("expected_count must be a nonnegative integer")
+        # SQL/dataframe counts may be NumPy integer scalars. Preserve exact
+        # integer semantics while making the persisted contract JSON-safe.
+        expected_count = int(expected_count)
+        return self.annotate(table, new_col, prompt, allowed_labels=allowed_labels,
+                             where=where, _expected_count=expected_count, model=model,
+                             votes=votes, batch_size=batch_size, force=force)
+
+    def classification_counts(self, table: str, column: str) -> dict:
+        """Count only the current, complete strict classification version."""
+        # Proof, source rows and labels must all describe one SQLite snapshot.
+        # A concurrent trusted annotator may otherwise replace the column
+        # between the label-digest check and aggregation.
+        own_snapshot = not self.conn.in_transaction
+        if own_snapshot:
+            self.conn.execute("BEGIN")
+        try:
+            return self._classification_counts(table, column)
+        finally:
+            if own_snapshot:
+                self.conn.rollback()
+
+    def _classification_counts(self, table: str, column: str) -> dict:
+        if not isinstance(column, str) or not column:
+            raise ValueError("classification column must be nonempty text")
+        column = next((r[1] for r in self.conn.execute(
+            f"PRAGMA table_info({schema.quote_ident(table)})")
+            if r[1].casefold() == column.casefold()), column)
+        latest = self.conn.execute(
+            "SELECT id, usage_json FROM annotation_log WHERE table_name=? AND column=? "
+            "ORDER BY id DESC LIMIT 1", (table, column)).fetchone()
+        if latest is None:
+            raise ValueError("classification has no audited contract")
+        state = json.loads(latest[1]).get("annotation_state", {})
+        contract = state.get("classification")
+        if not contract or not state.get("complete"):
+            raise ValueError("classification is unresolved or has no strict contract")
+        generation = self.conn.execute(_SOURCE_GENERATION, (table,)).fetchone()
+        if generation is None:
+            raise ValueError("classification source is unavailable")
+        from rnsr.db.metadata import decode_table_schema
+
+        annotated = {c.name for c in decode_table_schema(generation[0]).columns if c.annotation}
+        source_cols = _source_columns(self.conn, table, annotated)
+        allowed = ({c.casefold() for c in source_cols} | set(schema.PROVENANCE_COLUMNS)
+                   | {"rowid", "oid", "_rowid_", "source_page"})
+        sql = (f"SELECT rowid, {', '.join(schema.quote_ident(c) for c in source_cols)} "
+               f"FROM {schema.quote_ident(table)} WHERE {contract['where']} ORDER BY rowid")
+        rows = self._read_selection(table, sql, contract["where"], allowed)
+        if (len(rows) != contract["expected_count"]
+                or [r[0] for r in rows] != state.get("rowids")
+                or _selection_digest(generation, rows) != state.get("source_sha256")):
+            raise ValueError("classification source or instance selection changed")
+        if self._current_labels_digest(table, column, rows) != state.get("labels_sha256"):
+            raise ValueError("classification labels changed after their audited publication")
+        selected = set(state["rowids"])
+        counts = dict.fromkeys(contract["allowed_labels"], 0)
+        labels = self.conn.execute(
+            f"SELECT rowid, {schema.quote_ident(column)} FROM {schema.quote_ident(table)}"
+        ).fetchall()
+        for rowid, label in labels:
+            if rowid in selected:
+                if label not in counts:
+                    raise ValueError("classification contains unresolved or invalid labels")
+                counts[label] += 1
+        return {"certified": True, "counts": counts, "total": len(rows),
+                "allowed_labels": contract["allowed_labels"], "annotation_id": latest[0],
+                "annotation_version": state["annotation_version"],
+                "selection_sha256": state["source_sha256"],
+                "model_identity": state["model_identity"],
+                # A stable identity for the exact ordered row/label assignment;
+                # equal totals alone must not hide actual reclassification.
+                "labels_sha256": state["labels_sha256"]}

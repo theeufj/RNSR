@@ -383,6 +383,12 @@ infrastructure by design.
 - **semantic_annotate** (§4.1): one batched sub-model pass writes results
   back as a real SQL column (idempotent, audit-logged) — O(N²) reasoning
   becomes O(N) calls plus a self-join.
+- **Answer validation**: DocDB claim support is reviewed before acceptance by
+  default. Classification aggregates use an explicit instance/label contract;
+  numerical calculations and rendered results are checked in the parent.
+  Rejected drafts return with a specific evidence gap. See
+  [answer validation](docs/answer-validation.md) for the tools, conventions,
+  review behavior, and evaluation controls.
 - **Query limits**: iterations, sub-calls, wall time, and spend default to
   **0 (unlimited)**. Set positive `RNSR_MAX_ROOT_ITERS`, `RNSR_MAX_SUB_CALLS`,
   `RNSR_MAX_WALL_S`, or `RNSR_MAX_SPEND_USD` values to opt into limits. The

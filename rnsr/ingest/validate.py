@@ -190,27 +190,128 @@ def _total_rows(raw: RawTable, label_col: int) -> list[int]:
     return hits
 
 
-def _check_arithmetic_column(
-    values: list, totals: list[int], rel_tol: float, abs_tol: float,
-    *, subtotals: set[int] | None = None,
-) -> list[dict]:
-    """Check segments, carrying subtotals into a final total without double counting."""
-    results = []
-    subtotals = subtotals or set()
-    total_set = set(totals)
-    segment: list[int] = []
-    completed_segments: list[int] = []
-    for t, expected in enumerate(values):
-        if t not in total_set:
-            if expected is not None:
-                segment.append(t)
+def _scope_label(text: str) -> str:
+    """Compare a section heading with its closing label, not its values."""
+    text = re.sub(r"\s*\(\d+\)\s*$", "", text.strip())
+    text = re.sub(r"^(?:(?:grand\s+)?total|subtotal|sub-total|sum)\b\s*", "", text,
+                  flags=re.IGNORECASE)
+    return re.sub(r"\s+", " ", text).strip(" :").casefold()
+
+
+def _arithmetic_plan(raw: RawTable, label_col: int) -> list[dict]:
+    """Resolve checksum scope from headings and closing labels alone.
+
+    A section's closing row replaces its components in the parent. This
+    also handles subtotals without the word 'total', such as a numeric
+    'Cash equivalents' row closing a 'Cash equivalents:' heading. Never
+    choose a grouping because its numbers happen to add up.
+    """
+    root = {"label": "", "rows": [], "segment": []}
+    stack = [root]
+    finished: list[int] = []
+    plan: list[dict] = []
+
+    def append(node, index):
+        node["rows"].append(index)
+        node["segment"].append(index)
+
+    def check(index, rows, reason=None):
+        # A numeric row with no label could itself be an unmarked subtotal.
+        # Its scope cannot be established from this grid.
+        if any(not str(raw.rows[i][label_col] or "").strip() for i in rows):
+            reason = reason or "ambiguous_unlabelled_component"
+        item = {"total_row": index, "rows": list(rows)}
+        if reason:
+            item.update(applicable=False, skipped=reason)
+        plan.append(item)
+
+    for index, row in enumerate(raw.rows):
+        label = str(row[label_col] or "") if label_col < len(row) else ""
+        kind = classify_row_kind(row, label_col)
+        scope = _scope_label(label)
+        if kind == "footnote":
             continue
-        rows = segment if t in subtotals else completed_segments + segment
-        segment = []
-        if t in subtotals:
-            completed_segments.append(t)
+        if kind == "section":
+            stack.append({"label": scope, "rows": [], "segment": []})
+            continue
+        matches = [i for i, node in enumerate(stack[1:], 1)
+                   if scope and scope == node["label"]]
+        if matches:
+            target = matches[-1]
+            node = stack[target]
+            check(index, node["rows"],
+                  "ambiguous_unclosed_section" if target != len(stack) - 1 else None)
+            del stack[target:]
+            append(stack[-1], index)
+        elif kind == "subtotal":
+            node = stack[-1]
+            following = next((r for r in raw.rows[index + 1:]
+                              if any(not is_null_cell(value) for value in r)
+                              and classify_row_kind(r, label_col) != "footnote"), None)
+            next_label = (str(following[label_col] or "")
+                          if following is not None and label_col < len(following) else "")
+            next_kind = classify_row_kind(following, label_col) if following else None
+            closes_section = len(stack) > 1 and not scope and (
+                following is None or next_kind == "section"
+                or (next_kind == "total" and (
+                    re.match(r"^\s*grand\s+total\b", next_label, re.IGNORECASE)
+                    or any(_scope_label(next_label) == parent["label"]
+                           for parent in stack[1:-1]))))
+            if closes_section:
+                # A generic Subtotal followed by another section (or the
+                # parent's total) closes this section. Keep its value once
+                # in the parent, including for a later Grand total.
+                check(index, node["rows"])
+                stack.pop()
+                append(stack[-1], index)
+                continue
+            rows = node["segment"]
+            check(index, rows, "ambiguous_subtotal_scope" if not rows else None)
+            if rows:
+                node["rows"] = node["rows"][:-len(rows)]
+            else:
+                # Do not count a possible parent subtotal alongside children.
+                node["rows"] = []
+            node["rows"].append(index)
+            node["segment"] = []
+        elif kind == "total":
+            if len(stack) > 1:
+                node = stack[-1]
+                # A generic Total can close a single, otherwise isolated
+                # section. Other unresolved scopes must not fail a checksum.
+                isolated = len(stack) == 2 and not root["rows"] and not scope
+                check(index, node["rows"],
+                      None if isolated else "ambiguous_total_scope")
+                del stack[1:]
+                append(root, index)
+            else:
+                rows = root["rows"]
+                grand = bool(re.match(r"^\s*grand\s+total\b", label, re.IGNORECASE))
+                if grand:
+                    rows = finished + rows
+                check(index, rows)
+                root["rows"], root["segment"] = [], []
+                if grand:
+                    finished = [index]
+                else:
+                    finished.append(index)
         else:
-            completed_segments = []
+            append(stack[-1], index)
+    return plan
+
+
+def _check_arithmetic_column(
+    values: list, plan: list[dict], rel_tol: float, abs_tol: float,
+) -> list[dict]:
+    """Evaluate the same structurally chosen checks in every numeric column."""
+    results = []
+    for item in plan:
+        t = item["total_row"]
+        expected = values[t]
+        rows = [i for i in item["rows"] if values[i] is not None]
+        if item.get("applicable") is False:
+            results.append(item)
+            continue
         if expected is None or len(rows) < 2:
             continue
         s = sum(values[i] for i in rows if values[i] is not None)
@@ -251,8 +352,7 @@ def check_arithmetic(raw: RawTable, cols: dict[int, CoercedColumn],
     if raw.kind == "text_lines":
         return g
     label_col = label_column(raw, {idx for idx, col in cols.items() if col.is_numeric})
-    totals = _total_rows(raw, label_col)
-    subtotals = {i for i in totals if aggregate_kind(str(raw.rows[i][label_col])) == "subtotal"}
+    plan = _arithmetic_plan(raw, label_col)
     for idx, col in cols.items():
         if not col.is_numeric or idx == label_col:
             continue
@@ -260,10 +360,12 @@ def check_arithmetic(raw: RawTable, cols: dict[int, CoercedColumn],
         if reason:
             g.details.append({"column": idx, "applicable": False, "skipped": reason})
             continue
-        checks = _check_arithmetic_column(col.values, totals, rel_tol, abs_tol,
-                                          subtotals=subtotals)
+        checks = _check_arithmetic_column(col.values, plan, rel_tol, abs_tol)
         applicable_checks = []
         for c in checks:
+            if c.get("applicable") is False:
+                g.details.append({"column": idx, **c})
+                continue
             labels = [str(raw.rows[i][label_col] or "")
                       for i in c["rows"] + [c["total_row"]]]
             if any(_NON_ADDITIVE.search(label) or _BALANCE_SNAPSHOT.search(label)

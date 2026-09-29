@@ -84,11 +84,15 @@ def requires_classification_proof(question: str, category_definitions: str | Non
     explicit = bool(re.search(
         r"\b(?:classify|classifying|categorize|categorizing|categorise|categorising|"
         r"labeling|labelling)\b", text))
-    population = bool(re.search(r"\b(?:instances?|rows?|records?|examples?|items?|entries|questions?|comments?|utterances?)\b", text))
+    # Requested passive classification is an action too. A factual phrase
+    # such as "classified documents were released" does not request one.
+    requested_passive = bool(re.search(
+        r"\b(?:should|must|need to) be (?:classified|categorized|categorised|labeled|labelled)\b", text))
+    population = bool(re.search(r"\b(?:instances?|rows?|records?|examples?|items?|entries|questions?|comments?|utterances?|data points?)\b", text))
     categories = bool(re.search(r"\b(?:categor(?:y|ies)|labels?|classes|classification)\b", text))
     category_comparison = categories and bool(re.search(
         r"\b(?:frequency|frequencies|(?:most|least|more|less) (?:common|frequent))\b", text))
-    if explicit or (population and categories) or category_comparison:
+    if explicit or requested_passive or (population and categories) or category_comparison:
         return True
     definitions = category_definitions or ""
     if not definitions.strip():

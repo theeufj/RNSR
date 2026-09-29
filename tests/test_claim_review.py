@@ -822,10 +822,12 @@ _CLASSIFICATION_QUESTION = 'Classify each original instance as Human or Place. H
 
 
 @pytest.mark.parametrize('answer', ['3', '0', 'No', 'Answer: 3', 'NOT_FOUND: the count is 3'])
-async def test_lexical_quotes_cannot_replace_recorded_classification_aggregate(answer):
+@pytest.mark.parametrize('question', [_CLASSIFICATION_QUESTION,
+    'In the above data, how many data points should be classified as label Person?'])
+async def test_lexical_quotes_cannot_replace_recorded_classification_aggregate(answer, question):
     sub = client()
     submitted = final(answer, quote='Complete dataset: Who is Mira? Who is Owen? Who is Tara?')
-    result = await run_review(submitted, question=_CLASSIFICATION_QUESTION, sub=sub)
+    result = await run_review(submitted, question=question, sub=sub)
     assert not sub.calls and not result['attempted']
     assert result['fields'][0]['verdict'] == 'insufficient'
     assert result['fields'][0]['reason_code'] == 'missing_parent_classification_proof'

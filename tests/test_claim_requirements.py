@@ -163,6 +163,12 @@ async def test_adjudicator_receives_exact_objection_as_data_and_cannot_silently_
     ('Which category is least frequent?', None),
     ('Which label is most common across the rows?', None),
     ('Classify all rows and report the frequency distribution.', None),
+    ('In the above data, how many data points should be classified as label Urgent?', None),
+    ('Among instances associated with the selected users, how many data points must be categorized as Routine?', None),
+    ('How many data points need to be labelled Priority?', None),
+    ('In the above data, is label Urgent more common, less common, or the same frequency as label Routine?', None),
+    ('Among the selected user instances, which of the labels is the most common?', None),
+    ('In the above data, which of the labels is the least common?', None),
 ])
 def test_semantic_count_comparison_and_extrema_require_parent_proof(question, definitions):
     assert extract_requirements(question, definitions)['required_parent_proofs'] == ['classification_aggregate']
@@ -173,6 +179,7 @@ def test_semantic_count_comparison_and_extrema_require_parent_proof(question, de
     ('How many rows are in the source table?', None),
     ('How many days does the contract last?', 'Human: person; Place: location.'),
     ('How many classified documents were released according to the report?', None),
+    ('In the above data, which user is represented most often?', None),
     ('Classify this question as Human or Place. Return one label.', 'Human: person; Place: location.'),
     ('What category does this single question belong to?', 'Human: person; Place: location.'),
 ])

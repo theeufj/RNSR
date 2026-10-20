@@ -1,0 +1,685 @@
+[
+  {
+    "id": "summary_s56_response",
+    "question_type": "summary",
+    "sources": [
+      "2025-01-08_s56_response_letter_Raman_Migration.docx",
+      "2025-01-08_ImmiAccount_receipt_s56_response.pdf"
+    ]
+  },
+  {
+    "id": "hearing_date_latest",
+    "question_type": "value_lookup",
+    "sources": [
+      "2026-01-20_ART_amended_directions.pdf",
+      "2025-11-15_ART_directions.pdf"
+    ]
+  },
+  {
+    "id": "applicant_previously_married",
+    "question_type": "existence",
+    "sources": [
+      "2024-10-10_statutory_declaration_Haruto_Tanaka.docx",
+      "2024-10-08_application_summary_47SP_40SP_style.txt"
+    ]
+  },
+  {
+    "id": "declaration_count",
+    "question_type": "count_list",
+    "sources": [
+      "2024-10-14_ImmiAccount_receipt_820_lodgement.pdf",
+      "file_notes_migration_agent_2024-2025.docx",
+      "2024-10-08_application_summary_47SP_40SP_style.txt"
+    ]
+  },
+  {
+    "id": "mf_hearing_change",
+    "question_type": "multi_fact",
+    "sources": [
+      "2025-11-15_ART_directions.pdf",
+      "2026-01-20_ART_amended_directions.pdf"
+    ]
+  },
+  {
+    "id": "mf_485_grant_and_expiry",
+    "question_type": "multi_fact",
+    "sources": [
+      "2022-11-08_visa_grant_notice_485_Tanaka.png",
+      "2024-10-14_ImmiAccount_receipt_820_lodgement.pdf"
+    ]
+  },
+  {
+    "id": "art_interpreter_requested",
+    "question_type": "existence",
+    "sources": [
+      "2025-10-06_ART_application_Tanaka.docx",
+      "2025-11-15_ART_directions.pdf"
+    ]
+  },
+  {
+    "id": "mf_police_certificates",
+    "question_type": "multi_fact",
+    "sources": [
+      "2024-09-24_AFP_national_police_check_Tanaka.pdf",
+      "2024-09-17_police_certificate_Japan_Tanaka.png"
+    ]
+  },
+  {
+    "id": "form_888_declarants",
+    "question_type": "relationship",
+    "sources": [
+      "2024-10-11_Form888_Daniel_Okafor.docx",
+      "2024-10-12_Form888_Mei-Ling_Chen.docx",
+      "2024-10-08_application_summary_47SP_40SP_style.txt"
+    ]
+  },
+  {
+    "id": "s56_item_list",
+    "question_type": "count_list",
+    "sources": [
+      "2024-12-12_s56_request_letter_Home_Affairs.pdf"
+    ]
+  },
+  {
+    "id": "bank_closing_balance_sep_2024",
+    "question_type": "value_lookup",
+    "sources": [
+      "2024-09-30_joint_bank_statement_Sep2024.png"
+    ]
+  },
+  {
+    "id": "sponsor_name",
+    "question_type": "relationship",
+    "sources": [
+      "2024-10-14_ImmiAccount_receipt_820_lodgement.pdf",
+      "2024-10-08_application_summary_47SP_40SP_style.txt"
+    ]
+  },
+  {
+    "id": "s56_response_due",
+    "question_type": "value_lookup",
+    "sources": [
+      "2024-12-12_s56_request_letter_Home_Affairs.pdf"
+    ]
+  },
+  {
+    "id": "english_overall_score",
+    "question_type": "value_lookup",
+    "sources": [
+      "2022-04-09_English_test_result_HEPT.pdf"
+    ]
+  },
+  {
+    "id": "mf_decision_and_deadline",
+    "question_type": "multi_fact",
+    "sources": [
+      "2025-09-22_corrigendum_decision_letter.pdf"
+    ]
+  },
+  {
+    "id": "s56_new_third_party_statements",
+    "question_type": "existence",
+    "sources": [
+      "2025-01-08_s56_response_letter_Raman_Migration.docx"
+    ]
+  },
+  {
+    "id": "bridging_visa_count",
+    "question_type": "count_list",
+    "sources": [
+      "2025-10-08_VEVO_entitlements_printout.pdf",
+      "2024-11-08_bridging_visa_A_grant_notice.pdf",
+      "2025-02-03_bridging_visa_B_grant_notice.pdf"
+    ]
+  },
+  {
+    "id": "sponsor_police_check_provided",
+    "question_type": "existence",
+    "sources": [
+      "2024-10-08_application_summary_47SP_40SP_style.txt"
+    ]
+  },
+  {
+    "id": "passport_expiry_date",
+    "question_type": "value_lookup",
+    "sources": [
+      "2021-06-03_passport_bio_page_Tanaka_Haruto.png"
+    ]
+  },
+  {
+    "id": "passport_number_correct",
+    "question_type": "value_lookup",
+    "sources": [
+      "2025-09-22_corrigendum_decision_letter.pdf",
+      "2024-12-12_s56_request_letter_Home_Affairs.pdf"
+    ]
+  },
+  {
+    "id": "condition_485",
+    "question_type": "value_lookup",
+    "sources": [
+      "2022-11-08_visa_grant_notice_485_Tanaka.png"
+    ]
+  },
+  {
+    "id": "grant_number_485",
+    "question_type": "value_lookup",
+    "sources": [
+      "2022-11-08_visa_grant_notice_485_Tanaka.png"
+    ]
+  },
+  {
+    "id": "migration_agent",
+    "question_type": "relationship",
+    "sources": [
+      "2024-10-02_costs_agreement_Raman_Migration.docx",
+      "2024-10-14_ImmiAccount_receipt_820_lodgement.pdf"
+    ]
+  },
+  {
+    "id": "art_case_number",
+    "question_type": "value_lookup",
+    "sources": [
+      "2025-11-15_ART_directions.pdf",
+      "2025-10-06_ART_application_Tanaka.docx"
+    ]
+  },
+  {
+    "id": "message_anniversary_text",
+    "question_type": "value_lookup",
+    "sources": [
+      "2023-02-01_messages_screenshot_Ellie_Haruto.png"
+    ]
+  },
+  {
+    "id": "address_at_lodgement",
+    "question_type": "value_lookup",
+    "sources": [
+      "2024-10-14_ImmiAccount_receipt_820_lodgement.pdf",
+      "2024-10-08_application_summary_47SP_40SP_style.txt"
+    ]
+  },
+  {
+    "id": "form_888_count",
+    "question_type": "count_list",
+    "sources": [
+      "2024-10-08_application_summary_47SP_40SP_style.txt"
+    ]
+  },
+  {
+    "id": "declaration_witness",
+    "question_type": "relationship",
+    "sources": [
+      "2024-10-10_statutory_declaration_Haruto_Tanaka.docx",
+      "2024-10-10_statutory_declaration_Eleanor_Marsh.docx"
+    ]
+  },
+  {
+    "id": "lodgement_date_corrected",
+    "question_type": "value_lookup",
+    "sources": [
+      "2025-09-22_corrigendum_decision_letter.pdf",
+      "2024-10-14_ImmiAccount_receipt_820_lodgement.pdf",
+      "2024-12-12_s56_request_letter_Home_Affairs.pdf"
+    ]
+  },
+  {
+    "id": "summary_refusal_reasons",
+    "question_type": "summary",
+    "sources": [
+      "2025-09-11_refusal_decision_letter.pdf",
+      "2025-09-22_corrigendum_decision_letter.pdf"
+    ]
+  },
+  {
+    "id": "art_witnesses",
+    "question_type": "relationship",
+    "sources": [
+      "2026-01-20_ART_amended_directions.pdf"
+    ]
+  },
+  {
+    "id": "summary_corrigendum",
+    "question_type": "summary",
+    "sources": [
+      "2025-09-22_corrigendum_decision_letter.pdf"
+    ]
+  },
+  {
+    "id": "un_sponsor_passport",
+    "question_type": "unanswerable",
+    "sources": [
+      "2024-10-08_application_summary_47SP_40SP_style.txt"
+    ]
+  },
+  {
+    "id": "daniel_okafor_relationship",
+    "question_type": "relationship",
+    "sources": [
+      "2024-10-11_Form888_Daniel_Okafor.docx"
+    ]
+  },
+  {
+    "id": "australian_police_check_provided",
+    "question_type": "existence",
+    "sources": [
+      "2024-09-24_AFP_national_police_check_Tanaka.pdf"
+    ]
+  },
+  {
+    "id": "quote_s56_time_to_respond",
+    "question_type": "quote",
+    "sources": [
+      "2024-12-12_s56_request_letter_Home_Affairs.pdf"
+    ]
+  },
+  {
+    "id": "haruto_address_list",
+    "question_type": "count_list",
+    "sources": [
+      "2024-10-08_application_summary_47SP_40SP_style.txt",
+      "2025-08-18_change_of_address_receipt.pdf"
+    ]
+  },
+  {
+    "id": "visa_application_charge",
+    "question_type": "value_lookup",
+    "sources": [
+      "2024-10-14_ImmiAccount_receipt_820_lodgement.pdf",
+      "file_notes_migration_agent_2024-2025.docx"
+    ]
+  },
+  {
+    "id": "joint_account_before_feb_2023",
+    "question_type": "existence",
+    "sources": [
+      "2024-10-01_joint_bank_summary_Feb2023-Aug2024.docx",
+      "2025-09-11_refusal_decision_letter.pdf"
+    ]
+  },
+  {
+    "id": "sponsor_previous_sponsorship",
+    "question_type": "existence",
+    "sources": [
+      "2024-10-08_application_summary_47SP_40SP_style.txt",
+      "2024-10-10_statutory_declaration_Eleanor_Marsh.docx"
+    ]
+  },
+  {
+    "id": "japan_certificate_number",
+    "question_type": "value_lookup",
+    "sources": [
+      "2024-09-17_police_certificate_Japan_Tanaka.png"
+    ]
+  },
+  {
+    "id": "outbound_flight_number",
+    "question_type": "value_lookup",
+    "sources": [
+      "2024-12-02_travel_itinerary_Osaka.pdf"
+    ]
+  },
+  {
+    "id": "s56_response_on_time",
+    "question_type": "existence",
+    "sources": [
+      "2025-01-08_ImmiAccount_receipt_s56_response.pdf",
+      "file_notes_migration_agent_2024-2025.docx"
+    ]
+  },
+  {
+    "id": "quote_refusal_reason",
+    "question_type": "quote",
+    "sources": [
+      "2025-09-11_refusal_decision_letter.pdf"
+    ]
+  },
+  {
+    "id": "un_sponsor_health_exam",
+    "question_type": "unanswerable",
+    "sources": [
+      "2024-11-14_health_examination_outcome.pdf"
+    ]
+  },
+  {
+    "id": "bva_in_effect_pending_review",
+    "question_type": "existence",
+    "sources": [
+      "2025-10-08_VEVO_entitlements_printout.pdf",
+      "2025-09-11_refusal_decision_letter.pdf"
+    ]
+  },
+  {
+    "id": "applicant_dob",
+    "question_type": "value_lookup",
+    "sources": [
+      "2024-10-14_ImmiAccount_receipt_820_lodgement.pdf",
+      "2024-09-24_AFP_national_police_check_Tanaka.pdf"
+    ]
+  },
+  {
+    "id": "japan_police_certificate_provided",
+    "question_type": "existence",
+    "sources": [
+      "2024-09-17_police_certificate_Japan_Tanaka.png",
+      "2024-09-26_email_agent_to_client_checklist.txt"
+    ]
+  },
+  {
+    "id": "mf_move_in_dates",
+    "question_type": "multi_fact",
+    "sources": [
+      "2024-10-10_statutory_declaration_Haruto_Tanaka.docx",
+      "2024-10-10_statutory_declaration_Eleanor_Marsh.docx"
+    ]
+  },
+  {
+    "id": "hearing_by_video",
+    "question_type": "existence",
+    "sources": [
+      "2026-01-20_ART_amended_directions.pdf"
+    ]
+  },
+  {
+    "id": "hap_id",
+    "question_type": "value_lookup",
+    "sources": [
+      "2024-10-21_health_examination_referral.pdf",
+      "2024-11-14_health_examination_outcome.pdf"
+    ]
+  },
+  {
+    "id": "us_police_certificate_provided",
+    "question_type": "existence",
+    "sources": [
+      "2024-09-24_AFP_national_police_check_Tanaka.pdf",
+      "2024-09-17_police_certificate_Japan_Tanaka.png"
+    ]
+  },
+  {
+    "id": "mf_joint_account",
+    "question_type": "multi_fact",
+    "sources": [
+      "2024-10-01_joint_bank_summary_Feb2023-Aug2024.docx",
+      "2024-09-30_joint_bank_statement_Sep2024.png"
+    ]
+  },
+  {
+    "id": "landlord_agent",
+    "question_type": "relationship",
+    "sources": [
+      "2024-10-01_joint_bank_summary_Feb2023-Aug2024.docx",
+      "2023-01-20_lease_page1_Unit5_Banksia_St_photo.jpg"
+    ]
+  },
+  {
+    "id": "health_requirement_met",
+    "question_type": "existence",
+    "sources": [
+      "2024-11-14_health_examination_outcome.pdf"
+    ]
+  },
+  {
+    "id": "osaka_photo_parents",
+    "question_type": "value_lookup",
+    "sources": [
+      "2025-02-15_photo_Osaka_with_parents.png"
+    ]
+  },
+  {
+    "id": "quote_art_noncompliance",
+    "question_type": "quote",
+    "sources": [
+      "2025-11-15_ART_directions.pdf",
+      "2026-01-20_ART_amended_directions.pdf"
+    ]
+  },
+  {
+    "id": "echo_point_photo_location",
+    "question_type": "value_lookup",
+    "sources": [
+      "2024-04-13_photo_Echo_Point_couple.png"
+    ]
+  },
+  {
+    "id": "mei_ling_chen_relationship",
+    "question_type": "relationship",
+    "sources": [
+      "2024-10-12_Form888_Mei-Ling_Chen.docx"
+    ]
+  },
+  {
+    "id": "summary_art_grounds",
+    "question_type": "summary",
+    "sources": [
+      "2025-10-06_ART_application_Tanaka.docx"
+    ]
+  },
+  {
+    "id": "un_wedding_date",
+    "question_type": "unanswerable",
+    "sources": [
+      "2024-10-10_statutory_declaration_Haruto_Tanaka.docx"
+    ]
+  },
+  {
+    "id": "skills_assessment_reference",
+    "question_type": "value_lookup",
+    "sources": [
+      "2022-08-15_skills_assessment_letter_Cook.pdf"
+    ]
+  },
+  {
+    "id": "visa_history_list",
+    "question_type": "count_list",
+    "sources": [
+      "2025-10-08_VEVO_entitlements_printout.pdf"
+    ]
+  },
+  {
+    "id": "mf_bank_salary_employer",
+    "question_type": "multi_fact",
+    "sources": [
+      "2024-09-30_joint_bank_statement_Sep2024.png",
+      "2024-10-10_statutory_declaration_Eleanor_Marsh.docx"
+    ]
+  },
+  {
+    "id": "decision_date_corrected",
+    "question_type": "value_lookup",
+    "sources": [
+      "2025-09-22_corrigendum_decision_letter.pdf",
+      "2025-09-11_refusal_decision_letter.pdf"
+    ]
+  },
+  {
+    "id": "passport_number_in_s56",
+    "question_type": "value_lookup",
+    "sources": [
+      "2024-12-12_s56_request_letter_Home_Affairs.pdf"
+    ]
+  },
+  {
+    "id": "current_address",
+    "question_type": "value_lookup",
+    "sources": [
+      "2025-08-18_change_of_address_receipt.pdf",
+      "2026-01-20_ART_amended_directions.pdf",
+      "2025-09-11_refusal_decision_letter.pdf"
+    ]
+  },
+  {
+    "id": "partner_visa_application_id",
+    "question_type": "value_lookup",
+    "sources": [
+      "2024-10-14_ImmiAccount_receipt_820_lodgement.pdf"
+    ]
+  },
+  {
+    "id": "passport_issue_date",
+    "question_type": "value_lookup",
+    "sources": [
+      "2021-06-03_passport_bio_page_Tanaka_Haruto.png"
+    ]
+  },
+  {
+    "id": "mf_japan_trip",
+    "question_type": "multi_fact",
+    "sources": [
+      "2025-02-03_bridging_visa_B_grant_notice.pdf",
+      "2024-12-02_travel_itinerary_Osaka.pdf"
+    ]
+  },
+  {
+    "id": "art_respondent",
+    "question_type": "relationship",
+    "sources": [
+      "2025-11-15_ART_directions.pdf"
+    ]
+  },
+  {
+    "id": "art_review_deadline",
+    "question_type": "value_lookup",
+    "sources": [
+      "2025-09-22_corrigendum_decision_letter.pdf",
+      "2025-09-11_refusal_decision_letter.pdf",
+      "2025-09-12_email_agent_to_client_refusal_advice.txt"
+    ]
+  },
+  {
+    "id": "summary_move_in_discrepancy",
+    "question_type": "summary",
+    "sources": [
+      "2024-10-10_statutory_declaration_Haruto_Tanaka.docx",
+      "2024-10-10_statutory_declaration_Eleanor_Marsh.docx",
+      "file_notes_migration_agent_2024-2025.docx"
+    ]
+  },
+  {
+    "id": "applicant_docs_due_latest",
+    "question_type": "value_lookup",
+    "sources": [
+      "2026-01-20_ART_amended_directions.pdf",
+      "2025-11-15_ART_directions.pdf"
+    ]
+  },
+  {
+    "id": "rent_after_renewal",
+    "question_type": "value_lookup",
+    "sources": [
+      "2024-10-01_joint_bank_summary_Feb2023-Aug2024.docx"
+    ]
+  },
+  {
+    "id": "couple_children",
+    "question_type": "existence",
+    "sources": [
+      "2024-10-10_statutory_declaration_Haruto_Tanaka.docx",
+      "2024-10-10_statutory_declaration_Eleanor_Marsh.docx",
+      "2024-10-08_application_summary_47SP_40SP_style.txt"
+    ]
+  },
+  {
+    "id": "un_bridging_c",
+    "question_type": "unanswerable",
+    "sources": [
+      "2025-10-08_VEVO_entitlements_printout.pdf"
+    ]
+  },
+  {
+    "id": "respondent_docs_due_latest",
+    "question_type": "value_lookup",
+    "sources": [
+      "2026-01-20_ART_amended_directions.pdf",
+      "2025-11-15_ART_directions.pdf"
+    ]
+  },
+  {
+    "id": "mf_agent_fees",
+    "question_type": "multi_fact",
+    "sources": [
+      "2024-10-02_costs_agreement_Raman_Migration.docx"
+    ]
+  },
+  {
+    "id": "mf_s56_errors",
+    "question_type": "multi_fact",
+    "sources": [
+      "2024-12-12_s56_request_letter_Home_Affairs.pdf",
+      "2025-09-22_corrigendum_decision_letter.pdf"
+    ]
+  },
+  {
+    "id": "s56_response_attachment_count",
+    "question_type": "count_list",
+    "sources": [
+      "2025-01-08_ImmiAccount_receipt_s56_response.pdf"
+    ]
+  },
+  {
+    "id": "un_hearing_outcome",
+    "question_type": "unanswerable",
+    "sources": [
+      "2026-01-20_ART_amended_directions.pdf"
+    ]
+  },
+  {
+    "id": "lease_bond",
+    "question_type": "value_lookup",
+    "sources": [
+      "2023-01-20_lease_page1_Unit5_Banksia_St_photo.jpg"
+    ]
+  },
+  {
+    "id": "lease_landlord",
+    "question_type": "value_lookup",
+    "sources": [
+      "2023-01-20_lease_page1_Unit5_Banksia_St_photo.jpg"
+    ]
+  },
+  {
+    "id": "mf_rent_initial_and_renewal",
+    "question_type": "multi_fact",
+    "sources": [
+      "2023-01-20_lease_page1_Unit5_Banksia_St_photo.jpg",
+      "2024-10-01_joint_bank_summary_Feb2023-Aug2024.docx"
+    ]
+  },
+  {
+    "id": "summary_relationship_history",
+    "question_type": "summary",
+    "sources": [
+      "2024-10-10_statutory_declaration_Haruto_Tanaka.docx",
+      "2024-10-10_statutory_declaration_Eleanor_Marsh.docx",
+      "timeline_chronology_Tanaka_matter.docx"
+    ]
+  },
+  {
+    "id": "un_department_interview",
+    "question_type": "unanswerable",
+    "sources": [
+      "2025-09-11_refusal_decision_letter.pdf"
+    ]
+  },
+  {
+    "id": "lodgement_attachment_count",
+    "question_type": "count_list",
+    "sources": [
+      "2024-10-14_ImmiAccount_receipt_820_lodgement.pdf"
+    ]
+  },
+  {
+    "id": "quote_refusal_review_rights",
+    "question_type": "quote",
+    "sources": [
+      "2025-09-11_refusal_decision_letter.pdf"
+    ]
+  },
+  {
+    "id": "s56_item_count",
+    "question_type": "count_list",
+    "sources": [
+      "2024-12-12_s56_request_letter_Home_Affairs.pdf"
+    ]
+  }
+]

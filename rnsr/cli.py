@@ -62,6 +62,8 @@ def ingest(
         help="Delete this doc_id then append the given source(s)"),
 ) -> None:
     """Ingest documents into a corpus.db artifact (Phase A)."""
+    import json
+
     from rnsr.config import Settings
     from rnsr.ingest.lifecycle import append as append_ingest
     from rnsr.ingest.lifecycle import replace_document
@@ -108,8 +110,18 @@ def ingest(
         console.print(f"[red]untranscribed scanned pages:[/red] {report.scanned_pages_untranscribed}")
     if report.skipped_stages:
         console.print(f"[yellow]skipped:[/yellow] {', '.join(report.skipped_stages)}")
+    # Transcription / cross-check spend goes through the shared governor;
+    # surface it so a run's all-in cost is visible, not just the answering.
+    from rnsr.llm import governor as _governor
+
+    provider = _governor.current().snapshot()
+    if provider.get("requests"):
+        console.print(f"provider: {provider['requests']} request(s), "
+                      f"${provider['spend_usd']:.4f}")
     if report_path:
-        report_path.write_text(report.to_json())
+        payload = json.loads(report.to_json())
+        payload["provider"] = provider
+        report_path.write_text(json.dumps(payload, indent=2))
         console.print(f"report written to {report_path}")
 
 
@@ -727,7 +739,10 @@ def regress_cmd(
         except Exception as exc:
             asyncio.run(judge_disagreements(report, None, "", setup_error=exc))
         else:
+            from rnsr.llm import governor as _governor
+
             asyncio.run(judge_disagreements(report, sub.client, sub.model))
+            report.judge_provider = _governor.current().snapshot()
 
     summary = report.summary()
     sub_correct, sub_total = report.substantive
@@ -741,6 +756,9 @@ def regress_cmd(
     console.print(f"  review recall: {summary['review_recall']:.1%}  "
                   f"auto-accept: {summary['auto_accept_rate']:.1%}")
     console.print(f"  judged decisions: {summary['scored_by_judge']}")
+    if summary.get("judge_provider"):
+        jp = summary["judge_provider"]
+        console.print(f"  judge spend: {jp['requests']} request(s), ${jp['spend_usd']:.4f}")
     for d in summary["disagreements"]:
         console.print(f"[red]DIFF[/red] {d['field_id']}\n"
                       f"    golden: {d['golden']!r}\n"

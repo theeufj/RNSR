@@ -72,6 +72,9 @@ def write_document(conn, source, parsed, config, *, prose_checker=None,
             doc_date=parsed.doc_date, author=parsed.author, modified_at=modified,
             content_sha256=parsed.content_sha256 or parsed.sha256,
             parent_doc_id=parsed.parent_doc_id, source_identity=identity)
+        from rnsr.ingest.outcomes import record_document
+
+        record_document(conn, parsed)
         conn.executemany("INSERT INTO doc_text VALUES (?,?,?,?,?)", [
             (parsed.doc_id, p.page, p.char_start, p.char_end, p.text) for p in pages])
         conn.executemany(

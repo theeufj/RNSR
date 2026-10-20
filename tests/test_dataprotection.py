@@ -7,6 +7,7 @@ import pytest
 
 from rnsr.harness.trajectory import (
     TrajectoryWriter,
+    prepare_trajectory_dir,
     prune_trajectories,
     read_trajectory,
     redact,
@@ -18,6 +19,33 @@ PRIVILEGED = ("Daniel Robert Mitchell resides at 17 Strathfield Avenue "
 
 
 class TestRedaction:
+    @pytest.mark.parametrize("mode", ["redacted", "metadata"])
+    def test_nested_answer_evidence_does_not_leak_client_content(self, tmp_path, mode):
+        sensitive = {"docs_cited": ["private-matter-name"],
+            "cited_tables": [{"table": "private-asset", "doc_id": "private-matter-name"}],
+            "votes": ["17 Strathfield Avenue"], "future_nested_field": {"text": PRIVILEGED}}
+        with TrajectoryWriter(tmp_path, "q1", content=mode) as writer:
+            writer.event("end", status="final", evidence={**sensitive,
+                "quotes_total": 2, "quotes_verified": 2, "tier": "high",
+                "claim_review_status": "supported", "claim_review_required": True})
+        raw = (tmp_path / "q1.jsonl").read_text()
+        assert all(value not in raw for value in ("Strathfield", "private-matter", "private-asset"))
+        evidence = json.loads(raw)["evidence"]
+        assert evidence["quotes_verified"] == 2
+        assert evidence["claim_review_status"] == "supported"
+        if mode == "redacted":
+            assert evidence["votes"].startswith("<redacted ")
+        else:
+            assert "votes" not in evidence and "docs_cited" not in evidence
+
+    @pytest.mark.parametrize("mode", ["redacted", "metadata"])
+    def test_forged_operational_evidence_values_are_protected(self, mode):
+        record = {"evidence": {"status": PRIVILEGED, "source": PRIVILEGED,
+            "cited_table_statuses": [PRIVILEGED], "agreement": PRIVILEGED,
+            "quotes_total": PRIVILEGED, "rungs_used": [PRIVILEGED],
+            "claim_review_required": PRIVILEGED}}
+        assert "Strathfield" not in json.dumps(redact(record, mode))
+
     def test_full_mode_keeps_everything(self, tmp_path):
         with TrajectoryWriter(tmp_path, "q1") as w:
             w.event("cell", code="print(doc)", stdout=PRIVILEGED, ok=True)
@@ -89,6 +117,21 @@ class TestEncryption:
 
 
 class TestRetention:
+    def test_preparing_run_root_prunes_expired_child_jobs(self, tmp_path):
+        import os
+
+        job_dir = tmp_path / "old-job"
+        job_dir.mkdir()
+        stale = job_dir / "q.jsonl"
+        stale.write_text("{}\n")
+        expired = time.time() - 5 * 86400
+        os.utime(stale, (expired, expired))
+        recent = tmp_path / "q.jsonl.enc"
+        recent.write_text("encrypted\n")
+        assert prepare_trajectory_dir(tmp_path, 1) == tmp_path.resolve()
+        assert not stale.exists()
+        assert recent.exists()
+
     def test_prunes_only_expired_files(self, tmp_path):
         old, new = tmp_path / "old.jsonl", tmp_path / "new.jsonl"
         old.write_text("{}\n")

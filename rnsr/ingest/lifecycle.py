@@ -45,6 +45,7 @@ def _parse_new(sources, parse, seen_ids, existing_shas, existing_content,
             continue
         for child in children:
             parsed_ok.append((src, child))
+            failures.extend(child.attachment_failures)
             scanned_total += len(child.scanned_pages)
             if child.scanned_pages:
                 if transcriber is None:
@@ -60,10 +61,7 @@ def _parse_new(sources, parse, seen_ids, existing_shas, existing_content,
 def _finish(corpus, config, kind, sources, count, extra_health):
     fts.populate_fts(corpus.conn)
     schema.record_ingest_batch(corpus.conn, kind, sources, n_docs=count)
-    stored = corpus.manifest_get("health", {})
-    extras = {key: int(stored.get(key) or 0) + value
-              for key, value in extra_health.items()}
-    write_corpus_manifest(corpus, PARSER_NAME, config=config, extra_health=extras)
+    write_corpus_manifest(corpus, PARSER_NAME, config=config, extra_health=extra_health)
     schema.validate_integrity(corpus.conn)
     schema.finalize_corpus(corpus.conn)
     corpus.conn.commit()
@@ -97,6 +95,10 @@ def append(sources, corpus_db, *, config: Settings | None = None,
                 raise RuntimeError(f"all new documents failed to parse: {failures}")
             schema.unfreeze_corpus(conn)
             n_new = _write_docs(conn, parsed, config)
+            from rnsr.ingest.outcomes import record_failure
+
+            for failure in failures:
+                record_failure(conn, failure)
             _finish(corpus, config, kind, sources, n_new, extras)
         except BaseException:
             conn.rollback()

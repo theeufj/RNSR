@@ -47,4 +47,5 @@ def merge_transcriptions(parsed: ParsedDocument,
     for page in parsed.scanned_pages:
         if page not in touched and page not in failed:
             failed.append(page)
+    parsed.untranscribed_pages = sorted(set(failed) & set(parsed.scanned_pages))
     return failed

@@ -413,6 +413,12 @@ class SandboxedRepl:
                         abstention = self._calculations.validate_legacy_final(value)
                         final["verification"] = abstention if abstention is not None else validate_final(
                             value, submitted_quotes(report, batch=batch), self._verifier, batch=batch)
+                    from rnsr.env.evidence import bind_table_evidence
+
+                    final["verification"] = bind_table_evidence(
+                        self._corpus.conn, final["verification"],
+                        batch=isinstance(final["value"], dict),
+                        check=self._calculations._check_deadline)
             except (TimeoutError, sqlite3.OperationalError) as exc:
                 if isinstance(exc, TimeoutError) or time.monotonic() >= deadline:
                     await self.kill()

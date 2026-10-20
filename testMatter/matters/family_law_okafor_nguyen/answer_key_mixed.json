@@ -1,0 +1,2840 @@
+[
+  {
+    "id": "doc_pool_assets_list",
+    "question_type": "count_list",
+    "oracle_source": "matter_docs",
+    "sources": [
+      "2026-09-08_Financial_Statement_Ada_Okafor.docx"
+    ],
+    "conflict": false,
+    "required_sources": [
+      "matter_docs"
+    ],
+    "holders": [
+      {
+        "source": "matter_docs",
+        "role": "copy"
+      }
+    ]
+  },
+  {
+    "id": "doc_children_names",
+    "question_type": "count_list",
+    "oracle_source": "matter_docs",
+    "sources": [
+      "2026-03-16_Initial_Client_Intake_Form.docx"
+    ],
+    "conflict": false,
+    "required_sources": [
+      "matter_docs"
+    ],
+    "holders": [
+      {
+        "source": "matter_docs",
+        "role": "copy"
+      }
+    ]
+  },
+  {
+    "id": "doc_ada_trust_beneficiary",
+    "question_type": "existence",
+    "oracle_source": "matter_docs",
+    "sources": [
+      "2026-07-14_Trust_Deed_Summary_Nguyen_Family_Trust.docx",
+      "2026-05-27_Affidavit_of_Ada_Okafor.docx"
+    ],
+    "conflict": false,
+    "required_sources": [
+      "matter_docs"
+    ],
+    "holders": [
+      {
+        "source": "matter_docs",
+        "role": "copy"
+      }
+    ]
+  },
+  {
+    "id": "doc_trust_distribution_to_ada",
+    "question_type": "existence",
+    "oracle_source": "matter_docs",
+    "sources": [
+      "2026-07-14_Trust_Deed_Summary_Nguyen_Family_Trust.docx",
+      "2026-05-27_Affidavit_of_Ada_Okafor.docx"
+    ],
+    "conflict": false,
+    "required_sources": [
+      "matter_docs"
+    ],
+    "holders": [
+      {
+        "source": "matter_docs",
+        "role": "copy"
+      }
+    ]
+  },
+  {
+    "id": "doc_trung_attended_nov_session",
+    "question_type": "existence",
+    "oracle_source": "matter_docs",
+    "sources": [
+      "2025-11-20_s60I_FDR_Certificate_Non-Attendance.pdf"
+    ],
+    "conflict": false,
+    "required_sources": [
+      "matter_docs"
+    ],
+    "holders": [
+      {
+        "source": "matter_docs",
+        "role": "copy"
+      }
+    ]
+  },
+  {
+    "id": "doc_trung_roles",
+    "question_type": "multi_fact",
+    "oracle_source": "matter_docs",
+    "sources": [
+      "2026-05-20_Response_to_Initiating_Application.pdf",
+      "2026-07-14_Trust_Deed_Summary_Nguyen_Family_Trust.docx"
+    ],
+    "conflict": false,
+    "required_sources": [
+      "matter_docs"
+    ],
+    "holders": [
+      {
+        "source": "matter_docs",
+        "role": "copy"
+      }
+    ]
+  },
+  {
+    "id": "doc_home_value_and_loan",
+    "question_type": "multi_fact",
+    "oracle_source": "matter_docs",
+    "sources": [
+      "2026-06-04_Valuation_Report_27_Banksia_Court.pdf",
+      "2026-06-30_Home_Loan_Statement_Murray_Valley_Bank.pdf"
+    ],
+    "conflict": false,
+    "required_sources": [
+      "matter_docs"
+    ],
+    "holders": [
+      {
+        "source": "matter_docs",
+        "role": "copy"
+      }
+    ]
+  },
+  {
+    "id": "doc_draft_v2_clause_9_text",
+    "question_type": "quote",
+    "oracle_source": "matter_docs",
+    "sources": [
+      "2026-09-30_Draft_Consent_Orders_v2.docx"
+    ],
+    "conflict": false,
+    "required_sources": [
+      "matter_docs"
+    ],
+    "holders": [
+      {
+        "source": "matter_docs",
+        "role": "copy"
+      }
+    ]
+  },
+  {
+    "id": "doc_trung_solicitor",
+    "question_type": "relationship",
+    "oracle_source": "matter_docs",
+    "sources": [
+      "2026-05-20_Response_to_Initiating_Application.pdf"
+    ],
+    "conflict": false,
+    "required_sources": [
+      "matter_docs"
+    ],
+    "holders": [
+      {
+        "source": "matter_docs",
+        "role": "copy"
+      }
+    ]
+  },
+  {
+    "id": "doc_ada_barrister",
+    "question_type": "relationship",
+    "oracle_source": "matter_docs",
+    "sources": [
+      "2026-04-02_Costs_Agreement_and_Disclosure.docx",
+      "2026-08-26_Interim_Orders.pdf"
+    ],
+    "conflict": false,
+    "required_sources": [
+      "matter_docs"
+    ],
+    "holders": [
+      {
+        "source": "matter_docs",
+        "role": "copy"
+      }
+    ]
+  },
+  {
+    "id": "doc_draft_orders_difference_summary",
+    "question_type": "summary",
+    "oracle_source": "matter_docs",
+    "sources": [
+      "2026-09-14_Draft_Consent_Orders_v1.docx",
+      "2026-09-30_Draft_Consent_Orders_v2.docx",
+      "2026-09-22_Email_Declan_Pryce_to_Fiona_Brennan-Hale.txt"
+    ],
+    "conflict": false,
+    "required_sources": [
+      "matter_docs"
+    ],
+    "holders": [
+      {
+        "source": "matter_docs",
+        "role": "copy"
+      }
+    ]
+  },
+  {
+    "id": "doc_property_pool_summary",
+    "question_type": "summary",
+    "oracle_source": "matter_docs",
+    "sources": [
+      "2026-09-08_Financial_Statement_Ada_Okafor.docx",
+      "2026-06-04_Valuation_Report_27_Banksia_Court.pdf",
+      "2026-08-07_Business_Valuation_Nguyen_Constructions.pdf",
+      "2026-07-14_Trust_Deed_Summary_Nguyen_Family_Trust.docx",
+      "2026-08-18_Superannuation_Statements_Summary.pdf",
+      "2026-06-30_Home_Loan_Statement_Murray_Valley_Bank.pdf"
+    ],
+    "conflict": false,
+    "required_sources": [
+      "matter_docs"
+    ],
+    "holders": [
+      {
+        "source": "matter_docs",
+        "role": "copy"
+      }
+    ]
+  },
+  {
+    "id": "doc_receipt_number",
+    "question_type": "value_lookup",
+    "oracle_source": "matter_docs",
+    "sources": [
+      "2026-07-22_Photo_Signed_Receipt_Removalist_Deposit.jpg"
+    ],
+    "conflict": false,
+    "required_sources": [
+      "matter_docs"
+    ],
+    "holders": [
+      {
+        "source": "matter_docs",
+        "role": "copy"
+      }
+    ]
+  },
+  {
+    "id": "doc_zara_class_teacher",
+    "question_type": "value_lookup",
+    "oracle_source": "matter_docs",
+    "sources": [
+      "2026-06-26_Scan_School_Report_Zara_Semester1.png"
+    ],
+    "conflict": false,
+    "required_sources": [
+      "matter_docs"
+    ],
+    "holders": [
+      {
+        "source": "matter_docs",
+        "role": "copy"
+      }
+    ]
+  },
+  {
+    "id": "doc_zara_date_of_birth",
+    "question_type": "value_lookup",
+    "oracle_source": "matter_docs",
+    "sources": [
+      "2026-03-16_Initial_Client_Intake_Form.docx"
+    ],
+    "conflict": false,
+    "required_sources": [
+      "matter_docs"
+    ],
+    "holders": [
+      {
+        "source": "matter_docs",
+        "role": "copy"
+      }
+    ]
+  },
+  {
+    "id": "doc_zara_swim_time",
+    "question_type": "value_lookup",
+    "oracle_source": "matter_docs",
+    "sources": [
+      "2026-09-06_Handwritten_Note_Handover_Notes.jpg"
+    ],
+    "conflict": false,
+    "required_sources": [
+      "matter_docs"
+    ],
+    "holders": [
+      {
+        "source": "matter_docs",
+        "role": "copy"
+      }
+    ]
+  },
+  {
+    "id": "doc_coral_coast_salary",
+    "question_type": "value_lookup",
+    "oracle_source": "matter_docs",
+    "sources": [
+      "2026-07-30_Letter_of_Offer_Coral_Coast_Private_Hospital.pdf"
+    ],
+    "conflict": false,
+    "required_sources": [
+      "matter_docs"
+    ],
+    "holders": [
+      {
+        "source": "matter_docs",
+        "role": "copy"
+      }
+    ]
+  },
+  {
+    "id": "doc_ada_super_balance",
+    "question_type": "value_lookup",
+    "oracle_source": "matter_docs",
+    "sources": [
+      "2026-08-18_Superannuation_Statements_Summary.pdf"
+    ],
+    "conflict": false,
+    "required_sources": [
+      "matter_docs"
+    ],
+    "holders": [
+      {
+        "source": "matter_docs",
+        "role": "copy"
+      }
+    ]
+  },
+  {
+    "id": "doc_sale_split_latest",
+    "question_type": "value_lookup",
+    "oracle_source": "matter_docs",
+    "sources": [
+      "2026-09-30_Draft_Consent_Orders_v2.docx",
+      "2026-09-14_Draft_Consent_Orders_v1.docx"
+    ],
+    "conflict": false,
+    "required_sources": [
+      "matter_docs"
+    ],
+    "holders": [
+      {
+        "source": "matter_docs",
+        "role": "copy"
+      }
+    ]
+  },
+  {
+    "id": "doc_zara_attendance",
+    "question_type": "value_lookup",
+    "oracle_source": "matter_docs",
+    "sources": [
+      "2026-06-26_Scan_School_Report_Zara_Semester1.png"
+    ],
+    "conflict": false,
+    "required_sources": [
+      "matter_docs"
+    ],
+    "holders": [
+      {
+        "source": "matter_docs",
+        "role": "copy"
+      }
+    ]
+  },
+  {
+    "id": "graph_trung_firm_solicitor",
+    "question_type": "multi_hop",
+    "oracle_source": "graph",
+    "sources": [],
+    "conflict": false,
+    "required_sources": [
+      "graph"
+    ],
+    "holders": [
+      {
+        "source": "graph",
+        "role": "derived"
+      },
+      {
+        "source": "matter_docs",
+        "role": "copy"
+      }
+    ]
+  },
+  {
+    "id": "graph_children_rep_practice",
+    "question_type": "multi_hop",
+    "oracle_source": "graph",
+    "sources": [],
+    "conflict": false,
+    "required_sources": [
+      "graph"
+    ],
+    "holders": [
+      {
+        "source": "graph",
+        "role": "derived"
+      },
+      {
+        "source": "matter_docs",
+        "role": "copy"
+      }
+    ]
+  },
+  {
+    "id": "graph_joint_account_bank",
+    "question_type": "multi_hop",
+    "oracle_source": "graph",
+    "sources": [],
+    "conflict": false,
+    "required_sources": [
+      "graph"
+    ],
+    "holders": [
+      {
+        "source": "graph",
+        "role": "derived"
+      },
+      {
+        "source": "matter_docs",
+        "role": "copy"
+      }
+    ]
+  },
+  {
+    "id": "graph_banksia_valuer_person",
+    "question_type": "multi_hop",
+    "oracle_source": "graph",
+    "sources": [],
+    "conflict": false,
+    "required_sources": [
+      "graph"
+    ],
+    "holders": [
+      {
+        "source": "graph",
+        "role": "derived"
+      },
+      {
+        "source": "matter_docs",
+        "role": "copy"
+      }
+    ]
+  },
+  {
+    "id": "graph_ada_parents_residence",
+    "question_type": "multi_hop",
+    "oracle_source": "graph",
+    "sources": [],
+    "conflict": false,
+    "required_sources": [
+      "graph"
+    ],
+    "holders": [
+      {
+        "source": "graph",
+        "role": "derived"
+      },
+      {
+        "source": "matter_docs",
+        "role": "copy"
+      }
+    ]
+  },
+  {
+    "id": "graph_trust_beneficiaries",
+    "question_type": "aggregation",
+    "oracle_source": "graph",
+    "sources": [],
+    "conflict": false,
+    "required_sources": [
+      "graph"
+    ],
+    "holders": [
+      {
+        "source": "graph",
+        "role": "derived"
+      },
+      {
+        "source": "matter_docs",
+        "role": "copy"
+      }
+    ]
+  },
+  {
+    "id": "graph_trust_property_lender",
+    "question_type": "multi_hop",
+    "oracle_source": "graph",
+    "sources": [],
+    "conflict": false,
+    "required_sources": [
+      "graph"
+    ],
+    "holders": [
+      {
+        "source": "graph",
+        "role": "derived"
+      },
+      {
+        "source": "matter_docs",
+        "role": "copy"
+      }
+    ]
+  },
+  {
+    "id": "graph_ada_lawyers_firms",
+    "question_type": "multi_hop",
+    "oracle_source": "graph",
+    "sources": [],
+    "conflict": false,
+    "required_sources": [
+      "graph"
+    ],
+    "holders": [
+      {
+        "source": "graph",
+        "role": "derived"
+      },
+      {
+        "source": "matter_docs",
+        "role": "copy"
+      }
+    ]
+  },
+  {
+    "id": "graph_judge_and_court",
+    "question_type": "multi_hop",
+    "oracle_source": "graph",
+    "sources": [],
+    "conflict": false,
+    "required_sources": [
+      "graph"
+    ],
+    "holders": [
+      {
+        "source": "graph",
+        "role": "derived"
+      },
+      {
+        "source": "matter_docs",
+        "role": "copy"
+      }
+    ]
+  },
+  {
+    "id": "graph_bdrc_practitioner_cert",
+    "question_type": "multi_hop",
+    "oracle_source": "graph",
+    "sources": [],
+    "conflict": false,
+    "required_sources": [
+      "graph"
+    ],
+    "holders": [
+      {
+        "source": "graph",
+        "role": "derived"
+      },
+      {
+        "source": "matter_docs",
+        "role": "copy"
+      }
+    ]
+  },
+  {
+    "id": "graph_goldfields_mediation_cert",
+    "question_type": "multi_hop",
+    "oracle_source": "graph",
+    "sources": [],
+    "conflict": false,
+    "required_sources": [
+      "graph"
+    ],
+    "holders": [
+      {
+        "source": "graph",
+        "role": "derived"
+      },
+      {
+        "source": "matter_docs",
+        "role": "copy"
+      }
+    ]
+  },
+  {
+    "id": "graph_ada_employers",
+    "question_type": "aggregation",
+    "oracle_source": "graph",
+    "sources": [],
+    "conflict": false,
+    "required_sources": [
+      "graph"
+    ],
+    "holders": [
+      {
+        "source": "graph",
+        "role": "derived"
+      },
+      {
+        "source": "matter_docs",
+        "role": "copy"
+      }
+    ]
+  },
+  {
+    "id": "graph_ada_debts",
+    "question_type": "aggregation",
+    "oracle_source": "graph",
+    "sources": [],
+    "conflict": false,
+    "required_sources": [
+      "graph"
+    ],
+    "holders": [
+      {
+        "source": "graph",
+        "role": "derived"
+      },
+      {
+        "source": "matter_docs",
+        "role": "copy"
+      }
+    ]
+  },
+  {
+    "id": "graph_trung_vehicles",
+    "question_type": "aggregation",
+    "oracle_source": "graph",
+    "sources": [],
+    "conflict": false,
+    "required_sources": [
+      "graph"
+    ],
+    "holders": [
+      {
+        "source": "graph",
+        "role": "derived"
+      },
+      {
+        "source": "matter_docs",
+        "role": "copy"
+      }
+    ]
+  },
+  {
+    "id": "graph_lawyer_firm_children_lawyer",
+    "question_type": "multi_hop",
+    "oracle_source": "graph",
+    "sources": [],
+    "conflict": false,
+    "required_sources": [
+      "graph"
+    ],
+    "holders": [
+      {
+        "source": "graph",
+        "role": "derived"
+      },
+      {
+        "source": "matter_docs",
+        "role": "copy"
+      }
+    ]
+  },
+  {
+    "id": "graph_mediation_certs_issuers",
+    "question_type": "aggregation",
+    "oracle_source": "graph",
+    "sources": [],
+    "conflict": false,
+    "required_sources": [
+      "graph"
+    ],
+    "holders": [
+      {
+        "source": "graph",
+        "role": "derived"
+      },
+      {
+        "source": "matter_docs",
+        "role": "copy"
+      }
+    ]
+  },
+  {
+    "id": "graph_trung_companies",
+    "question_type": "aggregation",
+    "oracle_source": "graph",
+    "sources": [],
+    "conflict": false,
+    "required_sources": [
+      "graph"
+    ],
+    "holders": [
+      {
+        "source": "graph",
+        "role": "derived"
+      },
+      {
+        "source": "matter_docs",
+        "role": "copy"
+      }
+    ]
+  },
+  {
+    "id": "graph_coral_letter_author",
+    "question_type": "multi_hop",
+    "oracle_source": "graph",
+    "sources": [],
+    "conflict": false,
+    "required_sources": [
+      "graph"
+    ],
+    "holders": [
+      {
+        "source": "graph",
+        "role": "derived"
+      },
+      {
+        "source": "matter_docs",
+        "role": "copy"
+      }
+    ]
+  },
+  {
+    "id": "graph_trust_trustee_director",
+    "question_type": "multi_hop",
+    "oracle_source": "graph",
+    "sources": [],
+    "conflict": false,
+    "required_sources": [
+      "graph"
+    ],
+    "holders": [
+      {
+        "source": "graph",
+        "role": "derived"
+      },
+      {
+        "source": "matter_docs",
+        "role": "copy"
+      }
+    ]
+  },
+  {
+    "id": "graph_sibling_pair",
+    "question_type": "relationship",
+    "oracle_source": "graph",
+    "sources": [],
+    "conflict": false,
+    "required_sources": [
+      "graph"
+    ],
+    "holders": [
+      {
+        "source": "graph",
+        "role": "derived"
+      },
+      {
+        "source": "matter_docs",
+        "role": "copy"
+      }
+    ]
+  },
+  {
+    "id": "graph_noone_fourth_lawyer",
+    "question_type": "unanswerable",
+    "oracle_source": "graph",
+    "sources": [],
+    "conflict": false,
+    "required_sources": [
+      "graph"
+    ],
+    "holders": [
+      {
+        "source": "graph",
+        "role": "derived"
+      },
+      {
+        "source": "matter_docs",
+        "role": "copy"
+      }
+    ]
+  },
+  {
+    "id": "db_inv0402_total",
+    "question_type": "value_lookup",
+    "oracle_source": "practice_db",
+    "sources": [],
+    "conflict": false,
+    "required_sources": [
+      "practice_db"
+    ],
+    "holders": [
+      {
+        "source": "practice_db",
+        "role": "record"
+      }
+    ]
+  },
+  {
+    "id": "db_inv0402_issued",
+    "question_type": "value_lookup",
+    "oracle_source": "practice_db",
+    "sources": [],
+    "conflict": false,
+    "required_sources": [
+      "practice_db"
+    ],
+    "holders": [
+      {
+        "source": "practice_db",
+        "role": "record"
+      }
+    ]
+  },
+  {
+    "id": "db_inv0351_total",
+    "question_type": "value_lookup",
+    "oracle_source": "practice_db",
+    "sources": [],
+    "conflict": false,
+    "required_sources": [
+      "practice_db"
+    ],
+    "holders": [
+      {
+        "source": "practice_db",
+        "role": "record"
+      }
+    ]
+  },
+  {
+    "id": "db_inv0351_paid_on",
+    "question_type": "value_lookup",
+    "oracle_source": "practice_db",
+    "sources": [],
+    "conflict": false,
+    "required_sources": [
+      "practice_db"
+    ],
+    "holders": [
+      {
+        "source": "practice_db",
+        "role": "record"
+      }
+    ]
+  },
+  {
+    "id": "db_inv0370_total",
+    "question_type": "value_lookup",
+    "oracle_source": "practice_db",
+    "sources": [],
+    "conflict": false,
+    "required_sources": [
+      "practice_db"
+    ],
+    "holders": [
+      {
+        "source": "practice_db",
+        "role": "record"
+      }
+    ]
+  },
+  {
+    "id": "db_inv0351_period",
+    "question_type": "value_lookup",
+    "oracle_source": "practice_db",
+    "sources": [],
+    "conflict": false,
+    "required_sources": [
+      "practice_db"
+    ],
+    "holders": [
+      {
+        "source": "practice_db",
+        "role": "record"
+      }
+    ]
+  },
+  {
+    "id": "db_filing_fee",
+    "question_type": "value_lookup",
+    "oracle_source": "practice_db",
+    "sources": [],
+    "conflict": false,
+    "required_sources": [
+      "practice_db"
+    ],
+    "holders": [
+      {
+        "source": "practice_db",
+        "role": "record"
+      }
+    ]
+  },
+  {
+    "id": "db_valuation_fee",
+    "question_type": "multi_fact",
+    "oracle_source": "practice_db",
+    "sources": [],
+    "conflict": false,
+    "required_sources": [
+      "practice_db"
+    ],
+    "holders": [
+      {
+        "source": "practice_db",
+        "role": "record"
+      }
+    ]
+  },
+  {
+    "id": "db_ferrant_fee",
+    "question_type": "value_lookup",
+    "oracle_source": "practice_db",
+    "sources": [],
+    "conflict": false,
+    "required_sources": [
+      "practice_db"
+    ],
+    "holders": [
+      {
+        "source": "practice_db",
+        "role": "record"
+      }
+    ]
+  },
+  {
+    "id": "db_transcript_cost",
+    "question_type": "value_lookup",
+    "oracle_source": "practice_db",
+    "sources": [],
+    "conflict": false,
+    "required_sources": [
+      "practice_db"
+    ],
+    "holders": [
+      {
+        "source": "practice_db",
+        "role": "record"
+      }
+    ]
+  },
+  {
+    "id": "db_trust_receipt_oct",
+    "question_type": "value_lookup",
+    "oracle_source": "practice_db",
+    "sources": [],
+    "conflict": false,
+    "required_sources": [
+      "practice_db"
+    ],
+    "holders": [
+      {
+        "source": "practice_db",
+        "role": "record"
+      }
+    ]
+  },
+  {
+    "id": "db_retainer_receipt",
+    "question_type": "value_lookup",
+    "oracle_source": "practice_db",
+    "sources": [],
+    "conflict": false,
+    "required_sources": [
+      "practice_db"
+    ],
+    "holders": [
+      {
+        "source": "practice_db",
+        "role": "record"
+      }
+    ]
+  },
+  {
+    "id": "db_sam_brief_time",
+    "question_type": "value_lookup",
+    "oracle_source": "practice_db",
+    "sources": [],
+    "conflict": false,
+    "required_sources": [
+      "practice_db"
+    ],
+    "holders": [
+      {
+        "source": "practice_db",
+        "role": "record"
+      }
+    ]
+  },
+  {
+    "id": "db_voss_organisation",
+    "question_type": "value_lookup",
+    "oracle_source": "practice_db",
+    "sources": [],
+    "conflict": false,
+    "required_sources": [
+      "practice_db"
+    ],
+    "holders": [
+      {
+        "source": "practice_db",
+        "role": "record"
+      }
+    ]
+  },
+  {
+    "id": "db_super_form_fee",
+    "question_type": "value_lookup",
+    "oracle_source": "practice_db",
+    "sources": [],
+    "conflict": false,
+    "required_sources": [
+      "practice_db"
+    ],
+    "holders": [
+      {
+        "source": "practice_db",
+        "role": "record"
+      }
+    ]
+  },
+  {
+    "id": "agg_total_fees",
+    "question_type": "aggregation",
+    "oracle_source": "practice_db",
+    "sources": [],
+    "conflict": false,
+    "required_sources": [
+      "practice_db"
+    ],
+    "holders": [
+      {
+        "source": "practice_db",
+        "role": "record"
+      }
+    ]
+  },
+  {
+    "id": "agg_total_hours",
+    "question_type": "aggregation",
+    "oracle_source": "practice_db",
+    "sources": [],
+    "conflict": false,
+    "required_sources": [
+      "practice_db"
+    ],
+    "holders": [
+      {
+        "source": "practice_db",
+        "role": "record"
+      }
+    ]
+  },
+  {
+    "id": "agg_sam_sept_value",
+    "question_type": "aggregation",
+    "oracle_source": "practice_db",
+    "sources": [],
+    "conflict": false,
+    "required_sources": [
+      "practice_db"
+    ],
+    "holders": [
+      {
+        "source": "practice_db",
+        "role": "record"
+      }
+    ]
+  },
+  {
+    "id": "agg_fiona_sept",
+    "question_type": "aggregation",
+    "oracle_source": "practice_db",
+    "sources": [],
+    "conflict": false,
+    "required_sources": [
+      "practice_db"
+    ],
+    "holders": [
+      {
+        "source": "practice_db",
+        "role": "record"
+      }
+    ]
+  },
+  {
+    "id": "agg_entries_total",
+    "question_type": "count_list",
+    "oracle_source": "practice_db",
+    "sources": [],
+    "conflict": false,
+    "required_sources": [
+      "practice_db"
+    ],
+    "holders": [
+      {
+        "source": "practice_db",
+        "role": "record"
+      }
+    ]
+  },
+  {
+    "id": "agg_busiest_month",
+    "question_type": "aggregation",
+    "oracle_source": "practice_db",
+    "sources": [],
+    "conflict": false,
+    "required_sources": [
+      "practice_db"
+    ],
+    "holders": [
+      {
+        "source": "practice_db",
+        "role": "record"
+      }
+    ]
+  },
+  {
+    "id": "agg_total_disbursements",
+    "question_type": "aggregation",
+    "oracle_source": "practice_db",
+    "sources": [],
+    "conflict": false,
+    "required_sources": [
+      "practice_db"
+    ],
+    "holders": [
+      {
+        "source": "practice_db",
+        "role": "record"
+      }
+    ]
+  },
+  {
+    "id": "agg_unbilled_disbursements",
+    "question_type": "multi_fact",
+    "oracle_source": "practice_db",
+    "sources": [],
+    "conflict": false,
+    "required_sources": [
+      "practice_db"
+    ],
+    "holders": [
+      {
+        "source": "practice_db",
+        "role": "record"
+      }
+    ]
+  },
+  {
+    "id": "agg_total_invoiced",
+    "question_type": "aggregation",
+    "oracle_source": "practice_db",
+    "sources": [],
+    "conflict": false,
+    "required_sources": [
+      "practice_db"
+    ],
+    "holders": [
+      {
+        "source": "practice_db",
+        "role": "record"
+      }
+    ]
+  },
+  {
+    "id": "agg_total_outstanding",
+    "question_type": "aggregation",
+    "oracle_source": "practice_db",
+    "sources": [],
+    "conflict": false,
+    "required_sources": [
+      "practice_db"
+    ],
+    "holders": [
+      {
+        "source": "practice_db",
+        "role": "record"
+      }
+    ]
+  },
+  {
+    "id": "agg_total_paid",
+    "question_type": "aggregation",
+    "oracle_source": "practice_db",
+    "sources": [],
+    "conflict": false,
+    "required_sources": [
+      "practice_db"
+    ],
+    "holders": [
+      {
+        "source": "practice_db",
+        "role": "record"
+      }
+    ]
+  },
+  {
+    "id": "agg_trust_received",
+    "question_type": "aggregation",
+    "oracle_source": "practice_db",
+    "sources": [],
+    "conflict": false,
+    "required_sources": [
+      "practice_db"
+    ],
+    "holders": [
+      {
+        "source": "practice_db",
+        "role": "record"
+      }
+    ]
+  },
+  {
+    "id": "agg_sam_share",
+    "question_type": "aggregation",
+    "oracle_source": "practice_db",
+    "sources": [],
+    "conflict": false,
+    "required_sources": [
+      "practice_db"
+    ],
+    "holders": [
+      {
+        "source": "practice_db",
+        "role": "record"
+      }
+    ]
+  },
+  {
+    "id": "agg_wip",
+    "question_type": "aggregation",
+    "oracle_source": "practice_db",
+    "sources": [],
+    "conflict": false,
+    "required_sources": [
+      "practice_db"
+    ],
+    "holders": [
+      {
+        "source": "practice_db",
+        "role": "record"
+      }
+    ]
+  },
+  {
+    "id": "agg_longest_entry",
+    "question_type": "aggregation",
+    "oracle_source": "practice_db",
+    "sources": [],
+    "conflict": false,
+    "required_sources": [
+      "practice_db"
+    ],
+    "holders": [
+      {
+        "source": "practice_db",
+        "role": "record"
+      }
+    ]
+  },
+  {
+    "id": "conf_invoice_balance",
+    "question_type": "value_lookup",
+    "oracle_source": "practice_db",
+    "sources": [
+      "2026-09-25_Invoice_INV-26-0388.pdf"
+    ],
+    "conflict": true,
+    "required_sources": [
+      "practice_db"
+    ],
+    "holders": [
+      {
+        "source": "practice_db",
+        "role": "record"
+      },
+      {
+        "source": "matter_docs",
+        "role": "copy"
+      }
+    ]
+  },
+  {
+    "id": "conf_invoice_due",
+    "question_type": "value_lookup",
+    "oracle_source": "practice_db",
+    "sources": [
+      "2026-09-25_Invoice_INV-26-0388.pdf"
+    ],
+    "conflict": true,
+    "required_sources": [
+      "practice_db"
+    ],
+    "holders": [
+      {
+        "source": "practice_db",
+        "role": "record"
+      },
+      {
+        "source": "matter_docs",
+        "role": "copy"
+      }
+    ]
+  },
+  {
+    "id": "conf_final_hearing",
+    "question_type": "value_lookup",
+    "oracle_source": "practice_db",
+    "sources": [
+      "2026-08-26_Interim_Orders.pdf",
+      "2026-09-30_Draft_Consent_Orders_v2.docx"
+    ],
+    "conflict": true,
+    "required_sources": [
+      "practice_db"
+    ],
+    "holders": [
+      {
+        "source": "practice_db",
+        "role": "record"
+      },
+      {
+        "source": "matter_docs",
+        "role": "copy"
+      }
+    ]
+  },
+  {
+    "id": "conf_next_event",
+    "question_type": "value_lookup",
+    "oracle_source": "practice_db",
+    "sources": [
+      "2026-08-26_Interim_Orders.pdf"
+    ],
+    "conflict": true,
+    "required_sources": [
+      "practice_db"
+    ],
+    "holders": [
+      {
+        "source": "practice_db",
+        "role": "record"
+      },
+      {
+        "source": "matter_docs",
+        "role": "copy"
+      }
+    ]
+  },
+  {
+    "id": "conf_trust_balance",
+    "question_type": "value_lookup",
+    "oracle_source": "practice_db",
+    "sources": [
+      "2026-04-02_Costs_Agreement_and_Disclosure.docx",
+      "2026-09-25_Invoice_INV-26-0388.pdf"
+    ],
+    "conflict": true,
+    "required_sources": [
+      "practice_db"
+    ],
+    "holders": [
+      {
+        "source": "practice_db",
+        "role": "record"
+      },
+      {
+        "source": "matter_docs",
+        "role": "copy"
+      }
+    ]
+  },
+  {
+    "id": "conf_stage2_estimate",
+    "question_type": "value_lookup",
+    "oracle_source": "practice_db",
+    "sources": [
+      "2026-04-02_Costs_Agreement_and_Disclosure.docx"
+    ],
+    "conflict": true,
+    "required_sources": [
+      "practice_db"
+    ],
+    "holders": [
+      {
+        "source": "practice_db",
+        "role": "record"
+      },
+      {
+        "source": "matter_docs",
+        "role": "copy"
+      }
+    ]
+  },
+  {
+    "id": "conf_counsel_interim_fee",
+    "question_type": "value_lookup",
+    "oracle_source": "practice_db",
+    "sources": [
+      "2026-04-02_Costs_Agreement_and_Disclosure.docx"
+    ],
+    "conflict": true,
+    "required_sources": [
+      "practice_db"
+    ],
+    "holders": [
+      {
+        "source": "practice_db",
+        "role": "record"
+      },
+      {
+        "source": "matter_docs",
+        "role": "copy"
+      }
+    ]
+  },
+  {
+    "id": "conf_fiona_rate",
+    "question_type": "value_lookup",
+    "oracle_source": "practice_db",
+    "sources": [
+      "2026-04-02_Costs_Agreement_and_Disclosure.docx"
+    ],
+    "conflict": true,
+    "required_sources": [
+      "practice_db"
+    ],
+    "holders": [
+      {
+        "source": "practice_db",
+        "role": "record"
+      },
+      {
+        "source": "matter_docs",
+        "role": "copy"
+      }
+    ]
+  },
+  {
+    "id": "pol_relocation_signoff",
+    "question_type": "multi_fact",
+    "oracle_source": "policy_docs",
+    "sources": [],
+    "conflict": false,
+    "required_sources": [
+      "policy_docs"
+    ],
+    "holders": [
+      {
+        "source": "policy_docs",
+        "role": "index"
+      }
+    ]
+  },
+  {
+    "id": "pol_relocation_summary_form",
+    "question_type": "value_lookup",
+    "oracle_source": "policy_docs",
+    "sources": [],
+    "conflict": false,
+    "required_sources": [
+      "policy_docs"
+    ],
+    "holders": [
+      {
+        "source": "policy_docs",
+        "role": "index"
+      }
+    ]
+  },
+  {
+    "id": "pol_trust_transfer_requirements",
+    "question_type": "count_list",
+    "oracle_source": "policy_docs",
+    "sources": [],
+    "conflict": false,
+    "required_sources": [
+      "policy_docs"
+    ],
+    "holders": [
+      {
+        "source": "policy_docs",
+        "role": "index"
+      }
+    ]
+  },
+  {
+    "id": "pol_trust_reconciliation_signer",
+    "question_type": "relationship",
+    "oracle_source": "policy_docs",
+    "sources": [],
+    "conflict": false,
+    "required_sources": [
+      "policy_docs"
+    ],
+    "holders": [
+      {
+        "source": "policy_docs",
+        "role": "index"
+      }
+    ]
+  },
+  {
+    "id": "pol_trust_bank",
+    "question_type": "value_lookup",
+    "oracle_source": "policy_docs",
+    "sources": [],
+    "conflict": false,
+    "required_sources": [
+      "policy_docs"
+    ],
+    "holders": [
+      {
+        "source": "policy_docs",
+        "role": "index"
+      }
+    ]
+  },
+  {
+    "id": "pol_conflict_timing",
+    "question_type": "value_lookup",
+    "oracle_source": "policy_docs",
+    "sources": [],
+    "conflict": false,
+    "required_sources": [
+      "policy_docs"
+    ],
+    "holders": [
+      {
+        "source": "policy_docs",
+        "role": "index"
+      }
+    ]
+  },
+  {
+    "id": "pol_conflict_escalation",
+    "question_type": "relationship",
+    "oracle_source": "policy_docs",
+    "sources": [],
+    "conflict": false,
+    "required_sources": [
+      "policy_docs"
+    ],
+    "holders": [
+      {
+        "source": "policy_docs",
+        "role": "index"
+      }
+    ]
+  },
+  {
+    "id": "pol_closure_days",
+    "question_type": "value_lookup",
+    "oracle_source": "policy_docs",
+    "sources": [],
+    "conflict": false,
+    "required_sources": [
+      "policy_docs"
+    ],
+    "holders": [
+      {
+        "source": "policy_docs",
+        "role": "index"
+      }
+    ]
+  },
+  {
+    "id": "pol_closure_storage",
+    "question_type": "multi_fact",
+    "oracle_source": "policy_docs",
+    "sources": [],
+    "conflict": false,
+    "required_sources": [
+      "policy_docs"
+    ],
+    "holders": [
+      {
+        "source": "policy_docs",
+        "role": "index"
+      }
+    ]
+  },
+  {
+    "id": "pol_pd_commencement",
+    "question_type": "value_lookup",
+    "oracle_source": "policy_docs",
+    "sources": [],
+    "conflict": false,
+    "required_sources": [
+      "policy_docs"
+    ],
+    "holders": [
+      {
+        "source": "policy_docs",
+        "role": "index"
+      }
+    ]
+  },
+  {
+    "id": "pol_pd_outline_length",
+    "question_type": "value_lookup",
+    "oracle_source": "policy_docs",
+    "sources": [],
+    "conflict": false,
+    "required_sources": [
+      "policy_docs"
+    ],
+    "holders": [
+      {
+        "source": "policy_docs",
+        "role": "index"
+      }
+    ]
+  },
+  {
+    "id": "pol_pd_outline_deadline",
+    "question_type": "value_lookup",
+    "oracle_source": "policy_docs",
+    "sources": [],
+    "conflict": false,
+    "required_sources": [
+      "policy_docs"
+    ],
+    "holders": [
+      {
+        "source": "policy_docs",
+        "role": "index"
+      }
+    ]
+  },
+  {
+    "id": "pol_photocopy_rate",
+    "question_type": "value_lookup",
+    "oracle_source": "policy_docs",
+    "sources": [],
+    "conflict": false,
+    "required_sources": [
+      "policy_docs"
+    ],
+    "holders": [
+      {
+        "source": "policy_docs",
+        "role": "index"
+      }
+    ]
+  },
+  {
+    "id": "pol_disclosure_threshold",
+    "question_type": "value_lookup",
+    "oracle_source": "policy_docs",
+    "sources": [],
+    "conflict": false,
+    "required_sources": [
+      "policy_docs"
+    ],
+    "holders": [
+      {
+        "source": "policy_docs",
+        "role": "index"
+      }
+    ]
+  },
+  {
+    "id": "pol_estimate_review",
+    "question_type": "value_lookup",
+    "oracle_source": "policy_docs",
+    "sources": [],
+    "conflict": false,
+    "required_sources": [
+      "policy_docs"
+    ],
+    "holders": [
+      {
+        "source": "policy_docs",
+        "role": "index"
+      }
+    ]
+  },
+  {
+    "id": "api_directions_courtroom",
+    "question_type": "value_lookup",
+    "oracle_source": "court_api",
+    "sources": [],
+    "conflict": false,
+    "required_sources": [
+      "court_api"
+    ],
+    "holders": [
+      {
+        "source": "court_api",
+        "role": "record"
+      }
+    ]
+  },
+  {
+    "id": "api_directions_time",
+    "question_type": "value_lookup",
+    "oracle_source": "court_api",
+    "sources": [],
+    "conflict": false,
+    "required_sources": [
+      "court_api"
+    ],
+    "holders": [
+      {
+        "source": "court_api",
+        "role": "record"
+      }
+    ]
+  },
+  {
+    "id": "api_directions_officer",
+    "question_type": "relationship",
+    "oracle_source": "court_api",
+    "sources": [],
+    "conflict": false,
+    "required_sources": [
+      "court_api"
+    ],
+    "holders": [
+      {
+        "source": "court_api",
+        "role": "record"
+      }
+    ]
+  },
+  {
+    "id": "api_final_listing_ref",
+    "question_type": "value_lookup",
+    "oracle_source": "court_api",
+    "sources": [],
+    "conflict": false,
+    "required_sources": [
+      "court_api"
+    ],
+    "holders": [
+      {
+        "source": "court_api",
+        "role": "record"
+      }
+    ]
+  },
+  {
+    "id": "api_final_status",
+    "question_type": "value_lookup",
+    "oracle_source": "court_api",
+    "sources": [],
+    "conflict": false,
+    "required_sources": [
+      "court_api"
+    ],
+    "holders": [
+      {
+        "source": "court_api",
+        "role": "record"
+      }
+    ]
+  },
+  {
+    "id": "api_company_incorporated",
+    "question_type": "value_lookup",
+    "oracle_source": "court_api",
+    "sources": [],
+    "conflict": false,
+    "required_sources": [
+      "court_api"
+    ],
+    "holders": [
+      {
+        "source": "court_api",
+        "role": "record"
+      }
+    ]
+  },
+  {
+    "id": "api_company_registered_office",
+    "question_type": "value_lookup",
+    "oracle_source": "court_api",
+    "sources": [],
+    "conflict": false,
+    "required_sources": [
+      "court_api"
+    ],
+    "holders": [
+      {
+        "source": "court_api",
+        "role": "record"
+      }
+    ]
+  },
+  {
+    "id": "api_company_secretary",
+    "question_type": "relationship",
+    "oracle_source": "court_api",
+    "sources": [],
+    "conflict": false,
+    "required_sources": [
+      "court_api"
+    ],
+    "holders": [
+      {
+        "source": "court_api",
+        "role": "record"
+      }
+    ]
+  },
+  {
+    "id": "api_company_former_name",
+    "question_type": "value_lookup",
+    "oracle_source": "court_api",
+    "sources": [],
+    "conflict": false,
+    "required_sources": [
+      "court_api"
+    ],
+    "holders": [
+      {
+        "source": "court_api",
+        "role": "record"
+      }
+    ]
+  },
+  {
+    "id": "api_company_shares",
+    "question_type": "value_lookup",
+    "oracle_source": "court_api",
+    "sources": [],
+    "conflict": false,
+    "required_sources": [
+      "court_api"
+    ],
+    "holders": [
+      {
+        "source": "court_api",
+        "role": "record"
+      }
+    ]
+  },
+  {
+    "id": "multi_balance_trust_rule",
+    "question_type": "multi_fact",
+    "oracle_source": "multi",
+    "sources": [
+      "2026-09-25_Invoice_INV-26-0388.pdf"
+    ],
+    "conflict": false,
+    "required_sources": [
+      "practice_db",
+      "policy_docs"
+    ],
+    "holders": [
+      {
+        "source": "practice_db",
+        "role": "record"
+      },
+      {
+        "source": "policy_docs",
+        "role": "index"
+      }
+    ]
+  },
+  {
+    "id": "multi_hearing_outline_due",
+    "question_type": "multi_fact",
+    "oracle_source": "multi",
+    "sources": [
+      "2026-08-26_Interim_Orders.pdf"
+    ],
+    "conflict": false,
+    "required_sources": [
+      "court_api",
+      "policy_docs"
+    ],
+    "holders": [
+      {
+        "source": "court_api",
+        "role": "record"
+      },
+      {
+        "source": "practice_db",
+        "role": "record"
+      },
+      {
+        "source": "policy_docs",
+        "role": "index"
+      },
+      {
+        "source": "matter_docs",
+        "role": "copy"
+      }
+    ]
+  },
+  {
+    "id": "multi_invoiced_vs_estimate",
+    "question_type": "multi_fact",
+    "oracle_source": "multi",
+    "sources": [
+      "2026-04-02_Costs_Agreement_and_Disclosure.docx"
+    ],
+    "conflict": false,
+    "required_sources": [
+      "practice_db",
+      "matter_docs"
+    ],
+    "holders": [
+      {
+        "source": "practice_db",
+        "role": "record"
+      },
+      {
+        "source": "matter_docs",
+        "role": "copy"
+      }
+    ]
+  },
+  {
+    "id": "multi_icl_and_registrar",
+    "question_type": "multi_fact",
+    "oracle_source": "multi",
+    "sources": [
+      "2026-09-03_Letter_from_ICL_Marguerite_Sallis.docx"
+    ],
+    "conflict": false,
+    "required_sources": [
+      "matter_docs",
+      "court_api"
+    ],
+    "holders": [
+      {
+        "source": "matter_docs",
+        "role": "copy"
+      },
+      {
+        "source": "graph",
+        "role": "derived"
+      },
+      {
+        "source": "court_api",
+        "role": "record"
+      }
+    ]
+  },
+  {
+    "id": "multi_most_time_role",
+    "question_type": "multi_fact",
+    "oracle_source": "multi",
+    "sources": [
+      "2026-04-02_Costs_Agreement_and_Disclosure.docx"
+    ],
+    "conflict": false,
+    "required_sources": [
+      "practice_db",
+      "matter_docs"
+    ],
+    "holders": [
+      {
+        "source": "practice_db",
+        "role": "record"
+      },
+      {
+        "source": "matter_docs",
+        "role": "copy"
+      }
+    ]
+  },
+  {
+    "id": "multi_company_status_value",
+    "question_type": "multi_fact",
+    "oracle_source": "multi",
+    "sources": [
+      "2026-08-07_Business_Valuation_Nguyen_Constructions.pdf"
+    ],
+    "conflict": false,
+    "required_sources": [
+      "court_api",
+      "matter_docs"
+    ],
+    "holders": [
+      {
+        "source": "court_api",
+        "role": "record"
+      },
+      {
+        "source": "matter_docs",
+        "role": "copy"
+      },
+      {
+        "source": "graph",
+        "role": "derived"
+      }
+    ]
+  },
+  {
+    "id": "multi_stage2_estimate_then_now",
+    "question_type": "multi_fact",
+    "oracle_source": "multi",
+    "sources": [
+      "2026-04-02_Costs_Agreement_and_Disclosure.docx"
+    ],
+    "conflict": false,
+    "required_sources": [
+      "matter_docs",
+      "practice_db"
+    ],
+    "holders": [
+      {
+        "source": "matter_docs",
+        "role": "copy"
+      },
+      {
+        "source": "practice_db",
+        "role": "record"
+      }
+    ]
+  },
+  {
+    "id": "multi_fiona_rate_then_now",
+    "question_type": "multi_fact",
+    "oracle_source": "multi",
+    "sources": [
+      "2026-04-02_Costs_Agreement_and_Disclosure.docx"
+    ],
+    "conflict": false,
+    "required_sources": [
+      "matter_docs",
+      "practice_db"
+    ],
+    "holders": [
+      {
+        "source": "matter_docs",
+        "role": "copy"
+      },
+      {
+        "source": "practice_db",
+        "role": "record"
+      }
+    ]
+  },
+  {
+    "id": "multi_inv0388_total_vs_balance",
+    "question_type": "multi_fact",
+    "oracle_source": "multi",
+    "sources": [
+      "2026-09-25_Invoice_INV-26-0388.pdf"
+    ],
+    "conflict": false,
+    "required_sources": [
+      "matter_docs",
+      "practice_db"
+    ],
+    "holders": [
+      {
+        "source": "matter_docs",
+        "role": "copy"
+      },
+      {
+        "source": "practice_db",
+        "role": "record"
+      }
+    ]
+  },
+  {
+    "id": "multi_home_value_vs_valuer_fee",
+    "question_type": "multi_fact",
+    "oracle_source": "multi",
+    "sources": [
+      "2026-06-04_Valuation_Report_27_Banksia_Court.pdf"
+    ],
+    "conflict": false,
+    "required_sources": [
+      "matter_docs",
+      "practice_db"
+    ],
+    "holders": [
+      {
+        "source": "matter_docs",
+        "role": "copy"
+      },
+      {
+        "source": "graph",
+        "role": "derived"
+      },
+      {
+        "source": "practice_db",
+        "role": "record"
+      }
+    ]
+  },
+  {
+    "id": "multi_business_value_vs_fee",
+    "question_type": "multi_fact",
+    "oracle_source": "multi",
+    "sources": [
+      "2026-08-07_Business_Valuation_Nguyen_Constructions.pdf"
+    ],
+    "conflict": false,
+    "required_sources": [
+      "matter_docs",
+      "practice_db"
+    ],
+    "holders": [
+      {
+        "source": "matter_docs",
+        "role": "copy"
+      },
+      {
+        "source": "graph",
+        "role": "derived"
+      },
+      {
+        "source": "practice_db",
+        "role": "record"
+      }
+    ]
+  },
+  {
+    "id": "multi_counsel_rate_vs_interim_fee",
+    "question_type": "multi_fact",
+    "oracle_source": "multi",
+    "sources": [
+      "2026-04-02_Costs_Agreement_and_Disclosure.docx"
+    ],
+    "conflict": false,
+    "required_sources": [
+      "matter_docs",
+      "practice_db"
+    ],
+    "holders": [
+      {
+        "source": "matter_docs",
+        "role": "copy"
+      },
+      {
+        "source": "practice_db",
+        "role": "record"
+      }
+    ]
+  },
+  {
+    "id": "multi_super_split_vs_trust_held",
+    "question_type": "multi_fact",
+    "oracle_source": "multi",
+    "sources": [
+      "2026-09-30_Draft_Consent_Orders_v2.docx"
+    ],
+    "conflict": false,
+    "required_sources": [
+      "matter_docs",
+      "practice_db"
+    ],
+    "holders": [
+      {
+        "source": "matter_docs",
+        "role": "copy"
+      },
+      {
+        "source": "practice_db",
+        "role": "record"
+      }
+    ]
+  },
+  {
+    "id": "multi_retainer_vs_receipt",
+    "question_type": "multi_fact",
+    "oracle_source": "multi",
+    "sources": [
+      "2026-04-02_Costs_Agreement_and_Disclosure.docx"
+    ],
+    "conflict": false,
+    "required_sources": [
+      "matter_docs",
+      "practice_db"
+    ],
+    "holders": [
+      {
+        "source": "matter_docs",
+        "role": "copy"
+      },
+      {
+        "source": "practice_db",
+        "role": "record"
+      }
+    ]
+  },
+  {
+    "id": "multi_payment_terms_vs_due",
+    "question_type": "multi_fact",
+    "oracle_source": "multi",
+    "sources": [
+      "2026-04-02_Costs_Agreement_and_Disclosure.docx"
+    ],
+    "conflict": false,
+    "required_sources": [
+      "matter_docs",
+      "practice_db"
+    ],
+    "holders": [
+      {
+        "source": "matter_docs",
+        "role": "copy"
+      },
+      {
+        "source": "practice_db",
+        "role": "record"
+      }
+    ]
+  },
+  {
+    "id": "multi_sam_rate_vs_hours",
+    "question_type": "multi_fact",
+    "oracle_source": "multi",
+    "sources": [
+      "2026-04-02_Costs_Agreement_and_Disclosure.docx"
+    ],
+    "conflict": false,
+    "required_sources": [
+      "matter_docs",
+      "practice_db"
+    ],
+    "holders": [
+      {
+        "source": "matter_docs",
+        "role": "copy"
+      },
+      {
+        "source": "practice_db",
+        "role": "record"
+      }
+    ]
+  },
+  {
+    "id": "multi_estimate_review_due",
+    "question_type": "multi_fact",
+    "oracle_source": "multi",
+    "sources": [],
+    "conflict": false,
+    "required_sources": [
+      "policy_docs",
+      "practice_db"
+    ],
+    "holders": [
+      {
+        "source": "policy_docs",
+        "role": "index"
+      },
+      {
+        "source": "practice_db",
+        "role": "record"
+      }
+    ]
+  },
+  {
+    "id": "multi_disclosure_threshold_vs_invoiced",
+    "question_type": "multi_fact",
+    "oracle_source": "multi",
+    "sources": [],
+    "conflict": false,
+    "required_sources": [
+      "policy_docs",
+      "practice_db"
+    ],
+    "holders": [
+      {
+        "source": "policy_docs",
+        "role": "index"
+      },
+      {
+        "source": "practice_db",
+        "role": "record"
+      }
+    ]
+  },
+  {
+    "id": "multi_closure_days_vs_outstanding",
+    "question_type": "multi_fact",
+    "oracle_source": "multi",
+    "sources": [],
+    "conflict": false,
+    "required_sources": [
+      "policy_docs",
+      "practice_db"
+    ],
+    "holders": [
+      {
+        "source": "policy_docs",
+        "role": "index"
+      },
+      {
+        "source": "practice_db",
+        "role": "record"
+      }
+    ]
+  },
+  {
+    "id": "multi_trust_approver_vs_receipt",
+    "question_type": "multi_fact",
+    "oracle_source": "multi",
+    "sources": [],
+    "conflict": false,
+    "required_sources": [
+      "policy_docs",
+      "practice_db"
+    ],
+    "holders": [
+      {
+        "source": "policy_docs",
+        "role": "index"
+      },
+      {
+        "source": "practice_db",
+        "role": "record"
+      }
+    ]
+  },
+  {
+    "id": "multi_reconciliation_signer_vs_balance",
+    "question_type": "multi_fact",
+    "oracle_source": "multi",
+    "sources": [],
+    "conflict": false,
+    "required_sources": [
+      "policy_docs",
+      "practice_db"
+    ],
+    "holders": [
+      {
+        "source": "policy_docs",
+        "role": "index"
+      },
+      {
+        "source": "practice_db",
+        "role": "record"
+      }
+    ]
+  },
+  {
+    "id": "multi_trust_bank_vs_received",
+    "question_type": "multi_fact",
+    "oracle_source": "multi",
+    "sources": [],
+    "conflict": false,
+    "required_sources": [
+      "policy_docs",
+      "practice_db"
+    ],
+    "holders": [
+      {
+        "source": "policy_docs",
+        "role": "index"
+      },
+      {
+        "source": "practice_db",
+        "role": "record"
+      }
+    ]
+  },
+  {
+    "id": "multi_conflict_timing_vs_voss",
+    "question_type": "multi_fact",
+    "oracle_source": "multi",
+    "sources": [],
+    "conflict": false,
+    "required_sources": [
+      "policy_docs",
+      "practice_db"
+    ],
+    "holders": [
+      {
+        "source": "policy_docs",
+        "role": "index"
+      },
+      {
+        "source": "practice_db",
+        "role": "record"
+      }
+    ]
+  },
+  {
+    "id": "multi_photocopy_rate_vs_transcript",
+    "question_type": "multi_fact",
+    "oracle_source": "multi",
+    "sources": [],
+    "conflict": false,
+    "required_sources": [
+      "policy_docs",
+      "practice_db"
+    ],
+    "holders": [
+      {
+        "source": "policy_docs",
+        "role": "index"
+      },
+      {
+        "source": "practice_db",
+        "role": "record"
+      }
+    ]
+  },
+  {
+    "id": "multi_hearing_orders_vs_list",
+    "question_type": "multi_fact",
+    "oracle_source": "multi",
+    "sources": [
+      "2026-08-26_Interim_Orders.pdf"
+    ],
+    "conflict": false,
+    "required_sources": [
+      "court_api",
+      "matter_docs"
+    ],
+    "holders": [
+      {
+        "source": "court_api",
+        "role": "record"
+      },
+      {
+        "source": "practice_db",
+        "role": "record"
+      },
+      {
+        "source": "matter_docs",
+        "role": "copy"
+      }
+    ]
+  },
+  {
+    "id": "multi_shares_vs_value_per_share",
+    "question_type": "multi_fact",
+    "oracle_source": "multi",
+    "sources": [
+      "2026-08-07_Business_Valuation_Nguyen_Constructions.pdf"
+    ],
+    "conflict": false,
+    "required_sources": [
+      "court_api",
+      "matter_docs"
+    ],
+    "holders": [
+      {
+        "source": "court_api",
+        "role": "record"
+      },
+      {
+        "source": "matter_docs",
+        "role": "copy"
+      },
+      {
+        "source": "graph",
+        "role": "derived"
+      }
+    ]
+  },
+  {
+    "id": "multi_former_name_vs_valuation_date",
+    "question_type": "multi_fact",
+    "oracle_source": "multi",
+    "sources": [
+      "2026-08-07_Business_Valuation_Nguyen_Constructions.pdf"
+    ],
+    "conflict": false,
+    "required_sources": [
+      "court_api",
+      "matter_docs"
+    ],
+    "holders": [
+      {
+        "source": "court_api",
+        "role": "record"
+      },
+      {
+        "source": "matter_docs",
+        "role": "copy"
+      }
+    ]
+  },
+  {
+    "id": "multi_registered_office_vs_home",
+    "question_type": "multi_fact",
+    "oracle_source": "multi",
+    "sources": [
+      "2026-05-20_Response_to_Initiating_Application.pdf"
+    ],
+    "conflict": false,
+    "required_sources": [
+      "court_api",
+      "matter_docs"
+    ],
+    "holders": [
+      {
+        "source": "court_api",
+        "role": "record"
+      },
+      {
+        "source": "matter_docs",
+        "role": "copy"
+      },
+      {
+        "source": "graph",
+        "role": "derived"
+      }
+    ]
+  },
+  {
+    "id": "multi_directions_officer_vs_counsel",
+    "question_type": "multi_fact",
+    "oracle_source": "multi",
+    "sources": [
+      "2026-08-26_Interim_Orders.pdf"
+    ],
+    "conflict": false,
+    "required_sources": [
+      "court_api",
+      "matter_docs"
+    ],
+    "holders": [
+      {
+        "source": "court_api",
+        "role": "record"
+      },
+      {
+        "source": "matter_docs",
+        "role": "copy"
+      },
+      {
+        "source": "graph",
+        "role": "derived"
+      }
+    ]
+  },
+  {
+    "id": "multi_review_date_vs_revenue",
+    "question_type": "multi_fact",
+    "oracle_source": "multi",
+    "sources": [
+      "2026-08-07_Business_Valuation_Nguyen_Constructions.pdf"
+    ],
+    "conflict": false,
+    "required_sources": [
+      "court_api",
+      "matter_docs"
+    ],
+    "holders": [
+      {
+        "source": "court_api",
+        "role": "record"
+      },
+      {
+        "source": "matter_docs",
+        "role": "copy"
+      }
+    ]
+  },
+  {
+    "id": "multi_next_event_vs_time",
+    "question_type": "multi_fact",
+    "oracle_source": "multi",
+    "sources": [],
+    "conflict": false,
+    "required_sources": [
+      "court_api",
+      "practice_db"
+    ],
+    "holders": [
+      {
+        "source": "court_api",
+        "role": "record"
+      },
+      {
+        "source": "practice_db",
+        "role": "record"
+      }
+    ]
+  },
+  {
+    "id": "multi_listing_ref_vs_diary",
+    "question_type": "multi_fact",
+    "oracle_source": "multi",
+    "sources": [],
+    "conflict": false,
+    "required_sources": [
+      "court_api",
+      "practice_db"
+    ],
+    "holders": [
+      {
+        "source": "court_api",
+        "role": "record"
+      },
+      {
+        "source": "practice_db",
+        "role": "record"
+      }
+    ]
+  },
+  {
+    "id": "multi_filing_fee_vs_first_listing",
+    "question_type": "multi_fact",
+    "oracle_source": "multi",
+    "sources": [],
+    "conflict": false,
+    "required_sources": [
+      "court_api",
+      "practice_db"
+    ],
+    "holders": [
+      {
+        "source": "court_api",
+        "role": "record"
+      },
+      {
+        "source": "practice_db",
+        "role": "record"
+      }
+    ]
+  },
+  {
+    "id": "multi_courtroom_vs_brief_time",
+    "question_type": "multi_fact",
+    "oracle_source": "multi",
+    "sources": [],
+    "conflict": false,
+    "required_sources": [
+      "court_api",
+      "practice_db"
+    ],
+    "holders": [
+      {
+        "source": "court_api",
+        "role": "record"
+      },
+      {
+        "source": "practice_db",
+        "role": "record"
+      }
+    ]
+  },
+  {
+    "id": "multi_trustee_director_vs_officers",
+    "question_type": "multi_fact",
+    "oracle_source": "multi",
+    "sources": [
+      "2026-07-14_Trust_Deed_Summary_Nguyen_Family_Trust.docx"
+    ],
+    "conflict": false,
+    "required_sources": [
+      "graph",
+      "court_api"
+    ],
+    "holders": [
+      {
+        "source": "graph",
+        "role": "derived"
+      },
+      {
+        "source": "matter_docs",
+        "role": "copy"
+      },
+      {
+        "source": "court_api",
+        "role": "record"
+      }
+    ]
+  },
+  {
+    "id": "multi_trading_name_vs_secretary_appointed",
+    "question_type": "multi_fact",
+    "oracle_source": "multi",
+    "sources": [
+      "2026-05-20_Response_to_Initiating_Application.pdf"
+    ],
+    "conflict": false,
+    "required_sources": [
+      "graph",
+      "court_api"
+    ],
+    "holders": [
+      {
+        "source": "graph",
+        "role": "derived"
+      },
+      {
+        "source": "matter_docs",
+        "role": "copy"
+      },
+      {
+        "source": "court_api",
+        "role": "record"
+      }
+    ]
+  },
+  {
+    "id": "multi_ada_debts_vs_owed_firm",
+    "question_type": "multi_fact",
+    "oracle_source": "multi",
+    "sources": [
+      "2026-09-08_Financial_Statement_Ada_Okafor.docx"
+    ],
+    "conflict": false,
+    "required_sources": [
+      "graph",
+      "practice_db"
+    ],
+    "holders": [
+      {
+        "source": "graph",
+        "role": "derived"
+      },
+      {
+        "source": "matter_docs",
+        "role": "copy"
+      },
+      {
+        "source": "practice_db",
+        "role": "record"
+      }
+    ]
+  },
+  {
+    "id": "multi_icl_vs_voss_organisation",
+    "question_type": "multi_fact",
+    "oracle_source": "multi",
+    "sources": [
+      "2026-09-03_Letter_from_ICL_Marguerite_Sallis.docx"
+    ],
+    "conflict": false,
+    "required_sources": [
+      "graph",
+      "practice_db"
+    ],
+    "holders": [
+      {
+        "source": "graph",
+        "role": "derived"
+      },
+      {
+        "source": "matter_docs",
+        "role": "copy"
+      },
+      {
+        "source": "practice_db",
+        "role": "record"
+      }
+    ]
+  },
+  {
+    "id": "multi_s60i_issuer_vs_filing_fee",
+    "question_type": "multi_fact",
+    "oracle_source": "multi",
+    "sources": [
+      "2025-11-20_s60I_FDR_Certificate_Non-Attendance.pdf"
+    ],
+    "conflict": false,
+    "required_sources": [
+      "graph",
+      "practice_db"
+    ],
+    "holders": [
+      {
+        "source": "graph",
+        "role": "derived"
+      },
+      {
+        "source": "matter_docs",
+        "role": "copy"
+      },
+      {
+        "source": "practice_db",
+        "role": "record"
+      }
+    ]
+  },
+  {
+    "id": "none_mazda_registration",
+    "question_type": "unanswerable",
+    "oracle_source": "none",
+    "sources": [],
+    "conflict": false,
+    "required_sources": [],
+    "holders": []
+  },
+  {
+    "id": "none_pryce_rate",
+    "question_type": "unanswerable",
+    "oracle_source": "none",
+    "sources": [],
+    "conflict": false,
+    "required_sources": [],
+    "holders": []
+  },
+  {
+    "id": "none_pi_insurance",
+    "question_type": "unanswerable",
+    "oracle_source": "none",
+    "sources": [],
+    "conflict": false,
+    "required_sources": [],
+    "holders": []
+  },
+  {
+    "id": "none_brisbane_school",
+    "question_type": "unanswerable",
+    "oracle_source": "none",
+    "sources": [],
+    "conflict": false,
+    "required_sources": [],
+    "holders": []
+  },
+  {
+    "id": "none_directions_outcome",
+    "question_type": "unanswerable",
+    "oracle_source": "none",
+    "sources": [],
+    "conflict": false,
+    "required_sources": [],
+    "holders": []
+  },
+  {
+    "id": "none_ada_tfn",
+    "question_type": "unanswerable",
+    "oracle_source": "none",
+    "sources": [],
+    "conflict": false,
+    "required_sources": [],
+    "holders": []
+  }
+]

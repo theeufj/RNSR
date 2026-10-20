@@ -19,7 +19,8 @@ from rnsr.db.artifact import CorpusDB
 from rnsr.eval.autopsy import attach_causes, build_ledger, classify_miss, write_ledger
 from rnsr.eval.baselines.rag import rag_answer
 from rnsr.eval.datasets.base import EvalItem
-from rnsr.eval.metrics import EvalResult, judge_answer, score_answer, summarize
+from rnsr.eval.manifest import EvalResumeError, build_run_manifest, ensure_run_manifest
+from rnsr.eval.metrics import SCORER_VERSION, EvalResult, judge_answer, score_answer, summarize
 from rnsr.harness.loop import EnvSpec, RootRunner
 
 SYSTEMS = ("docdb", "rlm-classic", "bm25-rag", "vector-rag", "rerank-rag",
@@ -127,13 +128,15 @@ async def run_eval(
 ) -> tuple[list[EvalResult], dict]:
     """Run a benchmark; writes results.jsonl + summary.json under run_dir.
 
-    Scoring: exact/numeric string match first (free); when that fails and
+    Scoring: exact text/compatible scalar match first (free); when that fails and
     an answer exists, one sub-LM YES/NO equivalence call decides (string
     matching undercounts essay-style golds — seen live on FinanceBench).
     Judge cost is scoring overhead, not query cost, so it is not added to
     per-query cost_usd.
 
-    Resumable: existing results.jsonl rows are kept and their qids skipped.
+    Resumable only under an identical versioned run manifest. Legacy or
+    mismatched directories are refused without modifying their originals.
+    Existing results.jsonl rows are kept and their qids skipped.
     A per-item failure (unparseable filing, ingest crash) records an
     'error' result instead of killing the run.
 
@@ -144,12 +147,24 @@ async def run_eval(
     run_dir.mkdir(parents=True, exist_ok=True)
     cache_dir = run_dir / "corpora"
     settings = runner.settings
+    manifest = ensure_run_manifest(run_dir, build_run_manifest(
+        items, system, runner, limit=limit, judge=judge, concurrency=concurrency))
 
     results: list[EvalResult] = []
     results_path = run_dir / "results.jsonl"
     if results_path.exists():
+        existing_qids = set()
+        allowed_qids = {item.qid for item in items[: limit or len(items)]}
         for line in results_path.read_text().splitlines():
-            r = EvalResult(**json.loads(line))
+            try:
+                r = EvalResult(**json.loads(line))
+            except (ValueError, TypeError):
+                raise EvalResumeError("Stored evaluation results cannot be parsed. "
+                                      "Existing files were preserved; use a fresh --run-dir.") from None
+            if r.qid in existing_qids or r.qid not in allowed_qids:
+                raise EvalResumeError("Stored results contain duplicate or unexpected qids. "
+                                      "Existing files were preserved; use a fresh --run-dir.")
+            existing_qids.add(r.qid)
             # Void rows — nothing was ever attempted (network outage, parse
             # crash) — are dropped so resume retries them.
             if r.status == "error" or (r.predicted is None and r.iterations == 0):
@@ -257,6 +272,8 @@ async def run_eval(
         "".join(json.dumps(r.to_dict()) + "\n" for r in results))
 
     summary = summarize(results)
+    summary["scorer_version"] = SCORER_VERSION
+    summary["run_manifest_fingerprint"] = manifest["fingerprint"]
     summary["autopsy"] = {
         "cause_counts": summary["cause_counts"],
         "cause_x_class": summary["cause_x_class"],

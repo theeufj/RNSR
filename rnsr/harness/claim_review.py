@@ -28,11 +28,14 @@ MAX_DEFINITION_CHARS = 4000
 MAX_QUOTE_CHARS = 2000
 MAX_CONTEXT_CHARS = 2000
 MAX_PROMPT_CHARS = 32_000
-MAX_RESPONSE_CHARS = 16_000
+MAX_RESPONSE_CHARS = 48_000
 MAX_REASON_CHARS = 600
 MAX_REVIEW_S = 30.0
 MIN_REMAINING_S = 1.0
-MAX_OUTPUT_TOKENS = 2048
+# A batch of eight fields with per-requirement checks needs ~3k output tokens;
+# a tighter cap truncates the JSON, the parse fails, and the unresolved review
+# sends the draft back to the root for another round. Output is billed as used.
+MAX_OUTPUT_TOKENS = 8192
 PROMPT_VERSION = "claim-support-v4"
 _CALCULATION_CHECKS = {"source_bound_calculation", "source_bound_calculations"}
 

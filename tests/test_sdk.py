@@ -74,6 +74,32 @@ class TestPackageSurface:
 
 
 class TestAnswer:
+    @pytest.mark.parametrize("batch", [False, True])
+    def test_retention_applies_to_shared_query_entry_points(self, corpus, tmp_path, batch):
+        import os
+        import time
+        from dataclasses import replace
+
+        run_dir = tmp_path / "runs"
+        run_dir.mkdir()
+        stale = run_dir / "previous.jsonl"
+        stale.write_text("{}\n")
+        expired = time.time() - 3 * 86400
+        os.utime(stale, (expired, expired))
+        root = MockLLM(default="```python\nFINAL('2023', quotes=['ACME 2023 results.'])\n```")
+        runner = make_runner(root)
+        runner.settings = replace(runner.settings, trajectory_retention_days=1)
+        if batch:
+            results = rnsr.answer_batch_sync(["Which fiscal year?"], corpus,
+                batch_size=1, runner=runner, run_dir=run_dir)
+            assert results[0].answer == "2023"
+        else:
+            result = rnsr.answer_sync("Which fiscal year?", corpus,
+                runner=runner, run_dir=run_dir)
+            assert result.answer == "2023"
+        assert not stale.exists()
+        assert list(run_dir.glob("*.jsonl"))
+
     def test_answer_sync_returns_query_result(self, corpus, tmp_path):
         # docdb FINAL requires verbatim quotes verified against source (§6)
         root = MockLLM().script(
@@ -99,6 +125,65 @@ class TestAnswer:
 
 
 class TestAnswerBatch:
+    def test_batch_exposes_field_citations_review_state_and_audit_path(self, corpus, tmp_path):
+        from pathlib import Path
+
+        root = MockLLM(default="```python\nFINAL_BATCH({'q000': '2023', 'q001': '3234'}, "
+            "quotes={'q000': ['ACME 2023 results.'], "
+            "'q001': ['Net revenue was $3,234 million.']})\n```")
+        answers = rnsr.answer_batch_sync(["Which year?", "What revenue?"], corpus,
+            runner=make_runner(root), run_dir=tmp_path / "runs")
+        assert answers[0].citations[0]["quote"] == "ACME 2023 results."
+        assert answers[1].citations[0]["quote"] == "Net revenue was $3,234 million."
+        assert all(answer.claim_review["status"] == "disabled" for answer in answers)
+        assert all(answer.claim_review["required"] for answer in answers)
+        assert all(Path(answer.trajectory_paths[0]).is_file() for answer in answers)
+        assert answers[0].health["grade"] == "ok"
+
+    async def test_consensus_metadata_follows_winning_pass_or_tiebreak(self, corpus, tmp_path):
+        import hashlib
+        import json
+
+        from rnsr.harness.evidence import AnswerEvidence
+        from rnsr.harness.loop import ConsensusAnswer, ConsensusBatchResult, QueryResult
+
+        def result(answer, verification, path, status="final"):
+            return QueryResult(answer=answer, status=status,
+                final={"value": answer, "verification": verification}, ledger={},
+                trajectory_path=str(tmp_path / path), iterations=1,
+                claim_review={"status": "supported"} if status == "final" else None)
+
+        first = result(None, {}, "first.jsonl", "error")
+        winner = result({"q000": "2023", "q001": "other"},
+            {"q000": {"quotes": [{"quote": "ACME 2023 results.", "doc_id": "acme"}]}},
+            "winner.jsonl")
+        winner.claim_review["fields"] = [{"field_id": f"f{i}", "status": "reviewed",
+            "verdict": "supported", "qid_sha256": hashlib.sha256(json.dumps(qid).encode()).hexdigest()}
+            for i, qid in enumerate(("q000", "q001"))]
+        tiebreak = result("3234", {"quotes": [{"quote": "Net revenue was $3,234 million."}]},
+            "tiebreak.jsonl")
+
+        class Runner:
+            settings = Settings()
+
+            async def run_batch_consensus(self, *args, **kwargs):
+                return ConsensusBatchResult(
+                    answers={"q000": ConsensusAnswer("2023", "majority", 0.5, [None, "2023"],
+                        AnswerEvidence(claim_review_status="supported")),
+                        "q001": ConsensusAnswer("3234", "tiebreak", 0.5, [None, "other", "3234"],
+                        AnswerEvidence(claim_review_status="supported"))},
+                    pass_results=[first, winner], tiebreak_results={"q001": tiebreak})
+
+        answers = await rnsr.answer_batch(["Year?", "Revenue?"], corpus,
+            runner=Runner(), consensus=2)
+        assert all(answer.status == "final" for answer in answers)
+        assert answers[0].citations[0]["quote"] == "ACME 2023 results."
+        assert answers[1].citations[0]["quote"] == "Net revenue was $3,234 million."
+        assert [record["field_id"] for record in answers[0].claim_review["fields"]] == ["f0"]
+        assert answers[0].trajectory_paths == [first.trajectory_path, winner.trajectory_path]
+        assert answers[1].trajectory_paths == [first.trajectory_path, winner.trajectory_path,
+                                               tiebreak.trajectory_path]
+
     def test_one_group_answers_in_input_order(self, corpus, tmp_path):
         root = MockLLM().script(
             "```python\nFINAL_BATCH({'q000': 'Paris', 'q001': '42', "

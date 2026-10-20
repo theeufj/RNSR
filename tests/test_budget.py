@@ -31,6 +31,7 @@ def test_default_query_crosses_all_former_caps_and_keeps_finite_accounting(monke
     assert snapshot == {
         "root_iters": 200, "sub_calls": 1000, "wall_s": 7200.0,
         "spend_usd": 100.0, "input_tokens": 100000, "output_tokens": 10000,
+        "cache_read_tokens": 0, "cache_write_tokens": 0,
     }
     # Unlimited allowance must never appear as non-standard Infinity in records.
     assert json.loads(json.dumps(snapshot, allow_nan=False)) == snapshot

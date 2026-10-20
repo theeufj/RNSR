@@ -1,5 +1,46 @@
 # Changelog
 
+## Unreleased
+
+- Root prompts are sent to Anthropic as cache-friendly blocks: the system
+  prompt and the completed transcript carry `cache_control` breakpoints, so a
+  growing conversation re-reads its prefix instead of re-billing it every
+  iteration (`PromptSegments`; other providers receive the identical flat
+  text). Cache reads/writes are priced per model (`CACHE_MULTIPLIERS`) and
+  reported in `Usage`, ledger snapshots and the run-level governor.
+- The claim-review loop has a circuit breaker. A resubmission whose open
+  fields were all already adjudicated on unchanged evidence
+  (`claim_review_max_stalls`, default 1), or more than
+  `claim_review_max_rounds` rejected reviews (default 6), finalises the
+  answer with those fields `unverified` (low tier) and a
+  `claim_review_halted` trajectory event, rather than running to the spend
+  cap and falling back to solo runs. Zero on both restores the old loop.
+- Root replies without a complete code fence are salvaged when they still
+  parse as statements: a lost opening fence, an XML tool-call wrapper, stray
+  tags inside code, or a line of prose on either side. Prose never runs.
+- Per-call usage and cost on `root_call_completed` and `sub_batch` events;
+  `rnsr ingest --report` and `rnsr regress` record provider spend
+  (`provider` / `judge_provider`) so a run's all-in cost is visible.
+- Benchmark scoring accepts exact text or compatible scalar values; unit,
+  polarity and prose ambiguity require contextual adjudication. Truly absent
+  items alone form the false-positive denominator.
+- Evaluation manifests bind resume to dataset/source hashes, models, settings,
+  code, dependency versions and scorer identity. Changed or legacy evaluations
+  require a fresh directory. Offline audits preserve historical predictions.
+- Document and attachment ingestion outcomes retain completeness across resume
+  and replacement. Optional format-v3 metadata preserves artifact compatibility;
+  old aggregate gaps remain conservative until rebuild.
+- Parent-derived table quality, support-review state and retrieval rungs reach
+  per-field trust evidence and survive consensus. Disabled support review caps
+  DocDB answers at medium; trust tiers require held-out calibration.
+- SDK and authenticated HTTP results expose citations, evidence, health,
+  support-review decisions and opaque audit references. HTTP audit timelines
+  omit document content and filesystem locations.
+- A production preset adds bounded execution and redacted trajectory retention
+  across entry points while preserving unlimited research defaults.
+- README separates historical measurements from current validation; generic
+  matter/office CI coverage supplements the tuned form regression.
+
 ## 1.0.0a7
 
 Job-grade accuracy program.

@@ -9,8 +9,9 @@ async because a query is provider-I/O bound; `answer_sync` and
 Typical worker integration::
 
     import rnsr
+    from rnsr import sdk
 
-    report = rnsr.ingest(["report.pdf", "ledger.xlsx"], "corpus.db")
+    report = sdk.ingest(["report.pdf", "ledger.xlsx"], "corpus.db")
     result = rnsr.answer_sync("What was FY2023 segment revenue?", "corpus.db")
     print(result.answer, result.ledger["spend_usd"])
 
@@ -24,8 +25,10 @@ from __future__ import annotations
 
 import asyncio
 import copy
+import hashlib
+import json
 from collections.abc import Callable, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -33,7 +36,14 @@ if TYPE_CHECKING:
     from rnsr.eval.regression import RegressionReport
     from rnsr.forms.spec import FormSpec, QuestionItem
 
-from rnsr.answer_semantics import AbstainBelow, QueryStatus, TrustTier, publish_answer
+from rnsr.answer_semantics import (
+    AbstainBelow,
+    QueryStatus,
+    TrustTier,
+    coerce_batch,
+    comparison_key,
+    publish_answer,
+)
 from rnsr.config import Settings
 from rnsr.db.artifact import CorpusDB
 from rnsr.harness.loop import EnvSpec, QueryResult, RootRunner
@@ -188,6 +198,45 @@ class BatchAnswer:
     evidence: dict | None = None
     tier: TrustTier | None = None
     raw_answer: str | None = None
+    citations: list[dict] = field(default_factory=list)
+    claim_review: dict | None = None
+    trajectory_paths: list[str] = field(default_factory=list)
+
+
+def _citations(result: QueryResult | None, qid: str | None = None) -> list[dict]:
+    report = (result.final or {}).get("verification") if result else None
+    if qid is not None and isinstance(report, dict):
+        report = report.get(qid)
+    return copy.deepcopy(report.get("quotes") or []) if isinstance(report, dict) else []
+
+
+def _claim_review(result: QueryResult | None, evidence, qid: str | None = None) -> dict:
+    review = copy.deepcopy(result.claim_review) if result and result.claim_review else {}
+    if qid is not None and "fields" in review:
+        qhash = hashlib.sha256(json.dumps(qid, ensure_ascii=False, sort_keys=True)
+                              .encode("utf-8", "surrogatepass")).hexdigest()
+        review["fields"] = [record for record in review["fields"]
+                            if record.get("qid_sha256") == qhash]
+    review["status"] = getattr(evidence, "claim_review_status", review.get("status", "unknown"))
+    review["required"] = getattr(evidence, "claim_review_required", False)
+    return review
+
+
+def _trajectory_paths(*results: QueryResult | None) -> list[str]:
+    return list(dict.fromkeys(result.trajectory_path for result in results
+                             if result and result.trajectory_path))
+
+
+def _consensus_source(consensus_result, qid: str, chosen: str) -> QueryResult | None:
+    resolved = consensus_result.answers[qid].resolved_by
+    if resolved == "tiebreak":
+        return consensus_result.tiebreak_results.get(qid)
+    for result in consensus_result.pass_results:
+        values = coerce_batch(result.answer) or {}
+        value = values.get(qid)
+        if value is not None and comparison_key(str(value)) == comparison_key(chosen):
+            return result
+    return None
 
 
 async def answer_batch(
@@ -254,20 +303,24 @@ async def answer_batch(
                     cr = await runner.run_batch_consensus(
                         pairs, env, run_dir=run_dir, query_id=group_id,
                         passes=consensus)
-                    group_status = (cr.pass_results[0].status
-                                    if cr.pass_results else "error")
                     for i in group:
                         got = cr.answers.get(qids[i])
                         if got is None or got.value is None:
                             continue
                         ev = got.evidence
+                        source = _consensus_source(cr, qids[i], got.value)
                         out[i] = BatchAnswer(
                             question=qs[i], answer=got.value,
-                            status=group_status if got.value else "unanswered",
+                            status=source.status if source else "unanswered",
                             agreement=got.agreement, contested=got.contested,
                             health=health,
                             evidence=ev.to_dict() if ev else None,
-                            tier=ev.tier if ev else None)
+                            tier=ev.tier if ev else None,
+                            citations=_citations(source, None if got.resolved_by == "tiebreak" else qids[i]),
+                            claim_review=_claim_review(
+                                source, ev, None if got.resolved_by == "tiebreak" else qids[i]),
+                            trajectory_paths=_trajectory_paths(*cr.pass_results,
+                                cr.tiebreak_results.get(qids[i])))
                 else:
                     br = await runner.run_batch(pairs, env, run_dir=run_dir,
                                                 query_id=group_id)
@@ -281,7 +334,10 @@ async def answer_batch(
                             status=br.result.status,
                             health=health,
                             evidence=ev.to_dict() if ev else None,
-                            tier=ev.tier if ev else None)
+                            tier=ev.tier if ev else None,
+                            citations=_citations(br.result, qids[i]),
+                            claim_review=_claim_review(br.result, ev, qids[i]),
+                            trajectory_paths=_trajectory_paths(br.result))
             except Exception as e:  # a failed group must not sink the run
                 error = f"{type(e).__name__}: {e}"[:300]
                 for i in group:
@@ -305,7 +361,9 @@ async def answer_batch(
                     status=res.status,
                     health=health,
                     evidence=ev.to_dict() if ev else None,
-                    tier=ev.tier if ev else None)
+                    tier=ev.tier if ev else None,
+                    citations=_citations(res), claim_review=_claim_review(res, ev),
+                    trajectory_paths=_trajectory_paths(res))
             except Exception as e:
                 out[i] = BatchAnswer(question=qs[i], answer=None,
                                      status="error",
@@ -322,10 +380,12 @@ async def answer_batch(
                    if i not in out or out[i].answer is None]
         if pending and retry_solo:
             # keep the group error for context if the solo pass also fails
-            prior = {i: out[i].error for i in pending if i in out}
+            prior = {i: out[i] for i in pending if i in out}
             await asyncio.gather(*(run_solo(i) for i in pending))
-            for i, err in prior.items():
-                out[i].error = out[i].error or err
+            for i, row in prior.items():
+                out[i].error = out[i].error or row.error
+                out[i].trajectory_paths = list(dict.fromkeys(
+                    [*row.trajectory_paths, *out[i].trajectory_paths]))
     else:
         await asyncio.gather(*(run_solo(i) for i in range(len(qs))))
 

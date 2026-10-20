@@ -1,0 +1,433 @@
+[
+  {
+    "id": "court_file_number",
+    "question": "What is the Federal Circuit and Family Court file number for the Okafor and Nguyen proceedings?",
+    "answer": "MLC1184/2026"
+  },
+  {
+    "id": "marriage_date",
+    "question": "On what date did Ada Okafor and Trung Nguyen marry?",
+    "answer": "9 March 2013"
+  },
+  {
+    "id": "separation_date",
+    "question": "What is the date of separation of Ada Okafor and Trung Nguyen?",
+    "answer": "18 June 2025"
+  },
+  {
+    "id": "zara_date_of_birth",
+    "question": "What is Zara Okafor-Nguyen's date of birth?",
+    "answer": "14 February 2016"
+  },
+  {
+    "id": "home_market_value",
+    "question": "What market value did Goldfields Valuers place on 27 Banksia Court, Bendigo?",
+    "answer": "$742,000"
+  },
+  {
+    "id": "ada_super_balance",
+    "question": "What was Ada Okafor's Southern Cross Super balance at 30 June 2026?",
+    "answer": "$168,240.33"
+  },
+  {
+    "id": "fdr_nonattendance_cert_number",
+    "question": "What is the number of the section 60I certificate issued on 20 November 2025?",
+    "answer": "FDR-2025-0471"
+  },
+  {
+    "id": "coral_coast_salary",
+    "question": "What base salary did Coral Coast Private Hospital offer Ada Okafor?",
+    "answer": "$118,000 per year"
+  },
+  {
+    "id": "final_hearing_date",
+    "question": "On what date are the proceedings listed for final hearing?",
+    "answer": "15 March 2027"
+  },
+  {
+    "id": "business_valuation_ref",
+    "question": "What is the reference number of the Ferrant & Co valuation of Nguyen Constructions Pty Ltd?",
+    "answer": "FC-2026-211"
+  },
+  {
+    "id": "ada_current_address",
+    "question": "What is Ada Okafor's current residential address?",
+    "answer": "8 Larkspur Lane, Bendigo VIC 3550"
+  },
+  {
+    "id": "super_split_latest_draft",
+    "question": "What superannuation split amount appears in the latest draft consent orders?",
+    "answer": "$52,500"
+  },
+  {
+    "id": "relocation_date_latest_draft",
+    "question": "From what date may the mother relocate the children to Brisbane under the latest draft consent orders?",
+    "answer": "22 January 2028"
+  },
+  {
+    "id": "trung_hours_latest",
+    "question": "What are Trung Nguyen's current working hours?",
+    "answer": "6:30am to 2:30pm, Monday to Friday"
+  },
+  {
+    "id": "ada_work_days_latest",
+    "question": "Which days does Ada Okafor currently work at Loddon Valley Hospital?",
+    "answer": "Tuesday to Friday"
+  },
+  {
+    "id": "trung_income_latest",
+    "question": "What is Trung Nguyen's most recently stated gross annual income?",
+    "answer": "$120,000 per year"
+  },
+  {
+    "id": "sale_split_latest",
+    "question": "How are the net proceeds of sale of the Banksia Court home to be divided in the latest draft consent orders?",
+    "answer": "60% to the Wife, 40% to the Husband"
+  },
+  {
+    "id": "coral_start_date_latest",
+    "question": "What is the latest agreed start date for Ada Okafor's role at Coral Coast Private Hospital?",
+    "answer": "24 January 2028"
+  },
+  {
+    "id": "flights_per_year_latest",
+    "question": "How many return flights per year does the mother pay for in the latest draft consent orders?",
+    "answer": "Four"
+  },
+  {
+    "id": "ada_rent_latest",
+    "question": "What weekly rent does Ada Okafor pay at her current address?",
+    "answer": "$495 per week"
+  },
+  {
+    "id": "home_listing_date_latest",
+    "question": "By what date must 27 Banksia Court be listed for sale under draft consent orders v2?",
+    "answer": "31 March 2027"
+  },
+  {
+    "id": "payslip_net_pay",
+    "question": "What was Trung Nguyen's net pay for the pay period 17 to 23 August 2026?",
+    "answer": "$1,736.69"
+  },
+  {
+    "id": "bank_closing_balance_july",
+    "question": "What was the closing balance of the joint Murray Valley Bank account on 31 July 2026?",
+    "answer": "$12,310.44"
+  },
+  {
+    "id": "transfer_to_nguyen_holdings",
+    "question": "How much was transferred from the joint account to Nguyen Holdings Pty Ltd on 14 July 2026?",
+    "answer": "$4,500.00"
+  },
+  {
+    "id": "zara_swim_time",
+    "question": "What day and time is Zara Okafor-Nguyen's swimming session according to Ada Okafor's handwritten handover note?",
+    "answer": "Thursday at 4.30pm"
+  },
+  {
+    "id": "asthma_review_date",
+    "question": "On what date is Lachlan's review with Dr Prasad noted in Ada Okafor's handwritten note?",
+    "answer": "18 November (3.45pm)"
+  },
+  {
+    "id": "zara_class_teacher",
+    "question": "Who was Zara Okafor-Nguyen's class teacher in the Semester 1 2026 school report?",
+    "answer": "Ms Kelly Tran"
+  },
+  {
+    "id": "zara_attendance",
+    "question": "What attendance rate is recorded for Zara Okafor-Nguyen in her Semester 1 2026 report?",
+    "answer": "96%"
+  },
+  {
+    "id": "sms_collection_time",
+    "question": "What time did Trung Nguyen ask to collect the children on Friday 11 September 2026 in his text to Ada Okafor?",
+    "answer": "5:30pm"
+  },
+  {
+    "id": "sms_meeting_suburb",
+    "question": "In which suburb did Trung Nguyen say his client site meeting was, in his text message of 9 September 2026?",
+    "answer": "Eaglehawk"
+  },
+  {
+    "id": "licence_expiry",
+    "question": "When does Ada Okafor's driver licence expire?",
+    "answer": "3 May 2029"
+  },
+  {
+    "id": "receipt_number",
+    "question": "What is the receipt number on the Sunshine Interstate Removals deposit receipt?",
+    "answer": "R-20917"
+  },
+  {
+    "id": "fdr_cert_issued",
+    "question": "Has a family dispute resolution certificate been issued for Ada Okafor's parenting application?",
+    "answer": "Yes"
+  },
+  {
+    "id": "trung_attended_nov_session",
+    "question": "Did Trung Nguyen attend the family dispute resolution session scheduled for 18 November 2025?",
+    "answer": "No"
+  },
+  {
+    "id": "fdr_exemption_claimed",
+    "question": "Has Ada Okafor claimed an exemption from family dispute resolution on the basis of family violence?",
+    "answer": "No"
+  },
+  {
+    "id": "icl_appointed",
+    "question": "Has an Independent Children's Lawyer been appointed for Zara and Lachlan?",
+    "answer": "Yes"
+  },
+  {
+    "id": "notice_of_risk_child_abuse",
+    "question": "Does Ada Okafor's Notice of Risk allege abuse of either child?",
+    "answer": "No"
+  },
+  {
+    "id": "consent_orders_signed",
+    "question": "Have consent orders been signed by both parties?",
+    "answer": "No"
+  },
+  {
+    "id": "binding_financial_agreement",
+    "question": "Is there a binding financial agreement between Ada Okafor and Trung Nguyen?",
+    "answer": "No"
+  },
+  {
+    "id": "ada_trust_beneficiary",
+    "question": "Is Ada Okafor a general beneficiary of the Nguyen Family Trust?",
+    "answer": "Yes"
+  },
+  {
+    "id": "family_report_prepared",
+    "question": "Has a family report been prepared by a court-appointed psychologist?",
+    "answer": "Yes"
+  },
+  {
+    "id": "trung_admits_late_9_may",
+    "question": "Does Trung Nguyen admit that he was late collecting the children on 9 May 2026?",
+    "answer": "No"
+  },
+  {
+    "id": "licence_corrective_lenses",
+    "question": "Does Ada Okafor's driver licence carry a corrective lenses condition?",
+    "answer": "Yes"
+  },
+  {
+    "id": "trust_distribution_to_ada",
+    "question": "Has the Nguyen Family Trust ever made a distribution to Ada Okafor?",
+    "answer": "No"
+  },
+  {
+    "id": "icl_name",
+    "question": "Who is the Independent Children's Lawyer for Zara and Lachlan?",
+    "answer": "Marguerite Sallis"
+  },
+  {
+    "id": "trung_solicitor",
+    "question": "Which firm and which solicitor act for Trung Nguyen?",
+    "answer": "Castellan & Pryce Lawyers (Declan Pryce)"
+  },
+  {
+    "id": "ada_barrister",
+    "question": "Who is the barrister briefed for Ada Okafor?",
+    "answer": "Callum Reyes"
+  },
+  {
+    "id": "trust_trustee",
+    "question": "Who is the trustee of the Nguyen Family Trust?",
+    "answer": "Nguyen Holdings Pty Ltd"
+  },
+  {
+    "id": "ada_parents",
+    "question": "Who are Ada Okafor's parents and where do they live?",
+    "answer": "Ngozi and Emeka Okafor, Chapel Hill QLD"
+  },
+  {
+    "id": "paralegal_name",
+    "question": "Who is the paralegal at Harcourt Dunne Family Lawyers working on the Okafor matter?",
+    "answer": "Sam Odhiambo"
+  },
+  {
+    "id": "lan_nguyen_relationship",
+    "question": "What is Lan Nguyen's relationship to Zara and Lachlan?",
+    "answer": "Trung's mother"
+  },
+  {
+    "id": "biscuit_owner",
+    "question": "In the family report, whose dog is Biscuit?",
+    "answer": "The father's dog"
+  },
+  {
+    "id": "number_of_children",
+    "question": "How many children do Ada Okafor and Trung Nguyen have?",
+    "answer": "Two"
+  },
+  {
+    "id": "children_names",
+    "question": "What are the names of the children of the marriage?",
+    "answer": "Zara Okafor-Nguyen and Lachlan Okafor-Nguyen"
+  },
+  {
+    "id": "fdr_certificate_numbers",
+    "question": "List the section 60I certificate numbers issued to date.",
+    "answer": "FDR-2025-0471 and FDR-2026-0093"
+  },
+  {
+    "id": "late_handovers_alleged",
+    "question": "How many late handovers does Ada Okafor allege against Trung Nguyen in her Notice of Risk?",
+    "answer": "Three"
+  },
+  {
+    "id": "pool_assets_list",
+    "question": "List the main assets in the property pool as set out in Ada Okafor's financial statement.",
+    "answer": "The Banksia Court home ($742,000, with a loan of $318,450.22), the 2020 Mazda CX-5 ($24,500), the 2019 Ford Ranger ($38,000), the joint account ($9,870.15), Ada's Southern Cross Super, Trung's company Nguyen Constructions Pty Ltd ($410,000), the Castlemaine unit in the Nguyen Family Trust ($385,000) and Trung's BuildersUnion Super."
+  },
+  {
+    "id": "super_funds",
+    "question": "Which superannuation funds hold the parties' interests?",
+    "answer": "Southern Cross Super and BuildersUnion Super"
+  },
+  {
+    "id": "interim_time_schedule",
+    "question": "What time does the father have with the children under the interim orders of 26 August 2026?",
+    "answer": "Alternate weekends from 3:30pm Friday (collected from Strathfern Primary School) until 5:00pm Sunday, and every Wednesday from 3:30pm until 7:00pm."
+  },
+  {
+    "id": "comparable_sales_count",
+    "question": "How many comparable sales did the valuer rely on for 27 Banksia Court?",
+    "answer": "Three"
+  },
+  {
+    "id": "case_summary",
+    "question": "What is this case about?",
+    "answer": "A combined parenting and property dispute in the Federal Circuit and Family Court of Australia (MLC1184/2026) between Ada Okafor (the mother, a nurse) and Trung Nguyen (the father, a builder) after their separation on 18 June 2025. Ada wants to relocate Zara (10) and Lachlan (8) to Brisbane; Trung opposes. The parties also dispute the division of the Banksia Court home, Trung's company and family trust, and superannuation. Interim orders were made on 26 August 2026 and consent orders are being negotiated."
+  },
+  {
+    "id": "property_pool_summary",
+    "question": "Summarise the property pool.",
+    "answer": "The Banksia Court home in Bendigo is valued at $742,000 with a Murray Valley Bank loan of $318,450.22 (net equity $423,549.78). Other assets are Trung's company Nguyen Constructions Pty Ltd ($410,000), the Castlemaine unit held by the Nguyen Family Trust ($385,000 with a $142,300 loan), a 2020 Mazda CX-5 ($24,500), a 2019 Ford Ranger ($38,000), a joint account ($9,870.15 at 31 August 2026) and super: Ada $168,240.33 and Trung $311,905.60."
+  },
+  {
+    "id": "family_report_summary",
+    "question": "What did Dr Voss recommend in the family report?",
+    "answer": "That the children live primarily with their mother and remain in Bendigo until at least the end of the 2027 school year; that the father spend time on alternate weekends from Friday to Sunday, every Wednesday after school until 7:00pm and half of school holidays; and that relocation to Brisbane be revisited after December 2027."
+  },
+  {
+    "id": "interim_orders_summary",
+    "question": "Summarise the interim orders made on 26 August 2026.",
+    "answer": "Judge Ruth Ashdown ordered that the children live with the mother and that she not relocate them outside Victoria pending final hearing; the father has alternate weekends and Wednesday evenings; he must give Lachlan's preventer inhaler twice daily; neither parent may denigrate the other; updated Form 13s are due 9 and 16 September 2026; final hearing is listed for 15 March 2027 for three days; costs are reserved."
+  },
+  {
+    "id": "draft_orders_difference_summary",
+    "question": "How do draft consent orders v2 differ from v1?",
+    "answer": "V2 (30 September 2026) moves the relocation date from 1 February 2027 to 22 January 2028, increases the mother's paid flights from two to four a year, moves the house listing deadline from 28 February to 31 March 2027, changes the sale proceeds split from 65/35 to 60/40 in the wife's favour, increases the superannuation split from $40,000 to $52,500, and adds a clause vacating the final hearing."
+  },
+  {
+    "id": "mug_allegation_summary",
+    "question": "Summarise the allegation about the mug incident of 3 June 2025 and the responses to it.",
+    "answer": "Ada alleges that on 3 June 2025 Trung threw a ceramic mug against the kitchen wall during an argument about money while Zara was present. Trung accepts he broke a mug but says it slipped from his hand and he did not throw it at anyone. Ada's reply affidavit rejects that, and Dr Voss noted the parents described the incident differently and that it was not a feature of the children's accounts."
+  },
+  {
+    "id": "interim_order_2_text",
+    "question": "What exactly does order 2 of the interim orders of 26 August 2026 say?",
+    "answer": "Pending final hearing, the Mother is restrained from relocating the residence of the children outside the State of Victoria."
+  },
+  {
+    "id": "draft_v2_clause_9_text",
+    "question": "What exactly does clause 9 of the draft consent orders dated 30 September 2026 say?",
+    "answer": "The Husband shall cause the sum of $52,500 to be transferred from his interest in the BuildersUnion Super account (member number BU 7730915) to the Wife's Southern Cross Super account (member number SCS 0048213) by way of splitting under Part VIIIB of the Act."
+  },
+  {
+    "id": "interim_order_4_text",
+    "question": "What exactly does order 4 of the interim orders say?",
+    "answer": "Pending final hearing, the Father shall administer Lachlan's preventer inhaler twice daily in accordance with the Asthma Action Plan of Dr Imogen Prasad dated 2 June 2026."
+  },
+  {
+    "id": "interim_date_and_judge",
+    "question": "On what date were interim orders made and which judge made them?",
+    "answer": "26 August 2026, by Judge Ruth Ashdown"
+  },
+  {
+    "id": "home_value_and_loan",
+    "question": "What is the valuation of 27 Banksia Court and the balance of the home loan at 30 June 2026?",
+    "answer": "$742,000 valuation; $318,450.22 loan balance"
+  },
+  {
+    "id": "combined_super_balance",
+    "question": "What is the combined balance of Ada Okafor's and Trung Nguyen's superannuation at 30 June 2026?",
+    "answer": "$480,145.93"
+  },
+  {
+    "id": "super_offer_increase",
+    "question": "By how much did Castellan & Pryce's superannuation offer exceed the amount in the first draft consent orders?",
+    "answer": "$12,500"
+  },
+  {
+    "id": "report_vs_v2_timing",
+    "question": "Is the relocation date in draft consent orders v2 consistent with Dr Voss's recommended timing?",
+    "answer": "Yes. Dr Voss recommends the children remain in Bendigo until at least the end of the 2027 school year, and v2 allows relocation from 22 January 2028."
+  },
+  {
+    "id": "payslip_vs_response_income",
+    "question": "How does Trung Nguyen's weekly gross pay on his August 2026 payslip compare with the annual income stated in his Response?",
+    "answer": "The payslip shows $2,307.69 per week (about $120,000 a year), against $96,000 per year in his Response."
+  },
+  {
+    "id": "removalist_deposit_date_amount",
+    "question": "How much was the deposit Ada Okafor paid to the removalist and on what date?",
+    "answer": "$450 on 22 July 2026"
+  },
+  {
+    "id": "invoice_balance_due",
+    "question": "What balance was due on invoice INV-26-0388 and by when?",
+    "answer": "$2,345.60, due 9 October 2026"
+  },
+  {
+    "id": "receipt_balance_and_move_date",
+    "question": "What balance remained on the removalist's quote and what tentative move date is on the receipt?",
+    "answer": "$3,280.00 balance; tentative move date 6 February 2027"
+  },
+  {
+    "id": "trung_roles",
+    "question": "What roles does Trung Nguyen hold in Nguyen Constructions Pty Ltd and in the Nguyen Family Trust?",
+    "answer": "Sole director of Nguyen Constructions; appointor of the trust"
+  },
+  {
+    "id": "third_child_name",
+    "question": "What is the name of Ada Okafor and Trung Nguyen's third child?",
+    "answer": "The matter does not mention a third child; the parties have two children, Zara and Lachlan.",
+    "unanswerable": true
+  },
+  {
+    "id": "trung_criminal_record",
+    "question": "Has Trung Nguyen been convicted of any criminal offence?",
+    "answer": "The matter does not say.",
+    "unanswerable": true
+  },
+  {
+    "id": "final_orders_made",
+    "question": "What final parenting orders did Judge Ashdown make after the final hearing in March 2027?",
+    "answer": "None. The final hearing is only listed for 15 March 2027 and has not occurred; only interim orders exist.",
+    "unanswerable": true
+  },
+  {
+    "id": "ada_hecs_debt",
+    "question": "What is the balance of Ada Okafor's HECS-HELP debt?",
+    "answer": "The matter does not state any HECS-HELP debt.",
+    "unanswerable": true
+  },
+  {
+    "id": "full_court_appeal",
+    "question": "On what date did the Full Court dismiss Trung Nguyen's appeal against the interim orders?",
+    "answer": "The matter records no appeal by Trung Nguyen against the interim orders.",
+    "unanswerable": true
+  },
+  {
+    "id": "trung_licence_number",
+    "question": "What is Trung Nguyen's driver licence number?",
+    "answer": "The matter does not state it.",
+    "unanswerable": true
+  }
+]

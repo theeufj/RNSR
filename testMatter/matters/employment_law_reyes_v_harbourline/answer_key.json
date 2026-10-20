@@ -1,0 +1,824 @@
+[
+  {
+    "id": "contract_start_date",
+    "question_type": "value_lookup",
+    "sources": [
+      "2022-02-02_Employment_Contract_Reyes.docx"
+    ]
+  },
+  {
+    "id": "original_base_rate",
+    "question_type": "value_lookup",
+    "sources": [
+      "2022-02-02_Employment_Contract_Reyes.docx"
+    ]
+  },
+  {
+    "id": "current_base_rate",
+    "question_type": "value_lookup",
+    "sources": [
+      "2025-06-24_Contract_Variation_Letter.docx",
+      "2022-02-02_Employment_Contract_Reyes.docx"
+    ]
+  },
+  {
+    "id": "variation_effective_date",
+    "question_type": "value_lookup",
+    "sources": [
+      "2025-06-24_Contract_Variation_Letter.docx"
+    ]
+  },
+  {
+    "id": "ea_reference",
+    "question_type": "value_lookup",
+    "sources": [
+      "2023-07-01_EA_Extract_Classification_and_Rates.pdf"
+    ]
+  },
+  {
+    "id": "ea_first_two_hours_rate",
+    "question_type": "value_lookup",
+    "sources": [
+      "2023-07-01_EA_Extract_Overtime_and_Leave.pdf"
+    ]
+  },
+  {
+    "id": "f2_matter_number",
+    "question_type": "value_lookup",
+    "sources": [
+      "2026-05-22_Form_F2_Application_U2026-4821.pdf",
+      "2026-06-10_FWC_Conciliation_Notice.pdf"
+    ]
+  },
+  {
+    "id": "gp_matter_number",
+    "question_type": "value_lookup",
+    "sources": [
+      "2026-05-22_Form_F2_Application_U2026-4821.pdf",
+      "2026-06-10_FWC_Conciliation_Notice.pdf"
+    ]
+  },
+  {
+    "id": "f2_lodged_date",
+    "question_type": "value_lookup",
+    "sources": [
+      "2026-05-22_Form_F2_Application_U2026-4821.pdf"
+    ]
+  },
+  {
+    "id": "latest_dismissal_date",
+    "question_type": "value_lookup",
+    "sources": [
+      "2026-05-11_Corrected_Termination_Letter.pdf",
+      "2026-06-04_Form_F3_Employer_Response.pdf"
+    ]
+  },
+  {
+    "id": "original_termination_date",
+    "question_type": "value_lookup",
+    "sources": [
+      "2026-05-05_Termination_Letter_Signed_Scan.jpg",
+      "2026-05-08_File_Note_Initial_Conference.txt"
+    ]
+  },
+  {
+    "id": "deadline_after_correction",
+    "question_type": "value_lookup",
+    "sources": [
+      "2026-05-12_File_Note_Corrected_Termination_Date.txt"
+    ]
+  },
+  {
+    "id": "conciliation_datetime",
+    "question_type": "value_lookup",
+    "sources": [
+      "2026-06-10_FWC_Conciliation_Notice.pdf",
+      "2026-06-30_Conciliation_Outcome.pdf"
+    ]
+  },
+  {
+    "id": "hearing_date",
+    "question_type": "value_lookup",
+    "sources": [
+      "2026-06-30_Conciliation_Outcome.pdf",
+      "2026-07-08_File_Note_Post_Conciliation.txt"
+    ]
+  },
+  {
+    "id": "fwo_reference",
+    "question_type": "value_lookup",
+    "sources": [
+      "2026-05-26_FWO_Inquiry_Letter.pdf"
+    ]
+  },
+  {
+    "id": "fwo_records_due",
+    "question_type": "value_lookup",
+    "sources": [
+      "2026-05-26_FWO_Inquiry_Letter.pdf"
+    ]
+  },
+  {
+    "id": "total_underpayment",
+    "question_type": "value_lookup",
+    "sources": [
+      "2026-06-15_Underpayment_Calculation.pdf",
+      "2026-07-06_Draft_Deed_of_Release.docx"
+    ]
+  },
+  {
+    "id": "overtime_shortfall_total",
+    "question_type": "value_lookup",
+    "sources": [
+      "2026-06-15_Underpayment_Calculation.pdf"
+    ]
+  },
+  {
+    "id": "latest_settlement_offer",
+    "question_type": "value_lookup",
+    "sources": [
+      "2026-07-06_Draft_Deed_of_Release.docx",
+      "2026-07-08_File_Note_Post_Conciliation.txt",
+      "2026-07-02_Without_Prejudice_Settlement_Offer.docx"
+    ]
+  },
+  {
+    "id": "first_settlement_offer",
+    "question_type": "value_lookup",
+    "sources": [
+      "2026-07-02_Without_Prejudice_Settlement_Offer.docx"
+    ]
+  },
+  {
+    "id": "cert2_period",
+    "question_type": "value_lookup",
+    "sources": [
+      "2026-05-04_Medical_Certificate_Second.pdf"
+    ]
+  },
+  {
+    "id": "show2_deadline",
+    "question_type": "value_lookup",
+    "sources": [
+      "2026-04-24_Amended_Show_Cause_Letter.pdf",
+      "2026-04-20_Show_Cause_Letter.pdf"
+    ]
+  },
+  {
+    "id": "show1_deadline",
+    "question_type": "value_lookup",
+    "sources": [
+      "2026-04-20_Show_Cause_Letter.pdf",
+      "2026-04-24_Amended_Show_Cause_Letter.pdf"
+    ]
+  },
+  {
+    "id": "employee_number",
+    "question_type": "value_lookup",
+    "sources": [
+      "2025-06-25_Payslip_FE_2025-06-20.pdf",
+      "2022-02-14_Staff_ID_Card_Photo.png"
+    ]
+  },
+  {
+    "id": "poor_review_rating",
+    "question_type": "value_lookup",
+    "sources": [
+      "2026-04-02_Performance_Review_Poor.docx"
+    ]
+  },
+  {
+    "id": "commissioner_name",
+    "question_type": "value_lookup",
+    "sources": [
+      "2026-06-30_Conciliation_Outcome.pdf",
+      "2026-07-08_File_Note_Post_Conciliation.txt"
+    ]
+  },
+  {
+    "id": "weighbridge_error",
+    "question_type": "value_lookup",
+    "sources": [
+      "2026-06-12_Witness_Statement_Aisha_Rahman.docx",
+      "2026-04-28_Reyes_Response_to_Show_Cause.docx"
+    ]
+  },
+  {
+    "id": "img_incident_number",
+    "question_type": "value_lookup",
+    "sources": [
+      "2026-03-10_Incident_Report_Form_Photo.jpg"
+    ]
+  },
+  {
+    "id": "img_incident_time",
+    "question_type": "value_lookup",
+    "sources": [
+      "2026-03-10_Incident_Report_Form_Photo.jpg"
+    ]
+  },
+  {
+    "id": "img_forklift_unit",
+    "question_type": "value_lookup",
+    "sources": [
+      "2026-03-10_Incident_Report_Form_Photo.jpg"
+    ]
+  },
+  {
+    "id": "img_tag_number",
+    "question_type": "value_lookup",
+    "sources": [
+      "2026-03-10_Bay6_Hazard_Tag_Photo.jpg"
+    ]
+  },
+  {
+    "id": "img_payslip_net",
+    "question_type": "value_lookup",
+    "sources": [
+      "2026-03-18_Payslip_FE_2026-03-13_Photo.jpg"
+    ]
+  },
+  {
+    "id": "img_payslip_gross",
+    "question_type": "value_lookup",
+    "sources": [
+      "2026-03-18_Payslip_FE_2026-03-13_Photo.jpg"
+    ]
+  },
+  {
+    "id": "img_timesheet_total",
+    "question_type": "value_lookup",
+    "sources": [
+      "2026-03-13_Timesheet_Handwritten_WE_2026-03-13.jpg"
+    ]
+  },
+  {
+    "id": "img_timesheet_wed_finish",
+    "question_type": "value_lookup",
+    "sources": [
+      "2026-03-13_Timesheet_Handwritten_WE_2026-03-13.jpg"
+    ]
+  },
+  {
+    "id": "img_sms_first_time",
+    "question_type": "value_lookup",
+    "sources": [
+      "2026-03-19_SMS_Thread_Screenshot_Declan.png"
+    ]
+  },
+  {
+    "id": "img_cert1_number",
+    "question_type": "value_lookup",
+    "sources": [
+      "2026-04-27_Medical_Certificate_Scan.jpg"
+    ]
+  },
+  {
+    "id": "img_cert1_period",
+    "question_type": "value_lookup",
+    "sources": [
+      "2026-04-27_Medical_Certificate_Scan.jpg"
+    ]
+  },
+  {
+    "id": "img_id_expiry",
+    "question_type": "value_lookup",
+    "sources": [
+      "2022-02-14_Staff_ID_Card_Photo.png"
+    ]
+  },
+  {
+    "id": "img_received_time",
+    "question_type": "value_lookup",
+    "sources": [
+      "2026-05-05_Termination_Letter_Signed_Scan.jpg"
+    ]
+  },
+  {
+    "id": "img_leave_payout",
+    "question_type": "value_lookup",
+    "sources": [
+      "2026-05-05_Termination_Letter_Signed_Scan.jpg"
+    ]
+  },
+  {
+    "id": "f3_lodged",
+    "question_type": "existence",
+    "sources": [
+      "2026-06-04_Form_F3_Employer_Response.pdf"
+    ]
+  },
+  {
+    "id": "time_objection",
+    "question_type": "existence",
+    "sources": [
+      "2026-06-04_Form_F3_Employer_Response.pdf"
+    ]
+  },
+  {
+    "id": "notice_pay_in_letter",
+    "question_type": "existence",
+    "sources": [
+      "2026-05-05_Termination_Letter_Signed_Scan.jpg",
+      "2026-05-08_File_Note_Initial_Conference.txt"
+    ]
+  },
+  {
+    "id": "conciliation_settled",
+    "question_type": "existence",
+    "sources": [
+      "2026-06-30_Conciliation_Outcome.pdf"
+    ]
+  },
+  {
+    "id": "deed_signed",
+    "question_type": "existence",
+    "sources": [
+      "2026-07-06_Draft_Deed_of_Release.docx"
+    ]
+  },
+  {
+    "id": "prior_warnings",
+    "question_type": "existence",
+    "sources": [
+      "2026-05-08_File_Note_Initial_Conference.txt",
+      "2026-06-04_Form_F3_Employer_Response.pdf"
+    ]
+  },
+  {
+    "id": "date_corrected",
+    "question_type": "existence",
+    "sources": [
+      "2026-05-11_Corrected_Termination_Letter.pdf"
+    ]
+  },
+  {
+    "id": "suspended_on_pay",
+    "question_type": "existence",
+    "sources": [
+      "2026-04-21_Suspension_Letter.docx"
+    ]
+  },
+  {
+    "id": "attended_toolbox",
+    "question_type": "existence",
+    "sources": [
+      "2026-06-12_Witness_Statement_Aisha_Rahman.docx"
+    ]
+  },
+  {
+    "id": "safework_notified",
+    "question_type": "existence",
+    "sources": [
+      "2026-07-08_File_Note_Post_Conciliation.txt"
+    ]
+  },
+  {
+    "id": "ea_single_rate_ok",
+    "question_type": "existence",
+    "sources": [
+      "2023-07-01_EA_Extract_Overtime_and_Leave.pdf"
+    ]
+  },
+  {
+    "id": "fwo_period_2024",
+    "question_type": "existence",
+    "sources": [
+      "2026-05-26_FWO_Inquiry_Letter.pdf"
+    ]
+  },
+  {
+    "id": "genuine_redundancy",
+    "question_type": "existence",
+    "sources": [
+      "2026-06-04_Form_F3_Employer_Response.pdf"
+    ]
+  },
+  {
+    "id": "cert_before_termination",
+    "question_type": "existence",
+    "sources": [
+      "2026-04-27_Medical_Certificate_Scan.jpg",
+      "2026-04-28_Reyes_Response_to_Show_Cause.docx",
+      "2026-05-04_Medical_Certificate_Second.pdf"
+    ]
+  },
+  {
+    "id": "deed_has_fwo_carve_out",
+    "question_type": "existence",
+    "sources": [
+      "2026-07-06_Draft_Deed_of_Release.docx"
+    ]
+  },
+  {
+    "id": "manager_now",
+    "question_type": "relationship",
+    "sources": [
+      "2025-06-24_Contract_Variation_Letter.docx"
+    ]
+  },
+  {
+    "id": "manager_original",
+    "question_type": "relationship",
+    "sources": [
+      "2022-02-02_Employment_Contract_Reyes.docx"
+    ]
+  },
+  {
+    "id": "variation_signatory",
+    "question_type": "relationship",
+    "sources": [
+      "2025-06-24_Contract_Variation_Letter.docx"
+    ]
+  },
+  {
+    "id": "show_cause_signatory",
+    "question_type": "relationship",
+    "sources": [
+      "2026-04-20_Show_Cause_Letter.pdf"
+    ]
+  },
+  {
+    "id": "aisha_supervisor",
+    "question_type": "relationship",
+    "sources": [
+      "2026-06-12_Witness_Statement_Aisha_Rahman.docx",
+      "2022-02-02_Position_Description_Senior_Logistics_Coordinator.docx"
+    ]
+  },
+  {
+    "id": "employer_lawyers",
+    "question_type": "relationship",
+    "sources": [
+      "2026-07-02_Without_Prejudice_Settlement_Offer.docx",
+      "2026-06-04_Form_F3_Employer_Response.pdf"
+    ]
+  },
+  {
+    "id": "our_solicitor",
+    "question_type": "relationship",
+    "sources": [
+      "2026-05-08_Costs_Agreement.docx"
+    ]
+  },
+  {
+    "id": "calc_authors",
+    "question_type": "relationship",
+    "sources": [
+      "2026-06-15_Underpayment_Calculation.pdf"
+    ]
+  },
+  {
+    "id": "termination_signatory",
+    "question_type": "relationship",
+    "sources": [
+      "2026-05-05_Termination_Letter_Signed_Scan.jpg",
+      "2026-05-11_Corrected_Termination_Letter.pdf"
+    ]
+  },
+  {
+    "id": "fwo_inspector",
+    "question_type": "relationship",
+    "sources": [
+      "2026-05-26_FWO_Inquiry_Letter.pdf"
+    ]
+  },
+  {
+    "id": "img_incident_supervisor",
+    "question_type": "relationship",
+    "sources": [
+      "2026-03-10_Incident_Report_Form_Photo.jpg"
+    ]
+  },
+  {
+    "id": "weighbridge_responsible",
+    "question_type": "relationship",
+    "sources": [
+      "2026-04-28_Reyes_Response_to_Show_Cause.docx",
+      "2026-06-12_Witness_Statement_Aisha_Rahman.docx"
+    ]
+  },
+  {
+    "id": "amended_allegation_count",
+    "question_type": "count_list",
+    "sources": [
+      "2026-04-24_Amended_Show_Cause_Letter.pdf"
+    ]
+  },
+  {
+    "id": "conciliation_attendees",
+    "question_type": "count_list",
+    "sources": [
+      "2026-06-30_Conciliation_Outcome.pdf"
+    ]
+  },
+  {
+    "id": "warning_count",
+    "question_type": "count_list",
+    "sources": [
+      "2026-05-08_File_Note_Initial_Conference.txt",
+      "2026-06-04_Form_F3_Employer_Response.pdf"
+    ]
+  },
+  {
+    "id": "direct_report_count",
+    "question_type": "count_list",
+    "sources": [
+      "2022-02-02_Position_Description_Senior_Logistics_Coordinator.docx"
+    ]
+  },
+  {
+    "id": "overtime_hours_total",
+    "question_type": "count_list",
+    "sources": [
+      "2026-06-15_Underpayment_Calculation.pdf"
+    ]
+  },
+  {
+    "id": "redundancy_weeks_4_to_5",
+    "question_type": "count_list",
+    "sources": [
+      "2023-07-01_EA_Extract_Notice_Discipline_Redundancy.pdf"
+    ]
+  },
+  {
+    "id": "employee_count",
+    "question_type": "count_list",
+    "sources": [
+      "2026-06-04_Form_F3_Employer_Response.pdf",
+      "2026-05-22_Form_F2_Application_U2026-4821.pdf"
+    ]
+  },
+  {
+    "id": "disciplinary_letter_dates",
+    "question_type": "count_list",
+    "sources": [
+      "2026-04-20_Show_Cause_Letter.pdf",
+      "2026-04-21_Suspension_Letter.docx",
+      "2026-04-24_Amended_Show_Cause_Letter.pdf"
+    ]
+  },
+  {
+    "id": "medical_cert_count",
+    "question_type": "count_list",
+    "sources": [
+      "2026-04-27_Medical_Certificate_Scan.jpg",
+      "2026-05-04_Medical_Certificate_Second.pdf"
+    ]
+  },
+  {
+    "id": "leave_weeks_count",
+    "question_type": "count_list",
+    "sources": [
+      "2026-06-15_Underpayment_Calculation.pdf"
+    ]
+  },
+  {
+    "id": "sum_dismissal_reason",
+    "question_type": "summary",
+    "sources": [
+      "2026-05-11_Corrected_Termination_Letter.pdf",
+      "2026-04-28_Reyes_Response_to_Show_Cause.docx",
+      "2026-06-12_Witness_Statement_Aisha_Rahman.docx"
+    ]
+  },
+  {
+    "id": "sum_underpayment",
+    "question_type": "summary",
+    "sources": [
+      "2026-06-15_Underpayment_Calculation.pdf",
+      "2023-07-01_EA_Extract_Overtime_and_Leave.pdf"
+    ]
+  },
+  {
+    "id": "sum_termination_correction",
+    "question_type": "summary",
+    "sources": [
+      "2026-05-11_Corrected_Termination_Letter.pdf",
+      "2026-05-05_Termination_Letter_Signed_Scan.jpg"
+    ]
+  },
+  {
+    "id": "sum_settlement_history",
+    "question_type": "summary",
+    "sources": [
+      "2026-07-02_Without_Prejudice_Settlement_Offer.docx",
+      "2026-07-06_Draft_Deed_of_Release.docx",
+      "2026-07-08_File_Note_Post_Conciliation.txt"
+    ]
+  },
+  {
+    "id": "sum_witness",
+    "question_type": "summary",
+    "sources": [
+      "2026-06-12_Witness_Statement_Aisha_Rahman.docx"
+    ]
+  },
+  {
+    "id": "sum_conciliation",
+    "question_type": "summary",
+    "sources": [
+      "2026-06-30_Conciliation_Outcome.pdf"
+    ]
+  },
+  {
+    "id": "sum_reviews",
+    "question_type": "summary",
+    "sources": [
+      "2025-08-14_Performance_Review_Good.docx",
+      "2026-04-02_Performance_Review_Poor.docx"
+    ]
+  },
+  {
+    "id": "quote_termination_reason",
+    "question_type": "quote",
+    "sources": [
+      "2026-05-11_Corrected_Termination_Letter.pdf",
+      "2026-05-05_Termination_Letter_Signed_Scan.jpg"
+    ]
+  },
+  {
+    "id": "quote_review_time",
+    "question_type": "quote",
+    "sources": [
+      "2026-03-17_Email_Payroll_Query_Thread.txt"
+    ]
+  },
+  {
+    "id": "quote_lunchroom",
+    "question_type": "quote",
+    "sources": [
+      "2026-06-12_Witness_Statement_Aisha_Rahman.docx"
+    ]
+  },
+  {
+    "id": "quote_sms_review",
+    "question_type": "quote",
+    "sources": [
+      "2026-03-19_SMS_Thread_Screenshot_Declan.png"
+    ]
+  },
+  {
+    "id": "quote_amended_allegation",
+    "question_type": "quote",
+    "sources": [
+      "2026-04-24_Amended_Show_Cause_Letter.pdf"
+    ]
+  },
+  {
+    "id": "quote_bay6_call",
+    "question_type": "quote",
+    "sources": [
+      "2026-03-12_Email_Safety_Complaint_Thread.txt"
+    ]
+  },
+  {
+    "id": "mf_deed_allocation",
+    "question_type": "multi_fact",
+    "sources": [
+      "2026-07-06_Draft_Deed_of_Release.docx"
+    ]
+  },
+  {
+    "id": "mf_deadline_check",
+    "question_type": "multi_fact",
+    "sources": [
+      "2026-05-08_File_Note_Initial_Conference.txt",
+      "2026-05-22_Form_F2_Application_U2026-4821.pdf"
+    ]
+  },
+  {
+    "id": "mf_notice_pay",
+    "question_type": "multi_fact",
+    "sources": [
+      "2026-05-08_File_Note_Initial_Conference.txt",
+      "2023-07-01_EA_Extract_Notice_Discipline_Redundancy.pdf",
+      "2025-06-24_Contract_Variation_Letter.docx"
+    ]
+  },
+  {
+    "id": "mf_conciliator_date",
+    "question_type": "multi_fact",
+    "sources": [
+      "2026-06-30_Conciliation_Outcome.pdf",
+      "2026-06-10_FWC_Conciliation_Notice.pdf"
+    ]
+  },
+  {
+    "id": "mf_final_pay_date",
+    "question_type": "multi_fact",
+    "sources": [
+      "2026-05-11_Corrected_Termination_Letter.pdf"
+    ]
+  },
+  {
+    "id": "mf_counter_offer",
+    "question_type": "multi_fact",
+    "sources": [
+      "2026-07-08_File_Note_Post_Conciliation.txt",
+      "2026-06-15_Underpayment_Calculation.pdf"
+    ]
+  },
+  {
+    "id": "mf_cap",
+    "question_type": "multi_fact",
+    "sources": [
+      "2026-07-08_File_Note_Post_Conciliation.txt",
+      "2025-06-24_Contract_Variation_Letter.docx"
+    ]
+  },
+  {
+    "id": "mf_two_dates",
+    "question_type": "multi_fact",
+    "sources": [
+      "2026-05-05_Termination_Letter_Signed_Scan.jpg",
+      "2026-05-11_Corrected_Termination_Letter.pdf"
+    ]
+  },
+  {
+    "id": "mf_conference_attendees",
+    "question_type": "multi_fact",
+    "sources": [
+      "2026-05-08_File_Note_Initial_Conference.txt"
+    ]
+  },
+  {
+    "id": "mf_offer_difference",
+    "question_type": "multi_fact",
+    "sources": [
+      "2026-07-06_Draft_Deed_of_Release.docx",
+      "2026-07-02_Without_Prejudice_Settlement_Offer.docx"
+    ]
+  },
+  {
+    "id": "mf_calc_hours",
+    "question_type": "multi_fact",
+    "sources": [
+      "2026-06-15_Underpayment_Calculation.pdf"
+    ]
+  },
+  {
+    "id": "mf_super_and_subtotal",
+    "question_type": "multi_fact",
+    "sources": [
+      "2026-06-15_Underpayment_Calculation.pdf"
+    ]
+  },
+  {
+    "id": "mf_ot_period_b",
+    "question_type": "multi_fact",
+    "sources": [
+      "2026-06-15_Underpayment_Calculation.pdf"
+    ]
+  },
+  {
+    "id": "un_safework_findings",
+    "question_type": "unanswerable",
+    "sources": [
+      "2026-07-08_File_Note_Post_Conciliation.txt"
+    ]
+  },
+  {
+    "id": "un_fwo_response",
+    "question_type": "unanswerable",
+    "sources": [
+      "2026-05-26_FWO_Inquiry_Letter.pdf",
+      "2026-07-08_File_Note_Post_Conciliation.txt"
+    ]
+  },
+  {
+    "id": "un_hearing_decision",
+    "question_type": "unanswerable",
+    "sources": [
+      "2026-06-30_Conciliation_Outcome.pdf"
+    ]
+  },
+  {
+    "id": "un_ashworth_salary",
+    "question_type": "unanswerable",
+    "sources": [
+      "2025-06-24_Contract_Variation_Letter.docx"
+    ]
+  },
+  {
+    "id": "un_union",
+    "question_type": "unanswerable",
+    "sources": [
+      "2026-04-20_Show_Cause_Letter.pdf"
+    ]
+  },
+  {
+    "id": "un_compensation_awarded",
+    "question_type": "unanswerable",
+    "sources": [
+      "2026-06-30_Conciliation_Outcome.pdf"
+    ]
+  },
+  {
+    "id": "un_new_job",
+    "question_type": "unanswerable",
+    "sources": [
+      "2026-07-08_File_Note_Post_Conciliation.txt"
+    ]
+  }
+]

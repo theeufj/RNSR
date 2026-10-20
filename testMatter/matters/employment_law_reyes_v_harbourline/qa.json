@@ -1,0 +1,564 @@
+[
+  {
+    "id": "contract_start_date",
+    "question": "What was Marisol Reyes's employment commencement date at Harbourline Freight?",
+    "answer": "14 February 2022"
+  },
+  {
+    "id": "original_base_rate",
+    "question": "What base hourly rate was set in Marisol Reyes's original contract of employment dated 2 February 2022?",
+    "answer": "$44.00 per hour"
+  },
+  {
+    "id": "current_base_rate",
+    "question": "What is Marisol Reyes's current base hourly rate of pay?",
+    "answer": "$46.20 per hour"
+  },
+  {
+    "id": "variation_effective_date",
+    "question": "On what date did the contract variation letter take effect?",
+    "answer": "1 July 2025"
+  },
+  {
+    "id": "ea_reference",
+    "question": "What is the Fair Work Commission agreement reference for the Harbourline Freight enterprise agreement?",
+    "answer": "AG2023/1982"
+  },
+  {
+    "id": "ea_first_two_hours_rate",
+    "question": "Under clause 18.2 of the enterprise agreement, what rate applies to the first 2 hours of Monday to Friday overtime?",
+    "answer": "150% (time and a half)"
+  },
+  {
+    "id": "f2_matter_number",
+    "question": "What is the Fair Work Commission matter number of Marisol Reyes's unfair dismissal application?",
+    "answer": "U2026/4821"
+  },
+  {
+    "id": "gp_matter_number",
+    "question": "What is the matter number of the general protections application involving dismissal?",
+    "answer": "C2026/3390"
+  },
+  {
+    "id": "f2_lodged_date",
+    "question": "On what date was the Form F2 lodged?",
+    "answer": "22 May 2026"
+  },
+  {
+    "id": "latest_dismissal_date",
+    "question": "According to the latest termination document from Harbourline, on what date did the dismissal take effect?",
+    "answer": "12 May 2026"
+  },
+  {
+    "id": "original_termination_date",
+    "question": "What termination date did the original termination letter of 5 May 2026 give?",
+    "answer": "5 May 2026"
+  },
+  {
+    "id": "deadline_after_correction",
+    "question": "What is the last day to lodge the F2, measured from the corrected dismissal date?",
+    "answer": "2 June 2026"
+  },
+  {
+    "id": "conciliation_datetime",
+    "question": "On what date and at what time was the conciliation conference held?",
+    "answer": "30 June 2026 at 10:00 am"
+  },
+  {
+    "id": "hearing_date",
+    "question": "On what date is the arbitration hearing listed?",
+    "answer": "24 November 2026"
+  },
+  {
+    "id": "fwo_reference",
+    "question": "What is the Fair Work Ombudsman reference number on the letter to Harbourline?",
+    "answer": "FWO-2026-0045821"
+  },
+  {
+    "id": "fwo_records_due",
+    "question": "By what date did the Fair Work Ombudsman require Harbourline to provide records?",
+    "answer": "9 June 2026"
+  },
+  {
+    "id": "total_underpayment",
+    "question": "What total underpayment, including superannuation, does the underpayment calculation reach?",
+    "answer": "$8,388.40"
+  },
+  {
+    "id": "overtime_shortfall_total",
+    "question": "What is the total overtime shortfall in the underpayment calculation?",
+    "answer": "$6,155.60"
+  },
+  {
+    "id": "latest_settlement_offer",
+    "question": "What is the latest settlement sum Harbourline has offered to Marisol Reyes?",
+    "answer": "$22,000.00"
+  },
+  {
+    "id": "first_settlement_offer",
+    "question": "How much did Gareth Coyle's without prejudice letter of 2 July 2026 offer?",
+    "answer": "$18,500.00"
+  },
+  {
+    "id": "cert2_period",
+    "question": "What period does the second medical certificate cover?",
+    "answer": "4 May 2026 to 15 May 2026"
+  },
+  {
+    "id": "show2_deadline",
+    "question": "What response deadline does the amended show-cause letter of 24 April 2026 set?",
+    "answer": "5:00 pm on Tuesday 28 April 2026"
+  },
+  {
+    "id": "show1_deadline",
+    "question": "What response deadline did the original show-cause letter of 20 April 2026 set?",
+    "answer": "5:00 pm on Monday 27 April 2026"
+  },
+  {
+    "id": "employee_number",
+    "question": "What is Marisol Reyes's Harbourline employee number?",
+    "answer": "HF-20417"
+  },
+  {
+    "id": "poor_review_rating",
+    "question": "What overall rating did Declan Ashworth give Marisol Reyes in the review of 2 April 2026?",
+    "answer": "2 out of 5"
+  },
+  {
+    "id": "commissioner_name",
+    "question": "Which Commissioner will hear the arbitration?",
+    "answer": "Commissioner Idris Calloway"
+  },
+  {
+    "id": "weighbridge_error",
+    "question": "By how many tonnes was the weighbridge reading low, according to Aisha Rahman?",
+    "answer": "3.5 tonnes"
+  },
+  {
+    "id": "img_incident_number",
+    "question": "What report number appears on the Incident / Hazard Report Form Marisol Reyes lodged for the Bay 6 near miss?",
+    "answer": "INC-2026-0147"
+  },
+  {
+    "id": "img_incident_time",
+    "question": "At what time does the incident report form record that the Bay 6 near miss happened?",
+    "answer": "14:20"
+  },
+  {
+    "id": "img_forklift_unit",
+    "question": "Which forklift unit is recorded on the incident report form?",
+    "answer": "FL-07"
+  },
+  {
+    "id": "img_tag_number",
+    "question": "What tag number is on the hazard tag Marisol Reyes attached to the Bay 6 barrier?",
+    "answer": "5521"
+  },
+  {
+    "id": "img_payslip_net",
+    "question": "What net pay does the payslip for the fortnight ending 13 March 2026 show?",
+    "answer": "$2,867.80"
+  },
+  {
+    "id": "img_payslip_gross",
+    "question": "What gross pay does the payslip for the fortnight ending 13 March 2026 show?",
+    "answer": "$3,880.80"
+  },
+  {
+    "id": "img_timesheet_total",
+    "question": "How many total hours does Marisol Reyes's handwritten timesheet record for the week ending 13 March 2026?",
+    "answer": "42.0 hours"
+  },
+  {
+    "id": "img_timesheet_wed_finish",
+    "question": "What finish time is written for Wednesday 11 March on the handwritten timesheet?",
+    "answer": "17:00"
+  },
+  {
+    "id": "img_sms_first_time",
+    "question": "At what time was the first text message from Declan Ashworth on 19 March 2026 sent?",
+    "answer": "7:12 AM"
+  },
+  {
+    "id": "img_cert1_number",
+    "question": "What certificate number is on the first medical certificate, dated 27 April 2026?",
+    "answer": "30417"
+  },
+  {
+    "id": "img_cert1_period",
+    "question": "What period of unfitness does the first medical certificate cover?",
+    "answer": "27 April 2026 to 1 May 2026"
+  },
+  {
+    "id": "img_id_expiry",
+    "question": "What expiry date is printed on Marisol Reyes's staff ID card?",
+    "answer": "13 February 2027"
+  },
+  {
+    "id": "img_received_time",
+    "question": "What time did Marisol Reyes write on the signed termination letter as the time she received it?",
+    "answer": "4:10 pm"
+  },
+  {
+    "id": "img_leave_payout",
+    "question": "What gross amount for accrued annual leave does the original termination letter say will be paid in the final pay?",
+    "answer": "$2,772.00"
+  },
+  {
+    "id": "f3_lodged",
+    "question": "Has Harbourline lodged a Form F3 response in matter U2026/4821?",
+    "answer": "Yes, on 4 June 2026"
+  },
+  {
+    "id": "time_objection",
+    "question": "Has Harbourline objected that the F2 application was made out of time?",
+    "answer": "No"
+  },
+  {
+    "id": "notice_pay_in_letter",
+    "question": "Did the original termination letter of 5 May 2026 offer Marisol Reyes any notice or payment in lieu of notice?",
+    "answer": "No"
+  },
+  {
+    "id": "conciliation_settled",
+    "question": "Did the conciliation on 30 June 2026 resolve the matters?",
+    "answer": "No"
+  },
+  {
+    "id": "deed_signed",
+    "question": "Has Marisol Reyes signed the draft deed of release?",
+    "answer": "No"
+  },
+  {
+    "id": "prior_warnings",
+    "question": "Did Harbourline give Marisol Reyes any formal written warning before the 20 April 2026 show-cause letter?",
+    "answer": "No"
+  },
+  {
+    "id": "date_corrected",
+    "question": "Did Harbourline correct the termination date after sending the 5 May 2026 letter?",
+    "answer": "Yes, to 12 May 2026"
+  },
+  {
+    "id": "suspended_on_pay",
+    "question": "Was Marisol Reyes suspended on full pay?",
+    "answer": "Yes"
+  },
+  {
+    "id": "attended_toolbox",
+    "question": "Does Aisha Rahman say Marisol Reyes attended the 8 April 2026 toolbox meeting?",
+    "answer": "Yes"
+  },
+  {
+    "id": "safework_notified",
+    "question": "Has Marisol Reyes notified SafeWork NSW of the Bay 6 hazard?",
+    "answer": "No"
+  },
+  {
+    "id": "ea_single_rate_ok",
+    "question": "Does the enterprise agreement permit overtime to be paid at the single ordinary rate?",
+    "answer": "No"
+  },
+  {
+    "id": "fwo_period_2024",
+    "question": "Did the Fair Work Ombudsman ask for records going back to 1 July 2024?",
+    "answer": "Yes"
+  },
+  {
+    "id": "genuine_redundancy",
+    "question": "Is Harbourline relying on genuine redundancy as the reason for dismissing Marisol Reyes?",
+    "answer": "No"
+  },
+  {
+    "id": "cert_before_termination",
+    "question": "Had Marisol Reyes given Harbourline a medical certificate before the 5 May 2026 termination letter?",
+    "answer": "Yes"
+  },
+  {
+    "id": "deed_has_fwo_carve_out",
+    "question": "Does the draft deed of release prevent Marisol Reyes from communicating with the Fair Work Ombudsman?",
+    "answer": "No"
+  },
+  {
+    "id": "manager_now",
+    "question": "Who has Marisol Reyes reported to since 1 July 2025?",
+    "answer": "Declan Ashworth"
+  },
+  {
+    "id": "manager_original",
+    "question": "Who was Marisol Reyes's manager under her original contract of employment?",
+    "answer": "Helena Brandt"
+  },
+  {
+    "id": "variation_signatory",
+    "question": "Who signed the contract variation letter for Harbourline?",
+    "answer": "Priya Venkataraman"
+  },
+  {
+    "id": "show_cause_signatory",
+    "question": "Who signed the show-cause letter of 20 April 2026?",
+    "answer": "Lorraine Whitcombe"
+  },
+  {
+    "id": "aisha_supervisor",
+    "question": "Who is Aisha Rahman's supervisor?",
+    "answer": "Marisol Reyes"
+  },
+  {
+    "id": "employer_lawyers",
+    "question": "Which law firm acts for Harbourline Freight Pty Ltd?",
+    "answer": "Barrett Coyle Employment Lawyers"
+  },
+  {
+    "id": "our_solicitor",
+    "question": "Who is the responsible solicitor for Marisol Reyes at Mercer & Lindqvist Lawyers?",
+    "answer": "Hannah Lindqvist"
+  },
+  {
+    "id": "calc_authors",
+    "question": "Who prepared and who reviewed the underpayment calculation?",
+    "answer": "Jun Takahashi prepared; Owen Pretorius reviewed"
+  },
+  {
+    "id": "termination_signatory",
+    "question": "Who signed the termination letters for Harbourline?",
+    "answer": "Priya Venkataraman"
+  },
+  {
+    "id": "fwo_inspector",
+    "question": "Which Fair Work Inspector wrote to Harbourline on 26 May 2026?",
+    "answer": "Callum Drysdale"
+  },
+  {
+    "id": "img_incident_supervisor",
+    "question": "Who signed off as supervisor on the incident report form?",
+    "answer": "D. Ashworth"
+  },
+  {
+    "id": "weighbridge_responsible",
+    "question": "Who handed Marisol Reyes the weighbridge docket for consignment HF-88213?",
+    "answer": "Tomasz Kowalczyk"
+  },
+  {
+    "id": "amended_allegation_count",
+    "question": "How many allegations are in the amended show-cause letter of 24 April 2026?",
+    "answer": "Two"
+  },
+  {
+    "id": "conciliation_attendees",
+    "question": "List everyone who attended the conciliation on 30 June 2026.",
+    "answer": "Ruth Fenwick, Marisol Reyes, Hannah Lindqvist, Lorraine Whitcombe and Gareth Coyle"
+  },
+  {
+    "id": "warning_count",
+    "question": "How many written warnings did Harbourline issue to Marisol Reyes before the show-cause letter?",
+    "answer": "None"
+  },
+  {
+    "id": "direct_report_count",
+    "question": "How many Freight Coordinators does the Senior Logistics Coordinator supervise under the position description?",
+    "answer": "6"
+  },
+  {
+    "id": "overtime_hours_total",
+    "question": "How many overtime hours in total does the underpayment calculation cover?",
+    "answer": "208.0 hours"
+  },
+  {
+    "id": "redundancy_weeks_4_to_5",
+    "question": "How many weeks of redundancy pay does the enterprise agreement give for 4 years but less than 5 years of service?",
+    "answer": "10 weeks"
+  },
+  {
+    "id": "employee_count",
+    "question": "How many employees does Harbourline have according to its Form F3?",
+    "answer": "142"
+  },
+  {
+    "id": "disciplinary_letter_dates",
+    "question": "On which dates did Harbourline send Marisol Reyes show-cause or suspension letters?",
+    "answer": "20 April, 21 April and 24 April 2026"
+  },
+  {
+    "id": "medical_cert_count",
+    "question": "How many medical certificates are on the file, and on what dates were they issued?",
+    "answer": "2 (27 April 2026 and 4 May 2026)"
+  },
+  {
+    "id": "leave_weeks_count",
+    "question": "How many weeks of annual leave are included in the leave loading claim?",
+    "answer": "5 weeks"
+  },
+  {
+    "id": "sum_dismissal_reason",
+    "question": "Summarise the reason Harbourline gave for dismissing Marisol Reyes and why she says that reason is wrong.",
+    "answer": "Harbourline says she committed serious misconduct by knowingly releasing consignment HF-88213 with an 18.4 tonne weight declaration (actual 21.9 tonnes) and missing the 8 April 2026 toolbox meeting. She says the weight came from a faulty weighbridge docket issued by the Dock Supervisor, she attended the meeting, and the dismissal followed her safety complaint and wage query."
+  },
+  {
+    "id": "sum_underpayment",
+    "question": "Summarise the underpayment claim and its total.",
+    "answer": "Harbourline paid all overtime at the single ordinary rate instead of 150% and 200% under clause 18.2 and did not pay 17.5% annual leave loading. Between 1 October 2024 and 17 April 2026 the shortfall is $6,155.60 overtime plus $1,506.89 leave loading plus $725.91 super, totalling $8,388.40 before interest."
+  },
+  {
+    "id": "sum_termination_correction",
+    "question": "Summarise how the corrected termination letter of 11 May 2026 differs from the original of 5 May 2026.",
+    "answer": "The corrected letter withdraws the 5 May 2026 termination date and treats the dismissal as taking effect on 12 May 2026, offering $1,755.60 gross for 6 to 12 May. The reasons for termination are unchanged."
+  },
+  {
+    "id": "sum_settlement_history",
+    "question": "Summarise the settlement offers made by Harbourline and the client's response.",
+    "answer": "On 2 July 2026 Harbourline offered $18,500.00. On 6 July 2026 it raised the offer to $22,000.00 in a draft deed of release. On 8 July 2026 the client instructed her solicitors to reject it and counter with $61,056.40."
+  },
+  {
+    "id": "sum_witness",
+    "question": "Summarise the evidence in Aisha Rahman's witness statement.",
+    "answer": "She heard Declan Ashworth say on 19 March 2026 that Marisol Reyes wants to play lawyer about overtime and safety and would be gone by winter; she saw Marisol sign in at the 8 April 2026 toolbox meeting; she saw Tomasz Kowalczyk hand over the 18.4 tonne docket and heard the weighbridge was reading 3.5 tonnes low; and she was also paid overtime at the ordinary rate."
+  },
+  {
+    "id": "sum_conciliation",
+    "question": "Summarise the outcome of the conciliation and what happens next.",
+    "answer": "The matters did not resolve on 30 June 2026. They will go to arbitration before Commissioner Idris Calloway on 24 November 2026, with the applicant's submissions due 13 October 2026 and Harbourline's due 27 October 2026."
+  },
+  {
+    "id": "sum_reviews",
+    "question": "Compare the two performance reviews of Marisol Reyes.",
+    "answer": "On 14 August 2025 Declan Ashworth rated her 4 out of 5 (Exceeds expectations) with 97.2% on-time dispatch. On 2 April 2026, after her safety complaint and payroll query, he rated her 2 out of 5 (Below expectations) with 91.4%, citing attitude; she disagreed."
+  },
+  {
+    "id": "quote_termination_reason",
+    "question": "What exactly does the corrected termination letter give as the reasons for termination?",
+    "answer": "serious misconduct, namely: knowingly releasing consignment HF-88213 with an incorrect weight declaration of 18.4 tonnes when the actual weight was 21.9 tonnes, and failing to attend the mandatory toolbox meeting on 8 April 2026"
+  },
+  {
+    "id": "quote_review_time",
+    "question": "What exactly did Declan Ashworth write on 17 March 2026 about her review?",
+    "answer": "don't expect to be looked after at review time"
+  },
+  {
+    "id": "quote_lunchroom",
+    "question": "What exact words did Aisha Rahman say Declan Ashworth used in the lunchroom on 19 March 2026?",
+    "answer": "Reyes wants to play lawyer about overtime and safety. She'll be gone by winter."
+  },
+  {
+    "id": "quote_sms_review",
+    "question": "What exactly did Declan Ashworth text about the overtime issue and her review?",
+    "answer": "Drop the OT thing and I'll tidy up your review."
+  },
+  {
+    "id": "quote_amended_allegation",
+    "question": "What exactly does Allegation 1 say in the amended show-cause letter?",
+    "answer": "On 14 April 2026 you released consignment HF-88213 with an incorrect weight declaration of 18.4 tonnes, the actual weight being 21.9 tonnes."
+  },
+  {
+    "id": "quote_bay6_call",
+    "question": "What exactly did Declan Ashworth write about who decides Bay 6 issues?",
+    "answer": "Bay 6 is my call, not yours."
+  },
+  {
+    "id": "mf_deed_allocation",
+    "question": "How does the draft deed allocate the $22,000.00 settlement sum between underpayment and compensation?",
+    "answer": "$8,388.40 underpayment and $13,611.60 compensation"
+  },
+  {
+    "id": "mf_deadline_check",
+    "question": "What was the 21-day deadline measured from the original 5 May 2026 termination date, and was the F2 lodged before it?",
+    "answer": "26 May 2026; yes, lodged 22 May 2026"
+  },
+  {
+    "id": "mf_notice_pay",
+    "question": "How many weeks' notice, and what dollar amount at her current rate, was Marisol Reyes entitled to under the enterprise agreement?",
+    "answer": "5 weeks, $8,778.00"
+  },
+  {
+    "id": "mf_conciliator_date",
+    "question": "Who conducted the conciliation and on what date?",
+    "answer": "Ruth Fenwick on 30 June 2026"
+  },
+  {
+    "id": "mf_final_pay_date",
+    "question": "What gross pay did the corrected termination letter offer for 6 to 12 May 2026, and what dismissal date does it state?",
+    "answer": "$1,755.60 gross; 12 May 2026"
+  },
+  {
+    "id": "mf_counter_offer",
+    "question": "What counter-offer total did Marisol Reyes instruct on 8 July 2026, and how much of it is the underpayment?",
+    "answer": "$61,056.40, of which $8,388.40 is the underpayment"
+  },
+  {
+    "id": "mf_cap",
+    "question": "What is Marisol Reyes's weekly base pay and the 26-week unfair dismissal compensation cap?",
+    "answer": "$1,755.60 per week; $45,645.60"
+  },
+  {
+    "id": "mf_two_dates",
+    "question": "What dismissal date did the 5 May 2026 letter give, and what date replaced it in the 11 May 2026 letter?",
+    "answer": "5 May 2026 then 12 May 2026"
+  },
+  {
+    "id": "mf_conference_attendees",
+    "question": "Who attended the 8 May 2026 initial conference and what hard deadline was set there?",
+    "answer": "Hannah Lindqvist, Marisol Reyes, Jun Takahashi; 26 May 2026"
+  },
+  {
+    "id": "mf_offer_difference",
+    "question": "By how much does the draft deed sum exceed the 2 July 2026 offer?",
+    "answer": "$3,500.00"
+  },
+  {
+    "id": "mf_calc_hours",
+    "question": "How many overtime hours and how many leave hours are in the underpayment calculation?",
+    "answer": "208.0 overtime hours; 190.0 leave hours"
+  },
+  {
+    "id": "mf_super_and_subtotal",
+    "question": "What superannuation total and what pre-super total underpayment does the calculation state?",
+    "answer": "$725.91; $7,662.49"
+  },
+  {
+    "id": "mf_ot_period_b",
+    "question": "What are the Period B overtime subtotal and the rate used for Period B in the calculation?",
+    "answer": "$3,603.60 at $46.20"
+  },
+  {
+    "id": "un_safework_findings",
+    "question": "What did the SafeWork NSW inspector find after investigating Bay 6?",
+    "answer": "The matter does not say; Marisol Reyes has not notified SafeWork NSW and no investigation is recorded.",
+    "unanswerable": true
+  },
+  {
+    "id": "un_fwo_response",
+    "question": "On what date did Harbourline respond to the Fair Work Ombudsman's request for records?",
+    "answer": "The matter does not say; Harbourline's response has not been seen.",
+    "unanswerable": true
+  },
+  {
+    "id": "un_hearing_decision",
+    "question": "What did Commissioner Idris Calloway decide at the arbitration hearing?",
+    "answer": "The matter does not say; the hearing is listed for 24 November 2026 and no decision is recorded.",
+    "unanswerable": true
+  },
+  {
+    "id": "un_ashworth_salary",
+    "question": "What is Declan Ashworth's annual salary?",
+    "answer": "The matter does not say.",
+    "unanswerable": true
+  },
+  {
+    "id": "un_union",
+    "question": "Which union represented Marisol Reyes at the show-cause stage?",
+    "answer": "The matter does not say; no union is mentioned and she was only offered a support person.",
+    "unanswerable": true
+  },
+  {
+    "id": "un_compensation_awarded",
+    "question": "How much compensation did the Fair Work Commission award Marisol Reyes?",
+    "answer": "None; the matter contains no determination or award.",
+    "unanswerable": true
+  },
+  {
+    "id": "un_new_job",
+    "question": "On what date did Marisol Reyes start her new job?",
+    "answer": "The matter does not say.",
+    "unanswerable": true
+  }
+]

@@ -25,13 +25,13 @@ class TestScoring:
 
     def test_numeric_formats_and_tolerance(self):
         assert score_answer("3,234", "3234")
-        assert score_answer("$3,234 million", "3234")
+        assert not score_answer("$3,234 million", "3234")  # missing units need a judge
         assert score_answer(3234.0, "3,234")
         assert score_answer("3250", "3234", numeric_rel_tol=0.01)
         assert not score_answer("3300", "3234")
 
-    def test_containment_bounded(self):
-        assert score_answer("The answer is Paris.", "Paris")
+    def test_prose_requires_adjudication(self):
+        assert not score_answer("The answer is Paris.", "Paris")  # prose needs a judge
         assert not score_answer("Paris " + "waffle " * 50, "Paris")
 
     def test_none_never_correct(self):
@@ -104,7 +104,7 @@ class TestJudge:
         from rnsr.eval.metrics import judge_answer
 
         yes = MockLLM(default="YES")
-        no = MockLLM(default="NO — the numbers differ")
+        no = MockLLM(default="NO")
         weird = MockLLM(default="It depends on interpretation")
         dead = MockLLM(fail_times=99)
         assert await judge_answer(yes, "m", "q", "p", "g") is True
@@ -316,7 +316,7 @@ class TestRagBaselines:
             context="Filler line about weather.\nWidget revenue was 1234 dollars.\n" * 5,
         )
         root = MockLLM().rule(r"excerpts", "The widget revenue was 1234 dollars.")
-        runner = RootRunner(root_client=root, root_model="m", sub_client=MockLLM(),
+        runner = RootRunner(root_client=root, root_model="m", sub_client=MockLLM(default="YES"),
                             sub_model="m", settings=Settings())
         results, summary = await run_eval([item], "bm25-rag", runner, run_dir=tmp_path)
         assert results[0].correct
@@ -364,7 +364,8 @@ class TestRerankRag:
         context = decoys + "\nwidget revenue was exactly 4321 dollars in the final audit."
         item = EvalItem(qid="rr-1", question="What was the widget revenue?",
                         gold="4321", context=context)
-        sub = MockLLM().rule(r"4321", "10").rule(r"routine notes", "1")
+        sub = (MockLLM().rule(r"agree with the reference", "YES")
+               .rule(r"4321", "10").rule(r"routine notes", "1"))
         root = MockLLM().rule(r"excerpts", "The widget revenue was 4321 dollars.")
         runner = RootRunner(root_client=root, root_model="m", sub_client=sub,
                             sub_model="m", settings=Settings())
@@ -395,6 +396,7 @@ class TestGraphRag:
         sub.rule(r"Extract entities", extraction)
         sub.rule(r"Summarize this community",
                  "Vendor Corp issued invoices INV-9001 and INV-9002.")
+        sub.rule(r"agree with the reference", "YES")
         root = MockLLM().rule(r"COMMUNITY SUMMARIES",
                               "Vendor Corp issued INV-9001 and INV-9002.")
         runner = RootRunner(root_client=root, root_model="m", sub_client=sub,

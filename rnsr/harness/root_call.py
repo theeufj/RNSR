@@ -8,9 +8,23 @@ import time
 
 from rnsr.errors import BudgetExhausted
 from rnsr.harness.budget import BudgetLedger
-from rnsr.llm.base import LLMClient, LLMResponse
+from rnsr.llm.base import LLMClient, LLMResponse, Prompt
 from rnsr.llm.governor import SpendCeilingExceeded, is_rate_limit
 from rnsr.llm.retry import is_terminal_provider_error
+
+
+def _usage_fields(usage) -> dict:
+    """Per-call token and cost fields for the trajectory, so a run's spend
+    can be attributed call by call (the ledger only keeps running totals)."""
+    if usage is None:
+        return {}
+    return {
+        "input_tokens": getattr(usage, "input_tokens", 0),
+        "output_tokens": getattr(usage, "output_tokens", 0),
+        "cache_read_tokens": getattr(usage, "cache_read_tokens", 0),
+        "cache_write_tokens": getattr(usage, "cache_write_tokens", 0),
+        "cost_usd": round(getattr(usage, "cost_usd", 0.0), 6),
+    }
 
 
 def _is_timeout(exc: Exception) -> bool:
@@ -29,7 +43,7 @@ def _retryable(exc: Exception) -> bool:
 
 
 async def complete_root(
-    client: LLMClient, prompt: str, *, model: str, system: str,
+    client: LLMClient, prompt: Prompt, *, model: str, system: str,
     ledger: BudgetLedger, trajectory, seed: int | None = None,
     timeout_s: float = 120.0, attempts: int = 3,
 ) -> LLMResponse | None:
@@ -94,9 +108,11 @@ async def complete_root(
                             prompt, model=model, system=system,
                             max_tokens=8192, seed=seed,
                         )
+            usage = getattr(response, "usage", None)
             trajectory.event("root_call_completed", attempt=attempt,
                              elapsed_s=round(time.monotonic() - started, 3),
-                             queue_wait_s=queue_wait_s)
+                             queue_wait_s=queue_wait_s,
+                             **_usage_fields(usage))
             return response
         except Exception as exc:
             retryable = _retryable(exc)

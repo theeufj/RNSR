@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from rnsr.llm.base import LLMResponse
+from rnsr.llm.base import LLMResponse, prompt_text
 from rnsr.llm.cost import make_usage
 
 
@@ -35,7 +35,7 @@ class GeminiClient:
 
         resp = await self._client.aio.models.generate_content(
             model=model,
-            contents=prompt,
+            contents=prompt_text(prompt),
             config=types.GenerateContentConfig(
                 system_instruction=system,
                 max_output_tokens=max_tokens,

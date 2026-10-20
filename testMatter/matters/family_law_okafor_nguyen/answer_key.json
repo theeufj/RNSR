@@ -1,0 +1,642 @@
+[
+  {
+    "id": "court_file_number",
+    "question_type": "value_lookup",
+    "sources": [
+      "2026-04-09_Initiating_Application_Summary.pdf",
+      "2026-08-26_Interim_Orders.pdf"
+    ]
+  },
+  {
+    "id": "marriage_date",
+    "question_type": "value_lookup",
+    "sources": [
+      "2026-03-16_Initial_Client_Intake_Form.docx",
+      "2026-05-27_Affidavit_of_Ada_Okafor.docx"
+    ]
+  },
+  {
+    "id": "separation_date",
+    "question_type": "value_lookup",
+    "sources": [
+      "2026-03-16_Initial_Client_Intake_Form.docx",
+      "2026-05-27_Affidavit_of_Ada_Okafor.docx"
+    ]
+  },
+  {
+    "id": "zara_date_of_birth",
+    "question_type": "value_lookup",
+    "sources": [
+      "2026-03-16_Initial_Client_Intake_Form.docx"
+    ]
+  },
+  {
+    "id": "home_market_value",
+    "question_type": "value_lookup",
+    "sources": [
+      "2026-06-04_Valuation_Report_27_Banksia_Court.pdf"
+    ]
+  },
+  {
+    "id": "ada_super_balance",
+    "question_type": "value_lookup",
+    "sources": [
+      "2026-08-18_Superannuation_Statements_Summary.pdf"
+    ]
+  },
+  {
+    "id": "fdr_nonattendance_cert_number",
+    "question_type": "value_lookup",
+    "sources": [
+      "2025-11-20_s60I_FDR_Certificate_Non-Attendance.pdf"
+    ]
+  },
+  {
+    "id": "coral_coast_salary",
+    "question_type": "value_lookup",
+    "sources": [
+      "2026-07-30_Letter_of_Offer_Coral_Coast_Private_Hospital.pdf"
+    ]
+  },
+  {
+    "id": "final_hearing_date",
+    "question_type": "value_lookup",
+    "sources": [
+      "2026-08-26_Interim_Orders.pdf"
+    ]
+  },
+  {
+    "id": "business_valuation_ref",
+    "question_type": "value_lookup",
+    "sources": [
+      "2026-08-07_Business_Valuation_Nguyen_Constructions.pdf"
+    ]
+  },
+  {
+    "id": "ada_current_address",
+    "question_type": "value_lookup",
+    "sources": [
+      "2026-10-01_Email_Ada_Okafor_to_Sam_Odhiambo.txt",
+      "2026-03-16_Initial_Client_Intake_Form.docx"
+    ]
+  },
+  {
+    "id": "super_split_latest_draft",
+    "question_type": "value_lookup",
+    "sources": [
+      "2026-09-30_Draft_Consent_Orders_v2.docx",
+      "2026-09-14_Draft_Consent_Orders_v1.docx"
+    ]
+  },
+  {
+    "id": "relocation_date_latest_draft",
+    "question_type": "value_lookup",
+    "sources": [
+      "2026-09-30_Draft_Consent_Orders_v2.docx",
+      "2026-09-14_Draft_Consent_Orders_v1.docx"
+    ]
+  },
+  {
+    "id": "trung_hours_latest",
+    "question_type": "value_lookup",
+    "sources": [
+      "2026-09-10_Affidavit_of_Trung_Nguyen.docx",
+      "2026-05-20_Response_to_Initiating_Application.pdf"
+    ]
+  },
+  {
+    "id": "ada_work_days_latest",
+    "question_type": "value_lookup",
+    "sources": [
+      "2026-09-08_Financial_Statement_Ada_Okafor.docx",
+      "2026-03-16_Initial_Client_Intake_Form.docx"
+    ]
+  },
+  {
+    "id": "trung_income_latest",
+    "question_type": "value_lookup",
+    "sources": [
+      "2026-09-10_Affidavit_of_Trung_Nguyen.docx",
+      "2026-05-20_Response_to_Initiating_Application.pdf"
+    ]
+  },
+  {
+    "id": "sale_split_latest",
+    "question_type": "value_lookup",
+    "sources": [
+      "2026-09-30_Draft_Consent_Orders_v2.docx",
+      "2026-09-14_Draft_Consent_Orders_v1.docx"
+    ]
+  },
+  {
+    "id": "coral_start_date_latest",
+    "question_type": "value_lookup",
+    "sources": [
+      "2026-10-01_Email_Ada_Okafor_to_Sam_Odhiambo.txt",
+      "2026-07-30_Letter_of_Offer_Coral_Coast_Private_Hospital.pdf"
+    ]
+  },
+  {
+    "id": "flights_per_year_latest",
+    "question_type": "value_lookup",
+    "sources": [
+      "2026-09-30_Draft_Consent_Orders_v2.docx",
+      "2026-09-14_Draft_Consent_Orders_v1.docx"
+    ]
+  },
+  {
+    "id": "ada_rent_latest",
+    "question_type": "value_lookup",
+    "sources": [
+      "2026-10-01_Email_Ada_Okafor_to_Sam_Odhiambo.txt",
+      "2026-09-08_Financial_Statement_Ada_Okafor.docx"
+    ]
+  },
+  {
+    "id": "home_listing_date_latest",
+    "question_type": "value_lookup",
+    "sources": [
+      "2026-09-30_Draft_Consent_Orders_v2.docx",
+      "2026-09-14_Draft_Consent_Orders_v1.docx"
+    ]
+  },
+  {
+    "id": "payslip_net_pay",
+    "question_type": "value_lookup",
+    "sources": [
+      "2026-08-26_Payslip_Trung_Nguyen_W-E_2026-08-23.pdf"
+    ]
+  },
+  {
+    "id": "bank_closing_balance_july",
+    "question_type": "value_lookup",
+    "sources": [
+      "2026-08-04_Scan_Joint_Account_Statement_July_2026.png"
+    ]
+  },
+  {
+    "id": "transfer_to_nguyen_holdings",
+    "question_type": "value_lookup",
+    "sources": [
+      "2026-08-04_Scan_Joint_Account_Statement_July_2026.png"
+    ]
+  },
+  {
+    "id": "zara_swim_time",
+    "question_type": "value_lookup",
+    "sources": [
+      "2026-09-06_Handwritten_Note_Handover_Notes.jpg"
+    ]
+  },
+  {
+    "id": "asthma_review_date",
+    "question_type": "value_lookup",
+    "sources": [
+      "2026-09-06_Handwritten_Note_Handover_Notes.jpg"
+    ]
+  },
+  {
+    "id": "zara_class_teacher",
+    "question_type": "value_lookup",
+    "sources": [
+      "2026-06-26_Scan_School_Report_Zara_Semester1.png"
+    ]
+  },
+  {
+    "id": "zara_attendance",
+    "question_type": "value_lookup",
+    "sources": [
+      "2026-06-26_Scan_School_Report_Zara_Semester1.png"
+    ]
+  },
+  {
+    "id": "sms_collection_time",
+    "question_type": "value_lookup",
+    "sources": [
+      "2026-09-09_Screenshot_Text_Messages_Trung_Ada.png"
+    ]
+  },
+  {
+    "id": "sms_meeting_suburb",
+    "question_type": "value_lookup",
+    "sources": [
+      "2026-09-09_Screenshot_Text_Messages_Trung_Ada.png"
+    ]
+  },
+  {
+    "id": "licence_expiry",
+    "question_type": "value_lookup",
+    "sources": [
+      "2026-03-16_Scan_Drivers_Licence_Ada_Okafor.png"
+    ]
+  },
+  {
+    "id": "receipt_number",
+    "question_type": "value_lookup",
+    "sources": [
+      "2026-07-22_Photo_Signed_Receipt_Removalist_Deposit.jpg"
+    ]
+  },
+  {
+    "id": "fdr_cert_issued",
+    "question_type": "existence",
+    "sources": [
+      "2025-11-20_s60I_FDR_Certificate_Non-Attendance.pdf",
+      "2026-02-17_s60I_FDR_Certificate_Attended.pdf"
+    ]
+  },
+  {
+    "id": "trung_attended_nov_session",
+    "question_type": "existence",
+    "sources": [
+      "2025-11-20_s60I_FDR_Certificate_Non-Attendance.pdf"
+    ]
+  },
+  {
+    "id": "fdr_exemption_claimed",
+    "question_type": "existence",
+    "sources": [
+      "2026-04-23_Notice_of_Risk_Form4.pdf",
+      "2026-02-17_s60I_FDR_Certificate_Attended.pdf"
+    ]
+  },
+  {
+    "id": "icl_appointed",
+    "question_type": "existence",
+    "sources": [
+      "2026-09-03_Letter_from_ICL_Marguerite_Sallis.docx",
+      "2026-08-26_Interim_Orders.pdf"
+    ]
+  },
+  {
+    "id": "notice_of_risk_child_abuse",
+    "question_type": "existence",
+    "sources": [
+      "2026-04-23_Notice_of_Risk_Form4.pdf"
+    ]
+  },
+  {
+    "id": "consent_orders_signed",
+    "question_type": "existence",
+    "sources": [
+      "2026-09-30_Draft_Consent_Orders_v2.docx",
+      "2026-09-22_Email_Declan_Pryce_to_Fiona_Brennan-Hale.txt"
+    ]
+  },
+  {
+    "id": "binding_financial_agreement",
+    "question_type": "existence",
+    "sources": [
+      "2026-03-16_Initial_Client_Intake_Form.docx"
+    ]
+  },
+  {
+    "id": "ada_trust_beneficiary",
+    "question_type": "existence",
+    "sources": [
+      "2026-07-14_Trust_Deed_Summary_Nguyen_Family_Trust.docx",
+      "2026-05-27_Affidavit_of_Ada_Okafor.docx"
+    ]
+  },
+  {
+    "id": "family_report_prepared",
+    "question_type": "existence",
+    "sources": [
+      "2026-08-12_Family_Report_Dr_Voss.docx"
+    ]
+  },
+  {
+    "id": "trung_admits_late_9_may",
+    "question_type": "existence",
+    "sources": [
+      "2026-09-10_Affidavit_of_Trung_Nguyen.docx"
+    ]
+  },
+  {
+    "id": "licence_corrective_lenses",
+    "question_type": "existence",
+    "sources": [
+      "2026-03-16_Scan_Drivers_Licence_Ada_Okafor.png"
+    ]
+  },
+  {
+    "id": "trust_distribution_to_ada",
+    "question_type": "existence",
+    "sources": [
+      "2026-07-14_Trust_Deed_Summary_Nguyen_Family_Trust.docx",
+      "2026-05-27_Affidavit_of_Ada_Okafor.docx"
+    ]
+  },
+  {
+    "id": "icl_name",
+    "question_type": "relationship",
+    "sources": [
+      "2026-09-03_Letter_from_ICL_Marguerite_Sallis.docx",
+      "2026-08-26_Interim_Orders.pdf"
+    ]
+  },
+  {
+    "id": "trung_solicitor",
+    "question_type": "relationship",
+    "sources": [
+      "2026-05-20_Response_to_Initiating_Application.pdf"
+    ]
+  },
+  {
+    "id": "ada_barrister",
+    "question_type": "relationship",
+    "sources": [
+      "2026-04-02_Costs_Agreement_and_Disclosure.docx",
+      "2026-08-26_Interim_Orders.pdf"
+    ]
+  },
+  {
+    "id": "trust_trustee",
+    "question_type": "relationship",
+    "sources": [
+      "2026-07-14_Trust_Deed_Summary_Nguyen_Family_Trust.docx"
+    ]
+  },
+  {
+    "id": "ada_parents",
+    "question_type": "relationship",
+    "sources": [
+      "2026-03-16_Initial_Client_Intake_Form.docx"
+    ]
+  },
+  {
+    "id": "paralegal_name",
+    "question_type": "relationship",
+    "sources": [
+      "2026-03-16_Initial_Client_Intake_Form.docx"
+    ]
+  },
+  {
+    "id": "lan_nguyen_relationship",
+    "question_type": "relationship",
+    "sources": [
+      "2026-05-27_Affidavit_of_Ada_Okafor.docx"
+    ]
+  },
+  {
+    "id": "biscuit_owner",
+    "question_type": "relationship",
+    "sources": [
+      "2026-08-12_Family_Report_Dr_Voss.docx"
+    ]
+  },
+  {
+    "id": "number_of_children",
+    "question_type": "count_list",
+    "sources": [
+      "2026-05-27_Affidavit_of_Ada_Okafor.docx"
+    ]
+  },
+  {
+    "id": "children_names",
+    "question_type": "count_list",
+    "sources": [
+      "2026-03-16_Initial_Client_Intake_Form.docx"
+    ]
+  },
+  {
+    "id": "fdr_certificate_numbers",
+    "question_type": "count_list",
+    "sources": [
+      "2025-11-20_s60I_FDR_Certificate_Non-Attendance.pdf",
+      "2026-02-17_s60I_FDR_Certificate_Attended.pdf"
+    ]
+  },
+  {
+    "id": "late_handovers_alleged",
+    "question_type": "count_list",
+    "sources": [
+      "2026-04-23_Notice_of_Risk_Form4.pdf",
+      "2026-05-27_Affidavit_of_Ada_Okafor.docx"
+    ]
+  },
+  {
+    "id": "pool_assets_list",
+    "question_type": "count_list",
+    "sources": [
+      "2026-09-08_Financial_Statement_Ada_Okafor.docx"
+    ]
+  },
+  {
+    "id": "super_funds",
+    "question_type": "count_list",
+    "sources": [
+      "2026-08-18_Superannuation_Statements_Summary.pdf"
+    ]
+  },
+  {
+    "id": "interim_time_schedule",
+    "question_type": "count_list",
+    "sources": [
+      "2026-08-26_Interim_Orders.pdf"
+    ]
+  },
+  {
+    "id": "comparable_sales_count",
+    "question_type": "count_list",
+    "sources": [
+      "2026-06-04_Valuation_Report_27_Banksia_Court.pdf"
+    ]
+  },
+  {
+    "id": "case_summary",
+    "question_type": "summary",
+    "sources": [
+      "2026-04-09_Initiating_Application_Summary.pdf",
+      "2026-05-20_Response_to_Initiating_Application.pdf",
+      "2026-08-26_Interim_Orders.pdf",
+      "2026-09-30_Draft_Consent_Orders_v2.docx"
+    ]
+  },
+  {
+    "id": "property_pool_summary",
+    "question_type": "summary",
+    "sources": [
+      "2026-09-08_Financial_Statement_Ada_Okafor.docx",
+      "2026-06-04_Valuation_Report_27_Banksia_Court.pdf",
+      "2026-08-07_Business_Valuation_Nguyen_Constructions.pdf",
+      "2026-07-14_Trust_Deed_Summary_Nguyen_Family_Trust.docx",
+      "2026-08-18_Superannuation_Statements_Summary.pdf",
+      "2026-06-30_Home_Loan_Statement_Murray_Valley_Bank.pdf"
+    ]
+  },
+  {
+    "id": "family_report_summary",
+    "question_type": "summary",
+    "sources": [
+      "2026-08-12_Family_Report_Dr_Voss.docx"
+    ]
+  },
+  {
+    "id": "interim_orders_summary",
+    "question_type": "summary",
+    "sources": [
+      "2026-08-26_Interim_Orders.pdf"
+    ]
+  },
+  {
+    "id": "draft_orders_difference_summary",
+    "question_type": "summary",
+    "sources": [
+      "2026-09-14_Draft_Consent_Orders_v1.docx",
+      "2026-09-30_Draft_Consent_Orders_v2.docx",
+      "2026-09-22_Email_Declan_Pryce_to_Fiona_Brennan-Hale.txt"
+    ]
+  },
+  {
+    "id": "mug_allegation_summary",
+    "question_type": "summary",
+    "sources": [
+      "2026-04-23_Notice_of_Risk_Form4.pdf",
+      "2026-05-27_Affidavit_of_Ada_Okafor.docx",
+      "2026-09-10_Affidavit_of_Trung_Nguyen.docx",
+      "2026-09-19_Reply_Affidavit_of_Ada_Okafor.docx",
+      "2026-08-12_Family_Report_Dr_Voss.docx"
+    ]
+  },
+  {
+    "id": "interim_order_2_text",
+    "question_type": "quote",
+    "sources": [
+      "2026-08-26_Interim_Orders.pdf"
+    ]
+  },
+  {
+    "id": "draft_v2_clause_9_text",
+    "question_type": "quote",
+    "sources": [
+      "2026-09-30_Draft_Consent_Orders_v2.docx"
+    ]
+  },
+  {
+    "id": "interim_order_4_text",
+    "question_type": "quote",
+    "sources": [
+      "2026-08-26_Interim_Orders.pdf"
+    ]
+  },
+  {
+    "id": "interim_date_and_judge",
+    "question_type": "multi_fact",
+    "sources": [
+      "2026-08-26_Interim_Orders.pdf"
+    ]
+  },
+  {
+    "id": "home_value_and_loan",
+    "question_type": "multi_fact",
+    "sources": [
+      "2026-06-04_Valuation_Report_27_Banksia_Court.pdf",
+      "2026-06-30_Home_Loan_Statement_Murray_Valley_Bank.pdf"
+    ]
+  },
+  {
+    "id": "combined_super_balance",
+    "question_type": "multi_fact",
+    "sources": [
+      "2026-08-18_Superannuation_Statements_Summary.pdf"
+    ]
+  },
+  {
+    "id": "super_offer_increase",
+    "question_type": "multi_fact",
+    "sources": [
+      "2026-09-22_Email_Declan_Pryce_to_Fiona_Brennan-Hale.txt",
+      "2026-09-14_Draft_Consent_Orders_v1.docx"
+    ]
+  },
+  {
+    "id": "report_vs_v2_timing",
+    "question_type": "multi_fact",
+    "sources": [
+      "2026-08-12_Family_Report_Dr_Voss.docx",
+      "2026-09-30_Draft_Consent_Orders_v2.docx"
+    ]
+  },
+  {
+    "id": "payslip_vs_response_income",
+    "question_type": "multi_fact",
+    "sources": [
+      "2026-08-26_Payslip_Trung_Nguyen_W-E_2026-08-23.pdf",
+      "2026-05-20_Response_to_Initiating_Application.pdf",
+      "2026-09-10_Affidavit_of_Trung_Nguyen.docx"
+    ]
+  },
+  {
+    "id": "removalist_deposit_date_amount",
+    "question_type": "multi_fact",
+    "sources": [
+      "2026-09-19_Reply_Affidavit_of_Ada_Okafor.docx",
+      "2026-07-22_Photo_Signed_Receipt_Removalist_Deposit.jpg"
+    ]
+  },
+  {
+    "id": "invoice_balance_due",
+    "question_type": "multi_fact",
+    "sources": [
+      "2026-09-25_Invoice_INV-26-0388.pdf"
+    ]
+  },
+  {
+    "id": "receipt_balance_and_move_date",
+    "question_type": "multi_fact",
+    "sources": [
+      "2026-07-22_Photo_Signed_Receipt_Removalist_Deposit.jpg"
+    ]
+  },
+  {
+    "id": "trung_roles",
+    "question_type": "multi_fact",
+    "sources": [
+      "2026-05-20_Response_to_Initiating_Application.pdf",
+      "2026-07-14_Trust_Deed_Summary_Nguyen_Family_Trust.docx"
+    ]
+  },
+  {
+    "id": "third_child_name",
+    "question_type": "unanswerable",
+    "sources": [
+      "2026-03-16_Initial_Client_Intake_Form.docx"
+    ]
+  },
+  {
+    "id": "trung_criminal_record",
+    "question_type": "unanswerable",
+    "sources": [
+      "2026-04-23_Notice_of_Risk_Form4.pdf"
+    ]
+  },
+  {
+    "id": "final_orders_made",
+    "question_type": "unanswerable",
+    "sources": [
+      "2026-08-26_Interim_Orders.pdf"
+    ]
+  },
+  {
+    "id": "ada_hecs_debt",
+    "question_type": "unanswerable",
+    "sources": [
+      "2026-09-08_Financial_Statement_Ada_Okafor.docx"
+    ]
+  },
+  {
+    "id": "full_court_appeal",
+    "question_type": "unanswerable",
+    "sources": [
+      "2026-08-26_Interim_Orders.pdf"
+    ]
+  },
+  {
+    "id": "trung_licence_number",
+    "question_type": "unanswerable",
+    "sources": [
+      "2026-05-20_Response_to_Initiating_Application.pdf"
+    ]
+  }
+]

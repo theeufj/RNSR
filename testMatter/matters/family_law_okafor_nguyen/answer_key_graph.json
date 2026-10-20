@@ -1,0 +1,107 @@
+[
+  {
+    "id": "trung_firm_solicitor",
+    "question_type": "multi_hop",
+    "sources": []
+  },
+  {
+    "id": "children_rep_practice",
+    "question_type": "multi_hop",
+    "sources": []
+  },
+  {
+    "id": "joint_account_bank",
+    "question_type": "multi_hop",
+    "sources": []
+  },
+  {
+    "id": "banksia_valuer_person",
+    "question_type": "multi_hop",
+    "sources": []
+  },
+  {
+    "id": "ada_parents_residence",
+    "question_type": "multi_hop",
+    "sources": []
+  },
+  {
+    "id": "trust_beneficiaries",
+    "question_type": "aggregation",
+    "sources": []
+  },
+  {
+    "id": "trust_property_lender",
+    "question_type": "multi_hop",
+    "sources": []
+  },
+  {
+    "id": "ada_lawyers_firms",
+    "question_type": "multi_hop",
+    "sources": []
+  },
+  {
+    "id": "judge_and_court",
+    "question_type": "multi_hop",
+    "sources": []
+  },
+  {
+    "id": "bdrc_practitioner_cert",
+    "question_type": "multi_hop",
+    "sources": []
+  },
+  {
+    "id": "goldfields_mediation_cert",
+    "question_type": "multi_hop",
+    "sources": []
+  },
+  {
+    "id": "ada_employers",
+    "question_type": "aggregation",
+    "sources": []
+  },
+  {
+    "id": "ada_debts",
+    "question_type": "aggregation",
+    "sources": []
+  },
+  {
+    "id": "trung_vehicles",
+    "question_type": "aggregation",
+    "sources": []
+  },
+  {
+    "id": "lawyer_firm_children_lawyer",
+    "question_type": "multi_hop",
+    "sources": []
+  },
+  {
+    "id": "mediation_certs_issuers",
+    "question_type": "aggregation",
+    "sources": []
+  },
+  {
+    "id": "trung_companies",
+    "question_type": "aggregation",
+    "sources": []
+  },
+  {
+    "id": "coral_letter_author",
+    "question_type": "multi_hop",
+    "sources": []
+  },
+  {
+    "id": "trust_trustee_director",
+    "question_type": "multi_hop",
+    "sources": []
+  },
+  {
+    "id": "sibling_pair",
+    "question_type": "relationship",
+    "sources": []
+  },
+  {
+    "id": "noone_fourth_lawyer",
+    "question_type": "unanswerable",
+    "sources": []
+  }
+]

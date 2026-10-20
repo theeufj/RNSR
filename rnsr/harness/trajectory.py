@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import os
 import re
 import stat
@@ -37,6 +38,15 @@ _CONTENT_KEYS = frozenset({
     "query", "candidates", "choice", "verification", "flagged", "prompt",
 })
 _REDACT_OVER_CHARS = 200
+_EVIDENCE_ENUMS = {
+    "negative_audit": {"none", "probed", "flagged", "survived"},
+    "source": {"final", "final_var", "recovered"},
+    "resolved_by": {"unanimous", "majority", "split", "tiebreak", "unresolved"},
+    "health_grade": {"ok", "degraded", "blocked"},
+    "status": {"final", "recovered", "budget_exhausted", "error", "unanswered"},
+    "tier": {"high", "medium", "low"},
+    "claim_review_status": {"supported", "disabled", "not_applicable", "unverified", "unknown"},
+}
 _SAFE_QUERY_ID = re.compile(r"[a-z0-9][a-z0-9._-]{0,119}\Z")
 _RESERVED_FILENAMES = {"con", "prn", "aux", "nul"} | {
     f"{prefix}{i}" for prefix in ("com", "lpt") for i in range(1, 10)
@@ -85,12 +95,37 @@ def _describe(value: object) -> str:
     return f"<redacted {len(text)} chars sha256:{digest}>"
 
 
+def _is_evidence_metadata(key: str, value: object) -> bool:
+    if key in _EVIDENCE_ENUMS:
+        return value is None or isinstance(value, str) and value in _EVIDENCE_ENUMS[key]
+    if key in {"third_strike", "zero_quotes", "budget_warned", "claim_review_required"}:
+        return type(value) is bool
+    if key in {"quotes_total", "quotes_verified", "pushbacks"}:
+        return type(value) is int and value >= 0
+    if key == "agreement":
+        return value is None or type(value) in (int, float) and math.isfinite(value) and 0 <= value <= 1
+    if key == "rungs_used":
+        return isinstance(value, list) and all(type(item) is int and 0 <= item <= 5 for item in value)
+    if key == "cited_table_statuses":
+        return isinstance(value, list) and all(isinstance(item, str) and item in {
+            "trusted", "reextracted", "untrusted", "unchecked", "unknown"} for item in value)
+    return False
+
+
 def redact(record: dict, mode: str) -> dict:
     """Apply a content mode to one event record."""
     if mode == "full":
         return record
     out: dict = {}
     for key, value in record.items():
+        if key == "evidence" and isinstance(value, dict):
+            # End events contain nested per-answer signals. Document IDs,
+            # table identities and consensus votes are client content even
+            # though the enclosing value is not a long string.
+            out[key] = {name: item if _is_evidence_metadata(name, item) else _describe(item)
+                        for name, item in value.items()
+                        if _is_evidence_metadata(name, item) or mode == "redacted"}
+            continue
         # IDs remain operational metadata even when their encoded filename
         # is a digest; audit exports need the original identifier for joins.
         sensitive = key != "query_id" and (key in _CONTENT_KEYS or (
@@ -194,3 +229,15 @@ def prune_trajectories(run_dir: str | Path, max_age_days: float) -> int:
         except OSError:
             continue
     return removed
+
+
+def prepare_trajectory_dir(run_dir: str | Path, max_age_days: float) -> Path:
+    """Apply retention at the shared query boundary before opening a new log.
+
+    Callers with per-job child directories also prepare their parent run root
+    so expired logs from earlier jobs are included. Zero preserves all logs.
+    """
+    directory = Path(run_dir).resolve()
+    directory.mkdir(parents=True, exist_ok=True)
+    prune_trajectories(directory, max_age_days)
+    return directory

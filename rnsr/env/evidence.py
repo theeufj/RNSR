@@ -14,6 +14,57 @@ from rnsr.db.metadata import decode_table_schema
 from rnsr.db.schema import quote_ident
 
 
+def bind_table_evidence(conn: sqlite3.Connection, report: dict, *, batch: bool = False, check=None) -> dict:
+    """Attach table quality from the parent's source snapshot, never child metadata.
+
+    Calculation and classification proofs bind an exact source table. Ordinary
+    quotes have canonical page spans, so include tables on those pages as
+    conservative candidates rather than asserting an exact table-row binding.
+    """
+    if batch:
+        return {qid: bind_table_evidence(conn, field, check=check)
+                for qid, field in report.items() if isinstance(field, dict)}
+    tables: dict[str, dict] = {}
+
+    def add(table, binding):
+        if check:
+            check()
+        row = conn.execute("SELECT table_name,status FROM manifest_tables WHERE table_name=?",
+                           (table,)).fetchone()
+        tables[table] = {"table": table, "status": row[1] if row else "unknown",
+                         "binding": binding}
+
+    for record in report.get("records") or []:
+        source = record.get("source") if isinstance(record, dict) else None
+        if isinstance(source, dict) and isinstance(source.get("table"), str):
+            add(source["table"], "source")
+    classification = report.get("classification") or {}
+    if isinstance(classification.get("table"), str):
+        add(classification["table"], "source")
+    for quote in report.get("quotes") or []:
+        if not isinstance(quote, dict) or not quote.get("matched"):
+            continue
+        for match in quote.get("matches") or [quote]:
+            if check:
+                check()
+            start, end = match.get("char_start"), match.get("char_end")
+            if not isinstance(start, int) or not isinstance(end, int):
+                continue
+            pages = conn.execute(
+                "SELECT page FROM doc_text WHERE doc_id=? AND char_start<? AND char_end>?",
+                (match.get("doc_id"), end, start))
+            for (page,) in pages:
+                for table, status in conn.execute(
+                    "SELECT table_name,status FROM manifest_tables WHERE doc_id=? AND "
+                    "(page_start IS NULL OR (page_start<=? AND coalesce(page_end,page_start)>=?))",
+                    (match.get("doc_id"), page, page)):
+                    if check:
+                        check()
+                    tables.setdefault(table, {"table": table, "status": status,
+                                              "binding": "quoted_page_candidate"})
+    return {**report, "source_tables": [tables[name] for name in sorted(tables)]}
+
+
 class SourceContext:
     def __init__(self, conn: sqlite3.Connection, doc=None, *, check: Callable[[], None] | None = None):
         self.conn = conn

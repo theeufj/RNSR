@@ -102,6 +102,7 @@ class Governor:
     requests: int = 0
     rate_limit_hits: int = 0
     waited_s: float = 0.0
+    usage: Usage = field(default_factory=Usage)   # process-wide token totals
 
     _window: deque[float] = field(default_factory=deque)
     _cooldown_until: float = 0.0
@@ -117,6 +118,7 @@ class Governor:
     def record(self, usage: Usage) -> None:
         with self._lock:
             self.spent_usd += usage.cost_usd
+            self.usage = self.usage + usage
             self.requests += 1
 
     def note_rate_limit(self) -> None:
@@ -178,6 +180,10 @@ class Governor:
                 "spend_ceiling_usd": self.spend_ceiling_usd,
                 "rate_limit_hits": self.rate_limit_hits,
                 "throttled_s": round(self.waited_s, 2),
+                "input_tokens": self.usage.input_tokens,
+                "output_tokens": self.usage.output_tokens,
+                "cache_read_tokens": self.usage.cache_read_tokens,
+                "cache_write_tokens": self.usage.cache_write_tokens,
             }
 
 

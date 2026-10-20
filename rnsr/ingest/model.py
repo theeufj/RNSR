@@ -74,6 +74,8 @@ class ParsedDocument:
     parent_doc_id: str | None = None
     source_identity: str | None = None
     pending_attachments: list[tuple[str, bytes]] = field(default_factory=list)
+    attachment_failures: list[dict] = field(default_factory=list)
+    untranscribed_pages: list[int] | None = None  # None: no transcription attempted
 
     def page_text(self, page: int) -> str:
         return "\n".join(e.text for e in self.elements if e.page == page and e.text)

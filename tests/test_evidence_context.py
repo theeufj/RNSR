@@ -4,7 +4,7 @@ import sqlite3
 import pytest
 
 from rnsr.db.artifact import CorpusDB
-from rnsr.env.evidence import SourceContext
+from rnsr.env.evidence import SourceContext, bind_table_evidence
 from rnsr.env.lazydoc import LazyDoc
 from rnsr.env.search import Ladder, terms
 from rnsr.env.verify import Verifier
@@ -98,6 +98,62 @@ def test_quote_context_is_from_exact_source_span(scoped_corpus):
         assert not verifier.verify('100', ['Cameras | 100'], doc_id='other')['passed']
     finally:
         verifier.close()
+
+
+def test_quote_tables_are_bound_only_to_their_canonical_pages(scoped_corpus):
+    conn, doc, _ = scoped_corpus
+    verifier = Verifier(doc)
+    try:
+        submitted = verifier.verify('106', ['Cameras | 106'])
+        submitted['source_tables'] = [{'table': 't_report_007', 'status': 'trusted'}]
+        table = bind_table_evidence(conn, submitted)
+        assert table['source_tables'] == [{
+            'table': 't_report_007', 'status': 'unchecked', 'binding': 'quoted_page_candidate'}]
+        prose = bind_table_evidence(conn, verifier.verify('2021', ['Revenue by division, fiscal 2021']))
+        assert prose['source_tables'] == []
+    finally:
+        verifier.close()
+
+
+async def test_parent_final_binds_unchecked_source_table(scoped_corpus):
+    from rnsr.env.sandbox import SandboxedRepl
+    from rnsr.harness.evidence import from_final
+
+    path = scoped_corpus[0].execute('PRAGMA database_list').fetchone()[2]
+    async with SandboxedRepl() as repl:
+        await repl.start(mode='docdb', corpus_db=path)
+        result = await repl.exec_cell("FINAL('106', ['Cameras | 106'])")
+        assert result.ok, result.error
+        evidence = from_final(result.final)
+        assert evidence.cited_tables == ['t_report_007']
+        assert evidence.tier == 'medium'
+        batch = await repl.exec_cell("FINAL_BATCH({'passed': '106', 'quotes': '100'}, "
+                                    "{'passed': ['Cameras | 106'], 'quotes': ['Cameras | 100']})")
+        assert batch.ok, batch.error
+        for qid, table in [('passed', 't_report_007'), ('quotes', 't_report_001')]:
+            field = from_final(batch.final, qid=qid)
+            assert field.cited_tables == [table] and field.tier == 'medium'
+
+
+async def test_live_search_rungs_and_table_quality_survive_replay(scoped_corpus, tmp_path):
+    from rnsr.config import Settings
+    from rnsr.harness.evidence import from_records
+    from rnsr.harness.loop import EnvSpec, RootRunner
+    from rnsr.harness.trajectory import read_trajectory
+    from rnsr.llm.mock import MockLLM
+
+    path = scoped_corpus[0].execute('PRAGMA database_list').fetchone()[2]
+    root = MockLLM().script("```python\nprint(search('Cameras', rung=0, k=1))\n```",
+                            "```python\nFINAL('106', ['Cameras | 106'])\n```")
+    runner = RootRunner(root, 'root', MockLLM(default='COMPLETE'), 'sub',
+                        settings=Settings(claim_review_enabled=False))
+    result = await runner.run('Revenue?', EnvSpec('docdb', corpus_db=path,
+                                                manifest=scoped_corpus[2]), run_dir=tmp_path)
+    assert result.status == 'final' and result.evidence.rungs_used == [0]
+    replay = from_records(read_trajectory(result.trajectory_path))
+    assert replay.rungs_used == result.evidence.rungs_used
+    assert replay.cited_tables == result.evidence.cited_tables == ['t_report_007']
+    assert replay.claim_review_status == 'disabled' and replay.tier == 'medium'
 
 
 def test_repeated_quotes_keep_source_ambiguity_visible():

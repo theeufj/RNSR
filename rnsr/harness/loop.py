@@ -31,17 +31,46 @@ from rnsr.harness.negative_audit import audit_negatives
 from rnsr.harness.prompts.base import (
     render_batch_task,
     render_system,
-    render_transcript,
+    render_transcript_segments,
 )
 from rnsr.harness.recovery import recover_variable
 from rnsr.harness.root_call import complete_root
-from rnsr.harness.trajectory import TrajectoryWriter
-from rnsr.llm.base import LLMClient
+from rnsr.harness.trajectory import TrajectoryWriter, prepare_trajectory_dir
+from rnsr.llm.base import LLMClient, Prompt
 from rnsr.llm.batch import map_prompts
 from rnsr.obs import get_logger, log, metrics
 
 _CODE_BLOCK = re.compile(r"```(?:python|py)?\s*\n(.*?)```", re.DOTALL)
+# Reply shapes that carry a runnable cell without a complete fence.
+_XML_CODE_PARAM = re.compile(
+    r'<(?:\w+:)?parameter\s+name="(?:code|python|py)">\s*\n?(.*?)(?:</(?:\w+:)?parameter>|\Z)',
+    re.DOTALL)
+# A line that is only a fence, or only an XML-ish tag, is never valid Python
+# on its own (a bare `<x>` is a syntax error), so dropping it cannot change
+# the meaning of code around it.
+_JUNK_LINE = re.compile(r"^\s*(```.*|</?[A-Za-z_][\w.:-]*(\s[^<>]*)?/?>)\s*$")
+_PROSE_LINES = 4
 _OBSERVATION_LIMIT = 4000
+
+
+def _strip_junk_lines(text: str) -> str:
+    return "\n".join(line for line in text.strip().splitlines()
+                     if not _JUNK_LINE.match(line)).strip()
+
+
+def _parses_as_statements(code: str) -> bool:
+    """Whether text is executable code rather than prose that happens to parse.
+
+    Bare prose can parse as an identifier or a quoted string; only replies
+    containing statements/calls run, never expression-only ambiguity.
+    """
+    try:
+        tree = ast.parse(code)
+    except SyntaxError:
+        return False
+    return bool(tree.body) and not any(
+        isinstance(node, ast.Expr) and isinstance(node.value, (ast.Name, ast.Constant))
+        for node in tree.body)
 
 _LOG = get_logger("harness.loop")
 
@@ -195,6 +224,22 @@ def scale_budgets(s: Settings, n_questions: int) -> Settings:
 
 
 
+def _field_supported(record: dict) -> bool:
+    return record.get("status") == "reviewed" and record.get("verdict") == "supported"
+
+
+def _review_halt_reason(s: Settings, rounds: int, stalls: int) -> str | None:
+    """Why the review loop should stop resubmitting, or None to continue.
+
+    Zero on either setting disables that cap (the legacy unbounded loop).
+    """
+    if s.claim_review_max_stalls and stalls >= s.claim_review_max_stalls:
+        return "review_stalled"
+    if s.claim_review_max_rounds and rounds >= s.claim_review_max_rounds:
+        return "review_rounds_exhausted"
+    return None
+
+
 _coerce_batch = coerce_batch
 _is_negative = is_negative  # historical import compatibility
 
@@ -212,23 +257,41 @@ class RootRunner:
     embed_model: str = ""
 
     def _extract_code(self, text: str) -> str | None:
+        """The code cell in a root reply, or None when there is none.
+
+        Complete fenced blocks win. Otherwise the reply is salvaged: Sonnet
+        5.5 was seen (85 of 610 calls in one benchmark, each a wasted
+        full-context call) dropping the opening fence, emitting the cell as
+        an XML tool call, leaving stray tags such as ``</reasoning_effort>``
+        inside valid code, or wrapping the cell in a line of prose on either
+        side. A reply only runs when what remains parses as statements.
+        """
         blocks = _CODE_BLOCK.findall(text)
         if blocks:
             return "\n\n".join(b.strip() for b in blocks)
-        stripped = text.strip()
-        try:
-            tree = ast.parse(stripped)
-        except SyntaxError:
-            return None
-        # Bare prose can parse as an identifier or a quoted string. Execute
-        # statements/calls, never those ambiguous expression-only replies.
-        if not tree.body or any(isinstance(node, ast.Expr) and
-                                isinstance(node.value, (ast.Name, ast.Constant))
-                                for node in tree.body):
-            return None
-        return stripped
+        invoked = _XML_CODE_PARAM.findall(text)
+        if invoked:
+            # The same cell may be emitted twice; fences may sit inside.
+            cells = list(dict.fromkeys(_strip_junk_lines(b) for b in invoked))
+            code = "\n\n".join(c for c in cells if c)
+            if _parses_as_statements(code):
+                return code
+        lines = _strip_junk_lines(text).splitlines()
+        # A lost opening fence leaves a bare language marker line; a lost
+        # closing fence is already gone with the fence lines above.
+        if lines and lines[0].strip().lower() in ("python", "py"):
+            lines = lines[1:]
+        # Drop up to a few lines of prose from either end until it parses.
+        n = len(lines)
+        for head in range(0, min(_PROSE_LINES, n) + 1):
+            for tail in range(0, min(_PROSE_LINES, n - head) + 1):
+                candidate = "\n".join(lines[head:n - tail]).strip()
+                if candidate and _parses_as_statements(candidate):
+                    return candidate
+        return None
 
-    def _rpc_handlers(self, ledger: BudgetLedger, trajectory: TrajectoryWriter) -> dict:
+    def _rpc_handlers(self, ledger: BudgetLedger, trajectory: TrajectoryWriter,
+                      rungs_used: list[int] | None = None) -> dict:
         async def llm_batch(request: dict) -> dict:
             prompts = request["prompts"]
             requested_model = request.get("model", "sub")
@@ -254,9 +317,13 @@ class RootRunner:
                 request_timeout_s=self.settings.root_timeout_s,
                 raise_permanent_errors=ledger.uncapped,
             )
+            used = [r.usage for r in responses if r]
             trajectory.event("sub_batch", n=len(prompts),
                              failed=sum(r is None for r in responses),
-                             model_role=role, resolved_model=resolved_model)
+                             model_role=role, resolved_model=resolved_model,
+                             input_tokens=sum(u.input_tokens for u in used),
+                             output_tokens=sum(u.output_tokens for u in used),
+                             cost_usd=round(sum(u.cost_usd for u in used), 6))
             return {
                 "results": [r.text if r else "" for r in responses],
                 "response_metadata": [
@@ -269,7 +336,10 @@ class RootRunner:
 
         async def log(request: dict) -> dict:
             data = {k: v for k, v in request.items() if k not in ("kind", "op", "event")}
-            trajectory.event(request.get("event", "env_log"), **data)
+            event = request.get("event", "env_log")
+            if event == "search_rung" and rungs_used is not None and type(data.get("rung")) is int:
+                rungs_used.append(data["rung"])
+            trajectory.event(event, **data)
             return {}
 
         async def embed(request: dict) -> dict:
@@ -297,11 +367,13 @@ class RootRunner:
             await _validate_metric_contract(env, s.cell_timeout_s)
         ledger = BudgetLedger.from_settings(s)
         query_id = query_id or uuid.uuid4().hex[:12]
-        trajectory = TrajectoryWriter(run_dir or s.run_dir, query_id,
+        trajectory_dir = prepare_trajectory_dir(run_dir or s.run_dir, s.trajectory_retention_days)
+        trajectory = TrajectoryWriter(trajectory_dir, query_id,
                                       content=s.trajectory_content,
                                       key=s.trajectory_key)
         trajectory.event("start", question=question, mode=env.mode,
-                         root_model=self.root_model, sub_model=self.sub_model)
+                         root_model=self.root_model, sub_model=self.sub_model,
+                         claim_review_enabled=s.claim_review_enabled)
         log(_LOG, logging.INFO, "query.start", query_id=query_id, mode=env.mode,
             root_model=self.root_model,
             batch_size=len(batch_qids) if batch_qids else 1)
@@ -319,7 +391,8 @@ class RootRunner:
                           "root": f"{getattr(self.root_client, 'provider', 'unknown')}:{self.root_model}",
                           "sub": f"{getattr(self.sub_client, 'provider', 'unknown')}:{self.sub_model}",
                       }}
-        sandbox = SandboxedRepl(rpc_handlers=self._rpc_handlers(ledger, trajectory),
+        rungs_used: list[int] = []
+        sandbox = SandboxedRepl(rpc_handlers=self._rpc_handlers(ledger, trajectory, rungs_used),
                                 fs_guard=s.sandbox_fs_guard)
         turns: list[tuple[str, str]] = []
         final: dict | None = None
@@ -330,6 +403,8 @@ class RootRunner:
         negatives_audited = False
         budget_warned = False
         pushbacks = 0
+        review_rounds = 0      # rejected claim reviews so far
+        review_stalls = 0      # rejections where every open field was already adjudicated, unchanged
         negative_audit = "none"
         health_grade = ((env.manifest or {}).get("health") or {}).get("grade")
         claim_gate = ReviewGate()
@@ -344,6 +419,10 @@ class RootRunner:
                 budget_warned=budget_warned,
                 health_grade=health_grade,
                 qid=extra.get("qid"),
+                rungs_used=list(dict.fromkeys(rungs_used)),
+                claim_review_status=("not_applicable" if env.mode != "docdb" else
+                                     "disabled" if not s.claim_review_enabled else None),
+                claim_review_required=env.mode == "docdb",
             )
 
         def _recovered_result(candidate: dict | None, cap: str) -> QueryResult:
@@ -377,7 +456,7 @@ class RootRunner:
 
                 final_hint = ("FINAL_BATCH({...}) with every question id"
                               if batch_qids else "FINAL(...)/FINAL_VAR(...)")
-                prompt = render_transcript(question, turns, final_hint=final_hint)
+                prompt = render_transcript_segments(question, turns, final_hint=final_hint)
                 resp = await self._root_complete(prompt, system, ledger, trajectory)
                 if resp is None:   # provider unreachable — salvage what exists
                     trajectory.event("budget_breached", cap="root_timeout",
@@ -515,9 +594,38 @@ class RootRunner:
                                          fields=review["fields"], reply=review["reply"])
                         if not review["supported"]:
                             pushbacks += 1
-                            turns.append((code, observation + "\n" +
-                                          repair_instruction(review, review_questions)))
-                            continue
+                            review_rounds += 1
+                            open_fields = [(i, f) for i, f in enumerate(review["fields"])
+                                           if not _field_supported(f)]
+                            # A stall: the root resubmitted claims the independent
+                            # adjudication already rejected, with no new evidence.
+                            if open_fields and all(f.get("cached") and f.get("phase") == "adjudication"
+                                                   for _, f in open_fields):
+                                review_stalls += 1
+                            halt = _review_halt_reason(s, review_rounds, review_stalls)
+                            if halt is None:
+                                turns.append((code, observation + "\n" +
+                                              repair_instruction(review, review_questions)))
+                                continue
+                            # Another round would be one more full-context root
+                            # call towards the same objection. Finalise with the
+                            # contested fields marked unresolved: they surface as
+                            # low tier and route to review instead of burning the
+                            # remaining budget (then falling back to solo runs).
+                            unresolved = [review_questions[i][0] for i, _ in open_fields
+                                          if i < len(review_questions)]
+                            trajectory.event("claim_review_halted", reason_code=halt,
+                                             rounds=review_rounds, stalls=review_stalls,
+                                             unresolved=unresolved)
+                            log(_LOG, logging.WARNING, "claim_review.halted",
+                                query_id=query_id, reason_code=halt, rounds=review_rounds,
+                                unresolved=len(unresolved))
+                            metrics().incr("claim_review_halts", reason=halt)
+                            final = {**cell.final, "claim_review": {
+                                "status": "partial", "scope": "provided_verified_evidence_only",
+                                "fields": review["fields"], "reason_code": halt,
+                                "rounds": review_rounds, "unresolved": unresolved}}
+                            break
                         final = {**cell.final, "claim_review": {
                             "status": "supported", "scope": "provided_verified_evidence_only",
                             "fields": review["fields"]}}
@@ -612,6 +720,9 @@ class RootRunner:
                 negative_audit=parent.negative_audit if parent else "none",
                 budget_warned=parent.budget_warned if parent else False,
                 health_grade=parent.health_grade if parent else None,
+                rungs_used=parent.rungs_used if parent else None,
+                claim_review_status=parent.claim_review_status if parent else None,
+                claim_review_required=parent.claim_review_required if parent else env.mode == "docdb",
                 agreement=None,
             )
         return BatchQueryResult(answers=answers, result=result, evidence=evidence)
@@ -674,12 +785,7 @@ class RootRunner:
                            if _vote_key(pr.answers.get(qid)) == best_key), None)
             ev = (winner.evidence.get(qid) if winner else None)
             if ev is not None:
-                ev = from_final(
-                    {"value": chosen, "is_var": False,
-                     "verification": (winner.result.final or {}).get("verification")},
-                    status=winner.result.status, qid=qid,
-                    pushbacks=ev.pushbacks, negative_audit=ev.negative_audit,
-                    budget_warned=ev.budget_warned, health_grade=ev.health_grade,
+                ev = replace(ev,
                     agreement=agreement, resolved_by=resolved, votes=votes,
                 )
             answers[qid] = ConsensusAnswer(value=chosen, resolved_by=resolved,
@@ -708,12 +814,7 @@ class RootRunner:
                 prior = answers[qid]
                 tb_ev = result.evidence
                 if tb_ev is not None:
-                    tb_ev = from_final(
-                        result.final, status=result.status,
-                        pushbacks=tb_ev.pushbacks,
-                        negative_audit=tb_ev.negative_audit,
-                        budget_warned=tb_ev.budget_warned,
-                        health_grade=tb_ev.health_grade,
+                    tb_ev = replace(tb_ev,
                         agreement=prior.agreement,
                         resolved_by="tiebreak" if text else "unresolved",
                         votes=[*prior.votes, text or None],
@@ -750,7 +851,7 @@ class RootRunner:
                     "the corpus truly lacks the answer).")
         return None
 
-    async def _root_complete(self, prompt: str, system: str,
+    async def _root_complete(self, prompt: Prompt, system: str,
                              ledger: BudgetLedger, trajectory) -> object | None:
         """Bound queueing and provider retries while reserving recovery time."""
         return await complete_root(
@@ -826,7 +927,9 @@ class RootRunner:
                 breached: str | None = None,
                 evidence: AnswerEvidence | None = None) -> QueryResult:
         snapshot = ledger.snapshot()
-        trajectory.event("end", status=status, **snapshot)
+        if evidence is None:
+            evidence = from_final(final, status=status)
+        trajectory.event("end", status=status, evidence=evidence.to_dict(), **snapshot)
         # .jsonl or .jsonl.enc, depending on trajectory encryption
         query_id = Path(trajectory.path).name.split(".", 1)[0]
         level = logging.INFO if status in ("final", "recovered") else logging.WARNING
@@ -838,8 +941,6 @@ class RootRunner:
         m.observe("query_latency_s", snapshot["wall_s"])
         m.observe("query_spend_usd", snapshot["spend_usd"])
         m.observe("root_iters", snapshot["root_iters"])
-        if evidence is None:
-            evidence = from_final(final, status=status)
         return QueryResult(
             answer=final.get("value") if final else None,
             status=status,

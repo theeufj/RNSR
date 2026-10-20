@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import json
 
+from rnsr.llm.base import PromptSegments
+
 _SHARED = """\
 You are solving a task by writing Python code cells in a persistent REPL.
 Rules:
@@ -297,21 +299,28 @@ def render_system(mode: str, *, manifest: dict | None = None,
     return "\n".join(parts)
 
 
+def render_transcript_segments(question: str, turns: list[tuple[str, str]], *,
+                               final_hint: str = "FINAL(...)/FINAL_VAR(...)") -> PromptSegments:
+    """Render the running conversation as cache-friendly prompt segments.
+
+    turns: (code, observation) pairs from prior iterations. The task and each
+    completed turn are stable blocks (a turn never changes once appended), so
+    a provider with prefix caching re-reads them instead of re-billing them
+    every iteration; the closing instruction is the per-call tail.
+    """
+    stable = [f"TASK:\n{question}\n"]
+    for i, (code, observation) in enumerate(turns, 1):
+        stable.append(f"--- cell [{i}] ---\n```python\n{code}\n```\n"
+                      f"--- output [{i}] ---\n{observation}")
+    tail = ("Write the next python code cell (one fenced block). "
+            f"Call {final_hint} when done.")
+    return PromptSegments(tuple(stable), tail)
+
+
 def render_transcript(question: str, turns: list[tuple[str, str]], *,
                       final_hint: str = "FINAL(...)/FINAL_VAR(...)") -> str:
-    """Render the running conversation as a single prompt.
-
-    turns: (code, observation) pairs from prior iterations.
-    """
-    parts = [f"TASK:\n{question}\n"]
-    for i, (code, observation) in enumerate(turns, 1):
-        parts.append(f"--- cell [{i}] ---\n```python\n{code}\n```")
-        parts.append(f"--- output [{i}] ---\n{observation}")
-    parts.append(
-        "Write the next python code cell (one fenced block). "
-        f"Call {final_hint} when done."
-    )
-    return "\n".join(parts)
+    """Flat form of render_transcript_segments (identical text)."""
+    return render_transcript_segments(question, turns, final_hint=final_hint).text()
 
 
 _BATCH_TASK = """\

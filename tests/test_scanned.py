@@ -36,6 +36,19 @@ class TestParseTranscription:
         t = _parse_transcription('{"blocks": [{"kind": "text", "text": "x"}]}')
         assert t["tables"] == []
 
+    def test_text_blocks_misplaced_in_tables_are_relocated(self):
+        payload = json.dumps({
+            "blocks": [{"kind": "heading", "text": "PAYSLIP"}],
+            "tables": [
+                {"header": ["Description", "Amount"], "rows": [["Gross pay", "3,880.80"]]},
+                {"kind": "text", "text": "Annual leave balance: 96.4 hours"},
+            ],
+        })
+        t = _parse_transcription(payload)
+        assert t is not None
+        assert [b["text"] for b in t["blocks"]] == ["PAYSLIP", "Annual leave balance: 96.4 hours"]
+        assert len(t["tables"]) == 1 and t["tables"][0]["header"] == ["Description", "Amount"]
+
 
 class TestTableTranscription:
     def test_table_only_page_retains_canonical_text(self, tmp_path):

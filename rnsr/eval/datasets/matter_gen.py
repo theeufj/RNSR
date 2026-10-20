@@ -261,6 +261,7 @@ def generate_matter(out_dir: str | Path, *, n_filler: int = 32,
     return [
         EvalItem(qid=f"matter-{seed}-{i:02d}", question=q, gold=gold,
                  task_class=cls, sources=list(sources),
+                 expect="absent" if cls == "absent" and gold == "No" else "value",
                  meta={"n_docs": len(sources)})
         for i, (cls, q, gold) in enumerate(qs)
     ]

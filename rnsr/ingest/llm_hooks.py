@@ -158,9 +158,19 @@ def _parse_transcription(text: str) -> dict | None:
     if not isinstance(obj, dict) or not isinstance(obj.get("blocks"), list):
         return None
     obj.setdefault("tables", [])
-    if (not isinstance(obj["tables"], list)
-            or any(not isinstance(block, dict) or not isinstance(block.get("text"), str)
-                   for block in obj["blocks"])):
+    if not isinstance(obj["tables"], list):
+        return None
+    # Models sometimes continue listing text blocks inside "tables" after a
+    # real table. A text-shaped entry there is a misplaced block, not a
+    # malformed table; keep the page rather than discarding its transcription.
+    misplaced = [t for t in obj["tables"]
+                 if isinstance(t, dict) and isinstance(t.get("text"), str)
+                 and "header" not in t and "rows" not in t]
+    if misplaced:
+        obj["tables"] = [t for t in obj["tables"] if t not in misplaced]
+        obj["blocks"] = list(obj["blocks"]) + misplaced
+    if any(not isinstance(block, dict) or not isinstance(block.get("text"), str)
+           for block in obj["blocks"]):
         return None
     for table in obj["tables"]:
         if (not isinstance(table, dict) or not isinstance(table.get("header"), list)

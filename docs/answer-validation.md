@@ -12,7 +12,16 @@ real quotations; a second approval alone cannot clear it. Question-derived check
 distinguish price restrictions from royalty terms, unlimited rights from fee
 waivers, and directional financial answers from requests for precise amounts.
 A failed reviewer call does not certify support. Changed evidence can be
-reviewed again; the gate does not add an overall iteration, time, or spend cap.
+reviewed again. The gate itself adds no iteration, time, or spend cap, but
+the loop around it does stop a cycle that is no longer producing evidence:
+once the root resubmits claims the adjudication already rejected, unchanged
+(`RNSR_CLAIM_REVIEW_MAX_STALLS`, default 1), or after
+`RNSR_CLAIM_REVIEW_MAX_ROUNDS` rejected reviews (default 6), the answer is
+finalised with the contested fields `unverified` (low tier, routed to
+review) and a `claim_review_halted` event. Each extra round is a full-context
+root call; live, one batch spent $3 on 21 identical rejections of a correct
+NOT_FOUND before the spend cap ended it. Zero on both settings restores the
+unbounded loop.
 Review is itself model judgment, so its false approvals and false rejections
 must be measured. The explicit configuration switch remains available for
 controlled comparisons and applications that provide their own review.

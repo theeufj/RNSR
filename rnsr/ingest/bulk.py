@@ -25,6 +25,7 @@ from rnsr.ingest.expand import expand_document
 from rnsr.ingest.fast_parse import parse_pdf_fast, stat_identity
 from rnsr.ingest.manifest import write_corpus_manifest
 from rnsr.ingest.model import ParsedDocument
+from rnsr.ingest.outcomes import ensure_outcomes, failures, record_failure
 from rnsr.ingest.transcription import merge_transcriptions
 from rnsr.ingest.writer import write_document
 
@@ -64,7 +65,13 @@ def ingest_bulk(
     if out_db.exists():
         with CorpusDB(out_db) as existing:
             schema.validate_frozen(existing.conn)
-        return {"resumed": False, "already_complete": True, "out_db": str(out_db)}
+            from rnsr.ingest.health import load_health
+
+            health = load_health(existing, config)
+            parse_failures = failures(existing.conn)
+        return {"resumed": False, "already_complete": True, "out_db": str(out_db),
+                "parse_failed": health.parse_failed, "parse_failures": parse_failures,
+                "scanned_pages_untranscribed": health.scanned_pages_untranscribed}
 
     tmp = out_db.with_suffix(out_db.suffix + ".ingesting")
     fresh = not tmp.exists()
@@ -78,6 +85,8 @@ def ingest_bulk(
             raise RuntimeError(f"Ingest resume artifact format {version} is unsupported; "
                                "migrate or rebuild the temporary artifact")
         finalized = _is_finalized(conn)
+        if not finalized:
+            ensure_outcomes(conn)
 
         done_identities: set[str] = set()
         seen_ids: set[str] = set()
@@ -144,6 +153,8 @@ def ingest_bulk(
                             _accept(src, fut.result())
                         except Exception as e:
                             n_failed += 1
+                            record_failure(conn, {"source": str(src),
+                                                  "error": f"{type(e).__name__}: {e}"[:300]})
                             progress(f"PARSE FAILED {src.name}: "
                                      f"{type(e).__name__}: {e}")
             else:
@@ -152,6 +163,8 @@ def ingest_bulk(
                         _accept(src, parse(src))
                     except Exception as e:
                         n_failed += 1
+                        record_failure(conn, {"source": str(src),
+                                              "error": f"{type(e).__name__}: {e}"[:300]})
                         progress(f"PARSE FAILED {src.name}: {type(e).__name__}: {e}")
 
             n_scanned_total = sum(len(p.scanned_pages) for _, family in parsed_ok for p in family)
@@ -199,14 +212,27 @@ def ingest_bulk(
                 schema.finalize_corpus(corpus.conn)
                 corpus.conn.commit()
                 schema.checkpoint_for_publish(corpus.conn)
+                health = corpus.manifest_get("health")
+                n_failed = health["parse_failed"]
+                n_scanned_gap = health["scanned_pages_untranscribed"]
+                parse_failures = failures(corpus.conn)
 
         else:
+            parse_failures = failures(conn)
+            health = conn.execute("SELECT value FROM manifest WHERE key='health'").fetchone()
+            if health:
+                import json
+
+                stored_health = json.loads(health[0])
+                n_failed = stored_health.get("parse_failed", 0)
+                n_scanned_gap = stored_health.get("scanned_pages_untranscribed", 0)
             schema.checkpoint_for_publish(conn)
             conn.close()
 
         tmp.rename(out_db)
         return {"resumed": not fresh, "new_docs": n_new, "skipped": n_skipped,
                 "parse_failed": n_failed,
+                "parse_failures": parse_failures,
                 "scanned_pages_untranscribed": n_scanned_gap,
                 "out_db": str(out_db)}
     except BaseException:

@@ -46,6 +46,17 @@ class Settings:
     # receive evidence-specific repair instructions; zero query caps stay unlimited.
     # False retains the legacy lexical-only acceptance path for controlled studies.
     claim_review_enabled: bool = True
+    # Circuit breaker for the review loop. Every rejected review sends the
+    # draft back to the root for another full-context call, and a reviewer
+    # that keeps returning the same objection to unchanged evidence can run
+    # that cycle until the spend cap (seen live: 21 identical rejections,
+    # $3 on one batch, for NOT_FOUND answers that were correct). The loop
+    # finalises with the contested fields marked unresolved (low tier) after
+    # `claim_review_max_stalls` resubmissions whose unsupported fields were
+    # all already-adjudicated, unchanged claims, or after
+    # `claim_review_max_rounds` rejected reviews in total. 0 disables a cap.
+    claim_review_max_stalls: int = 1
+    claim_review_max_rounds: int = 6
 
     # --- run-level provider governance (rnsr.llm.governor) ---
     # Optional budgets above cap ONE query; these cap the run. 0 disables a limit.
@@ -145,10 +156,38 @@ class Settings:
                 raise ValueError(f"{name} must be between 0 and 1")
 
     @classmethod
+    def production(cls, **overrides) -> Settings:
+        """A bounded deployment preset; explicit overrides remain authoritative.
+
+        Caps are starting points to tune for the workload. They bound a query
+        (scaled for batches) and the process lifetime, not a monthly account bill.
+        Redacted trajectories retain operational events for thirty days.
+        Encryption remains an explicit key-management choice.
+        """
+        values = {
+            "max_root_iters": 32,
+            "max_sub_calls": 128,
+            "max_wall_s": 600.0,
+            "max_spend_usd": 2.0,
+            "max_in_flight_requests": 8,
+            "max_requests_per_minute": 120,
+            "run_spend_ceiling_usd": 25.0,
+            "sub_concurrency": 8,
+            "trajectory_content": "redacted",
+            "trajectory_retention_days": 30.0,
+            "service_max_jobs": 50,
+            "log_format": "json",
+        }
+        values.update(overrides)
+        return cls(**values)
+
+    @classmethod
     def from_env(cls, dotenv_path: str | Path | None = None) -> Settings:
         """Build Settings from environment, loading .env if present.
 
         Fields map to RNSR_<UPPER_NAME> using their resolved type annotations.
+        RNSR_PROFILE=production selects the bounded preset before field overrides;
+        the default research profile preserves the unlimited query defaults.
         LLM_PROVIDER is deprecated and will be removed in version 2.0.
         """
         load_dotenv(dotenv_path or Path(".env"), override=False)
@@ -166,4 +205,6 @@ class Settings:
                               "Compatibility ends in version 2.0.",
                               DeprecationWarning, stacklevel=2)
                 kwargs["provider"] = legacy
-        return cls(**kwargs)
+        profile = TypeAdapter(Literal["research", "production"]).validate_python(
+            os.environ.get("RNSR_PROFILE") or "research")
+        return cls.production(**kwargs) if profile == "production" else cls(**kwargs)

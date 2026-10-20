@@ -5,11 +5,12 @@ parse a CSV, and nothing could report whether the process was healthy. This
 module adds the smallest surface that makes rnsr operable as a service:
 
     GET  /healthz      process is up (liveness)
-    GET  /readyz       a provider key resolves and the corpus is readable
+    GET  /readyz       configured root/sub roles resolve locally; storage is ready
     GET  /metrics      counters, percentiles, provider spend
     POST /jobs         submit questions; returns a job id immediately
     GET  /jobs/{id}    status, answers, per-field agreement
     GET  /jobs         recent jobs
+    GET  /jobs/{id}/audit/{ref}    operational trajectory events (authorized)
 
 Deliberately single-node: jobs live in this process's memory and run as
 asyncio tasks. That is honest about what it is — a service wrapper around
@@ -27,6 +28,8 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import math
+import os
 import secrets
 import time
 import uuid
@@ -61,6 +64,11 @@ class JobResult(BaseModel):
     agreement: float | None
     tier: str | None
     contested: bool
+    evidence: dict[str, Any] | None = None
+    citations: list[dict[str, Any]] = Field(default_factory=list)
+    health: dict[str, Any] | None = None
+    claim_review: dict[str, Any] | None = None
+    audit_refs: list[str] = Field(default_factory=list)
 
 
 class JobSummary(BaseModel):
@@ -92,6 +100,14 @@ class ReadyResponse(BaseModel):
     status: str
     providers: list[str]
     run_dir_writable: bool
+    roles: dict[str, str]
+    corpus_root_readable: bool
+
+
+class AuditResponse(BaseModel):
+    reference: str
+    content: Literal["metadata"] = "metadata"
+    events: list[dict[str, Any]]
 
 
 class MetricsResponse(BaseModel):
@@ -116,6 +132,12 @@ class Job:
     agreement: list[float | None] = field(default_factory=list)
     tiers: list[str | None] = field(default_factory=list)
     contested: list[bool] = field(default_factory=list)
+    evidence: list[dict | None] = field(default_factory=list)
+    citations: list[list[dict]] = field(default_factory=list)
+    health: list[dict | None] = field(default_factory=list)
+    claim_review: list[dict | None] = field(default_factory=list)
+    audit_refs: list[list[str]] = field(default_factory=list)
+    audit_paths: dict[str, Path] = field(default_factory=dict, repr=False)
     error: str | None = None
 
 
@@ -130,11 +152,18 @@ def job_response(job: Job) -> JobResponse:
     results = None
     if job.state == "done":
         results = [JobResult(question=q, answer=a, status=s, agreement=g,
-                             tier=t, contested=c)
-                   for q, a, s, g, t, c in zip(
+                             tier=t, contested=c, evidence=_public_data(ev),
+                             citations=_public_data(citations), health=_public_data(health),
+                             claim_review=_public_data(review), audit_refs=refs)
+                   for q, a, s, g, t, c, ev, citations, health, review, refs in zip(
                        job.questions, job.answers, job.statuses, job.agreement,
                        job.tiers or [None] * len(job.questions),
-                       job.contested or [False] * len(job.questions), strict=True)]
+                       job.contested or [False] * len(job.questions),
+                       job.evidence or [None] * len(job.questions),
+                       job.citations or [[] for _ in job.questions],
+                       job.health or [None] * len(job.questions),
+                       job.claim_review or [None] * len(job.questions),
+                       job.audit_refs or [[] for _ in job.questions], strict=True)]
     return JobResponse(**job_summary(job).model_dump(), error=job.error, results=results)
 
 
@@ -174,12 +203,14 @@ class JobStore:
 
 async def run_job(job: Job, settings: Settings, run_dir: Path) -> None:
     """Answer a job's questions with the same runner the CLI uses."""
+    from rnsr.harness.trajectory import prepare_trajectory_dir
     from rnsr.sdk import answer_batch
 
     job.state, job.started_at = "running", time.time()
     log(_LOG, logging.INFO, "job.start", job_id=job.id,
         questions=len(job.questions), consensus=job.consensus)
     try:
+        run_dir = prepare_trajectory_dir(run_dir, settings.trajectory_retention_days)
         results = await answer_batch(
             job.questions, job.corpus_db,
             batch_size=job.batch_size, consensus=job.consensus,
@@ -192,6 +223,24 @@ async def run_job(job: Job, settings: Settings, run_dir: Path) -> None:
         job.agreement = [r.agreement for r in results]
         job.tiers = [r.tier for r in results]
         job.contested = [r.contested for r in results]
+        job.evidence = [r.evidence for r in results]
+        job.citations = [r.citations for r in results]
+        job.health = [r.health for r in results]
+        job.claim_review = [r.claim_review for r in results]
+        job_root = (run_dir / job.id).resolve()
+        references: dict[Path, str] = {}
+        for result in results:
+            refs = []
+            for raw_path in result.trajectory_paths:
+                path = Path(raw_path).resolve()
+                if not path.is_relative_to(job_root) or not path.is_file():
+                    continue
+                if path not in references:
+                    audit_id = uuid.uuid4().hex
+                    references[path] = f"/jobs/{job.id}/audit/{audit_id}"
+                    job.audit_paths[audit_id] = path
+                refs.append(references[path])
+            job.audit_refs.append(list(dict.fromkeys(refs)))
         job.state = "done"
         metrics().incr("jobs_finished", state="done")
     except Exception as e:
@@ -242,11 +291,27 @@ def create_app(settings: Settings | None = None, *,
 
     @app.get("/readyz", dependencies=protected)
     async def readyz() -> ReadyResponse:
-        from rnsr.llm.router import available_providers
+        from rnsr.llm.router import Router, available_providers
 
         providers = available_providers()
-        checks = {"providers": providers, "run_dir_writable": _writable(run_dir)}
-        ready = bool(providers) and checks["run_dir_writable"]
+        roles = {}
+        try:
+            router = Router(settings)
+            if router.provider not in providers:
+                raise RuntimeError("configured provider key unavailable")
+            for role in ("root", "sub"):
+                resolved = router.resolve(role)  # constructs clients; makes no request
+                if getattr(resolved.client, "provider", router.provider) not in providers:
+                    raise RuntimeError("configured role provider key unavailable")
+                roles[role] = resolved.model
+        except Exception:
+            # Provider errors can include credentials or host details. Readiness
+            # reports only which local role configurations were validated.
+            pass
+        checks = {"providers": providers, "roles": roles,
+                  "run_dir_writable": _writable(run_dir),
+                  "corpus_root_readable": _readable(corpus_root)}
+        ready = len(roles) == 2 and checks["run_dir_writable"] and checks["corpus_root_readable"]
         if not ready:
             raise HTTPException(status_code=503,
                                 detail={"status": "not ready", **checks})
@@ -292,9 +357,82 @@ def create_app(settings: Settings | None = None, *,
             raise HTTPException(status_code=404, detail="no such job")
         return job_response(job)
 
+    @app.get("/jobs/{job_id}/audit/{audit_id}", dependencies=protected)
+    async def get_audit(job_id: str, audit_id: str) -> AuditResponse:
+        from rnsr.harness.trajectory import read_trajectory
+
+        job = store.get(job_id)
+        path = job.audit_paths.get(audit_id) if job else None
+        job_root = (run_dir / job_id).resolve()
+        if (path is None or not path.resolve().is_relative_to(job_root)
+                or not path.is_file()):
+            raise HTTPException(status_code=404, detail="no such audit record")
+        try:
+            records = read_trajectory(path, settings.trajectory_key if path.name.endswith(".enc") else "")
+        except Exception as exc:
+            raise HTTPException(status_code=503, detail="audit record unavailable") from exc
+        # Citations/support signals accompany results. The HTTP trajectory view
+        # is an operational timeline, even when local research logs retain full
+        # text, so code/errors/source paths cannot leak through this endpoint.
+        return AuditResponse(reference=f"/jobs/{job_id}/audit/{audit_id}",
+                             events=[_audit_metadata(record) for record in records])
+
     app.state.store = store
     app.state.settings = settings
     return app
+
+
+def _public_data(value):
+    """Drop filesystem locations from nested source contexts and review metadata."""
+    if isinstance(value, dict):
+        return {key: _public_data(item) for key, item in value.items()
+                if key not in ("path", "paths", "corpus_db")
+                and (key in ("heading_path", "heading_paths")
+                     or not key.endswith(("_path", "_paths")))}
+    if isinstance(value, list):
+        return [_public_data(item) for item in value]
+    return value
+
+
+def _audit_metadata(record: dict) -> dict:
+    # Child log RPCs are untrusted, including values under operational names.
+    # Enumerations and exact scalar types keep a forged phase/status/count from
+    # smuggling client content or host paths into the public timeline.
+    enums = {
+        "kind": {"start", "end", "cell", "sub_batch", "embed_batch", "search_rung",
+                 "negative_audit", "claim_review", "claim_review_decision", "root_call_started",
+                 "root_call_completed", "root_call_failed", "unverified_recovery", "budget_breached",
+                 "no_code", "sandbox_restarted", "final_observation_review", "completeness_pushback",
+                 "budget_warning", "damping", "final", "error", "recovery", "env_log"},
+        "status": {"final", "recovered", "budget_exhausted", "error", "reviewed",
+                   "completed", "skipped", "supported", "unverified", "disabled", "not_applicable"},
+        "mode": {"docdb", "classic"},
+        "phase": {"queue", "provider", "review", "adjudication"},
+        "timeout_scope": {"overall", "request"},
+    }
+    numbers = {"t", "timeout_s", "elapsed_s", "queue_wait_s", "spend_usd", "wall_s"}
+    counts = {"attempt", "iterations", "root_iters", "sub_calls", "n", "failed", "rpc_count",
+              "rung", "batch_size", "input_tokens", "output_tokens"}
+    flags = {"retryable", "ok", "supported"}
+    out = {}
+    for key, item in record.items():
+        valid = ((key in enums and isinstance(item, str) and item in enums[key])
+                 or (key in numbers and type(item) in (int, float) and math.isfinite(item) and item >= 0)
+                 or (key in counts and type(item) is int and item >= 0)
+                 or (key in flags and type(item) is bool))
+        if valid:
+            out[key] = item
+    out.setdefault("kind", "env_log")
+    return out
+
+
+def _readable(path: Path) -> bool:
+    try:
+        with os.scandir(path) as entries:
+            next(entries, None)
+        return True
+    except OSError:
+        return False
 
 
 def _writable(path: Path) -> bool:

@@ -105,3 +105,6 @@ test-documents/
 matterAiTests/
 # rnsr run artifacts
 runs/
+
+# Packaged copies of benchmark matters (the extracted directories are tracked)
+testMatter/matters/*.zip

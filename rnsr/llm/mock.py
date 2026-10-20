@@ -6,7 +6,7 @@ import asyncio
 import re
 from dataclasses import dataclass, field
 
-from rnsr.llm.base import LLMResponse, Usage
+from rnsr.llm.base import LLMResponse, Usage, prompt_text
 
 
 @dataclass
@@ -54,6 +54,7 @@ class MockLLM:
 
     async def complete(self, prompt, *, model="mock-model", system=None,
                        max_tokens=4096, temperature=0.0, seed=None):
+        prompt = prompt_text(prompt)
         self.calls.append({"kind": "complete", "prompt": prompt, "system": system,
                            "model": model, "seed": seed})
         if self.fail_times > 0:

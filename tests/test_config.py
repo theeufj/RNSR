@@ -94,3 +94,36 @@ def test_secret_settings_are_not_in_repr():
     settings = Settings(service_token="do-not-log", trajectory_key="secret-key")
     assert "do-not-log" not in repr(settings)
     assert "secret-key" not in repr(settings)
+
+
+def test_production_preset_is_bounded_without_changing_research_defaults():
+    settings = Settings.production()
+    assert all(getattr(settings, name) > 0 for name in (
+        "max_root_iters", "max_sub_calls", "max_wall_s", "max_spend_usd",
+        "max_requests_per_minute", "run_spend_ceiling_usd"))
+    assert settings.trajectory_content == "redacted"
+    assert settings.trajectory_retention_days == 30
+    assert settings.log_format == "json"
+    assert settings.claim_review_enabled and not settings.allow_degraded
+    assert Settings().max_spend_usd == Settings().trajectory_retention_days == 0
+    assert Settings().trajectory_content == "full"
+
+
+def test_production_env_profile_accepts_explicit_field_overrides(monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("RNSR_PROFILE", "production")
+    monkeypatch.setenv("RNSR_MAX_SPEND_USD", "0.75")
+    monkeypatch.setenv("RNSR_MAX_WALL_S", "0")
+    settings = Settings.from_env()
+    assert settings.max_spend_usd == 0.75
+    assert settings.max_wall_s == 0
+    assert settings.max_sub_calls == Settings.production().max_sub_calls
+    assert settings.trajectory_content == "redacted"
+    assert Settings.production(max_sub_calls=9).max_sub_calls == 9
+
+
+def test_unknown_env_profile_is_rejected(monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("RNSR_PROFILE", "prodution")
+    with pytest.raises(ValueError):
+        Settings.from_env()

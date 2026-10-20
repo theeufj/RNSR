@@ -167,6 +167,9 @@ class RegressionReport:
     min_accuracy: float = 0.0
     max_false_positive_rate: float = 1.0
     min_high_tier_accuracy: float = 0.0
+    # Provider meter snapshot for the judge calls (requests, spend, tokens);
+    # None when no judge ran. Scoring cost was previously invisible.
+    judge_provider: dict | None = None
 
     @property
     def total(self) -> int:
@@ -265,6 +268,7 @@ class RegressionReport:
             "review_recall": round(self.review_recall, 4),
             "auto_accept_rate": round(self.auto_accept_rate, 4),
             "passed": self.passed,
+            "judge_provider": self.judge_provider,
             "disagreements": [
                 {"field_id": r.field_id, "golden": r.golden[:200],
                  "answer": r.answer[:200]}
@@ -498,7 +502,9 @@ async def judge_disagreements(report: RegressionReport, client, model: str, *,
         )
         async with sem:
             try:
-                response = await client.complete(prompt, model=model, max_tokens=300)
+                # Reasons routinely run past 300 tokens on long-form fields; a
+                # truncated reply is an "unavailable" verdict, never a pass.
+                response = await client.complete(prompt, model=model, max_tokens=1024)
             except Exception as exc:
                 record(r, "error", None, f"Judge call failed ({type(exc).__name__}).",
                        model=model, error_type=type(exc).__name__)

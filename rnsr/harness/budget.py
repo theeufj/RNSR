@@ -103,4 +103,6 @@ class BudgetLedger:
             "spend_usd": round(self.spend_usd, 6),
             "input_tokens": self.usage.input_tokens,
             "output_tokens": self.usage.output_tokens,
+            "cache_read_tokens": self.usage.cache_read_tokens,
+            "cache_write_tokens": self.usage.cache_write_tokens,
         }

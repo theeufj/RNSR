@@ -343,7 +343,10 @@ async def test_legacy_lexical_mode_is_explicitly_available(tmp_path, monkeypatch
         "What was revenue?", EnvSpec(mode="docdb"), run_dir=tmp_path)
     assert result.answer == "42" and result.status == "final" and result.final == submitted
     assert result.claim_review is None
-    assert "claim_review" not in Path(result.trajectory_path).read_text()
+    assert result.evidence.claim_review_status == "disabled"
+    assert result.evidence.tier == "medium"
+    records = [json.loads(line) for line in Path(result.trajectory_path).read_text().splitlines()]
+    assert not any(record["kind"] in {"claim_review", "claim_review_decision"} for record in records)
 
 
 async def test_integration_rejects_wrong_period_then_accepts_supported_repair(tmp_path, monkeypatch):
@@ -388,6 +391,8 @@ async def test_integration_batch_keeps_supported_fields_and_repairs_related_conc
         EnvSpec(mode="docdb", category_definitions="Ownership transfer excludes a mere licence."),
         run_dir=tmp_path)
     assert result.answers == repaired["value"] and result.result.status == "final"
+    assert all(ev.claim_review_status == "supported" for ev in result.evidence.values())
+    assert all(ev.claim_review_required for ev in result.evidence.values())
     assert len(sub.calls) == 2
     assert [f["question"] for f in json.loads(sub.calls[1]["prompt"])["fields"]] == [
         "Is ownership transferred?"]  # unchanged supported field uses its evidence-bound cache
@@ -409,7 +414,9 @@ async def test_classic_mode_is_not_given_unverified_claim_review(tmp_path, monke
     result = await runner(sub, claim_review_enabled=True).run(
         "Revenue?", EnvSpec(mode="classic", context="Revenue 42"), run_dir=tmp_path)
     assert result.answer == "42" and len(sub.calls) == 1
-    assert "claim_review" not in Path(result.trajectory_path).read_text()
+    assert result.evidence.claim_review_status == "not_applicable"
+    records = [json.loads(line) for line in Path(result.trajectory_path).read_text().splitlines()]
+    assert not any(record["kind"] in {"claim_review", "claim_review_decision"} for record in records)
 
 
 async def test_real_wrong_year_source_is_not_accepted_and_source_is_unchanged(tmp_path, monkeypatch):
@@ -901,3 +908,98 @@ async def test_classification_absence_still_respects_reviewer_source_coverage_re
     result = await run_review(final('NOT_FOUND', quote='This page lists only administrative notices.'),
                               question=_CLASSIFICATION_QUESTION, sub=sub)
     assert len(sub.calls) == 1 and result['fields'][0]['verdict'] == 'insufficient'
+
+
+# --- review-loop circuit breaker -------------------------------------------
+# Live: a reviewer returned the same 'insufficient' objection to unchanged
+# evidence 21 times in one batch; every round was another full-context root
+# call until the spend cap, for NOT_FOUND answers that were correct.
+
+def _events(result):
+    return [json.loads(line) for line in Path(result.trajectory_path).read_text().splitlines()]
+
+
+def _rejecting(reason="Evidence does not establish the claim."):
+    return json.dumps({"reviews": [reply("insufficient", reason=reason)]})
+
+
+async def test_stalled_resubmission_after_adjudication_finalises_as_unresolved(tmp_path, monkeypatch):
+    submitted = final("NOT_FOUND", quote="Revenue was 42.")
+    sandbox = stub_sandbox(monkeypatch, *(copy.deepcopy(submitted) for _ in range(6)))
+    sub = MockLLM(default="COMPLETE").rule(r'"fields"', _rejecting())
+    r = runner(sub)
+    r.root_client = MockLLM(default="```python\nFINAL('draft')\n```").rule(r'"fields"', _rejecting())
+    result = await r.run("What was revenue in 2024?", EnvSpec(mode="docdb"), run_dir=tmp_path)
+    # round 1: reviewer rejects; round 2: unchanged -> independent adjudication rejects;
+    # round 3: unchanged again -> every open field is a cached adjudicated veto -> stop.
+    assert sandbox.exec_cell.await_count == 3
+    assert result.status == "final" and result.answer == "NOT_FOUND"
+    assert result.final["claim_review"]["status"] == "partial"
+    assert result.final["claim_review"]["reason_code"] == "review_stalled"
+    assert result.final["claim_review"]["unresolved"]
+    assert result.evidence.claim_review_status == "unverified"
+    assert result.evidence.tier == "low"
+    events = _events(result)
+    halted = [e for e in events if e["kind"] == "claim_review_halted"]
+    assert len(halted) == 1 and halted[0]["rounds"] == 3 and halted[0]["stalls"] == 1
+    assert [e["supported"] for e in events if e["kind"] == "claim_review_decision"] == [False] * 3
+    # the reviewer was paid once; the adjudicator once; the third round was served from cache
+    assert sum('"fields"' in c["prompt"] for c in sub.calls) == 1
+    assert sum('"fields"' in c["prompt"] for c in r.root_client.calls) == 1
+
+
+async def test_changed_evidence_keeps_being_reviewed_until_the_round_cap(tmp_path, monkeypatch):
+    drafts = [final(str(40 + i), quote=f"Revenue was {40 + i}.") for i in range(8)]
+    sandbox = stub_sandbox(monkeypatch, *drafts)
+    sub = MockLLM(default="COMPLETE").rule(r'"fields"', _rejecting())
+    result = await runner(sub, claim_review_max_rounds=3).run(
+        "What was revenue?", EnvSpec(mode="docdb"), run_dir=tmp_path)
+    assert sandbox.exec_cell.await_count == 3
+    assert result.status == "final" and result.answer == "42"
+    assert result.final["claim_review"]["reason_code"] == "review_rounds_exhausted"
+    assert result.evidence.tier == "low"
+    assert sum('"fields"' in c["prompt"] for c in sub.calls) == 3   # each draft was new evidence
+
+
+async def test_zero_caps_restore_the_unbounded_review_loop(tmp_path, monkeypatch):
+    monkeypatch.setattr("rnsr.harness.loop.recover_variable", AsyncMock(return_value=None))
+    submitted = final()
+    stub_sandbox(monkeypatch, *(copy.deepcopy(submitted) for _ in range(8)))
+    sub = MockLLM(default="COMPLETE").rule(r'"fields"', _rejecting())
+    r = runner(sub, claim_review_max_stalls=0, claim_review_max_rounds=0, max_root_iters=5)
+    r.root_client = MockLLM(default="```python\nFINAL('draft')\n```").rule(r'"fields"', _rejecting())
+    result = await r.run("Revenue?", EnvSpec(mode="docdb"), run_dir=tmp_path)
+    assert result.status == "budget_exhausted" and result.answer is None
+    assert not any(e["kind"] == "claim_review_halted" for e in _events(result))
+
+
+async def test_partial_batch_keeps_supported_fields_and_marks_only_the_stalled_one(tmp_path, monkeypatch):
+    submitted = {"value": {"a": "42", "b": "NOT_FOUND"},
+                 "verification": {"a": verified(), "b": verified("No licence appears in the index.")}}
+    stub_sandbox(monkeypatch, *(copy.deepcopy(submitted) for _ in range(6)))
+    first = json.dumps({"reviews": [reply("supported", "f0"), reply(
+        "insufficient", "f1", reason="One index page does not establish absence.")]})
+    again = json.dumps({"reviews": [reply("insufficient", "f0",
+                                          reason="One index page does not establish absence.")]})
+    sub = MockLLM(default="COMPLETE").rule(r'"fields"', first)
+    r = runner(sub)
+    r.root_client = MockLLM(default="```python\nFINAL_BATCH({})\n```").rule(r'"fields"', again)
+    result = await r.run_batch([("a", "What was revenue?"), ("b", "Is a licence granted?")],
+                               EnvSpec(mode="docdb"), run_dir=tmp_path)
+    assert result.result.status == "final"
+    assert result.answers == {"a": "42", "b": "NOT_FOUND"}
+    assert result.result.final["claim_review"]["status"] == "partial"
+    assert result.result.final["claim_review"]["unresolved"] == ["b"]
+    assert result.evidence["a"].claim_review_status == "supported"
+    assert result.evidence["b"].claim_review_status == "unverified"
+    assert result.evidence["b"].tier == "low"
+    assert result.evidence["a"].tier == "medium"   # the batch was pushed back; routed to review, not low
+
+
+def test_review_breaker_settings_parse_from_env(monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
+    assert Settings().claim_review_max_stalls == 1 and Settings().claim_review_max_rounds == 6
+    monkeypatch.setenv("RNSR_CLAIM_REVIEW_MAX_STALLS", "0")
+    monkeypatch.setenv("RNSR_CLAIM_REVIEW_MAX_ROUNDS", "9")
+    s = Settings.from_env()
+    assert s.claim_review_max_stalls == 0 and s.claim_review_max_rounds == 9

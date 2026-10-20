@@ -173,7 +173,7 @@ def evaluate(counters: dict[str, int | float],
 
 
 def counters_from_corpus(corpus, extra: dict[str, int] | None = None) -> dict[str, int]:
-    """Count tables/docs from an open CorpusDB; merge ingest-only extras."""
+    """Derive coverage from durable outcomes; legacy artifacts use aggregate extras."""
     conn = corpus.conn
     n_docs = conn.execute("SELECT count(*) FROM documents").fetchone()[0]
     rows = list(conn.execute("SELECT status FROM manifest_tables"))
@@ -186,7 +186,9 @@ def counters_from_corpus(corpus, extra: dict[str, int] | None = None) -> dict[st
 
         flagged = sum(decode_table_schema(raw).n_total_rows for (raw,) in
                       conn.execute("SELECT schema_json FROM manifest_tables"))
-    extra = extra or {}
+    from rnsr.ingest.outcomes import counters
+
+    extra = {**(extra or {}), **(counters(conn) or {})}
     return {
         "n_documents": n_docs,
         "parse_failed": int(extra.get("parse_failed") or 0),

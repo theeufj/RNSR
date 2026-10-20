@@ -5,7 +5,7 @@ from __future__ import annotations
 import base64
 import re
 
-from rnsr.llm.base import LLMResponse
+from rnsr.llm.base import LLMResponse, prompt_text
 from rnsr.llm.cost import make_usage
 
 # Reasoning families (o-series, gpt-5.x) reject sampling parameters: any
@@ -41,7 +41,7 @@ class OpenAIClient:
         messages = []
         if system:
             messages.append({"role": "system", "content": system})
-        messages.append({"role": "user", "content": prompt})
+        messages.append({"role": "user", "content": prompt_text(prompt)})
         resp = await self._client.chat.completions.create(
             model=model,
             messages=messages,

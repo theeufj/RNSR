@@ -1,0 +1,784 @@
+[
+  {
+    "id": "doc_pool_assets_list",
+    "question": "List the main assets in the property pool as set out in Ada Okafor's financial statement.",
+    "answer": "The Banksia Court home ($742,000, with a loan of $318,450.22), the 2020 Mazda CX-5 ($24,500), the 2019 Ford Ranger ($38,000), the joint account ($9,870.15), Ada's Southern Cross Super, Trung's company Nguyen Constructions Pty Ltd ($410,000), the Castlemaine unit in the Nguyen Family Trust ($385,000) and Trung's BuildersUnion Super."
+  },
+  {
+    "id": "doc_children_names",
+    "question": "What are the names of the children of the marriage?",
+    "answer": "Zara Okafor-Nguyen and Lachlan Okafor-Nguyen"
+  },
+  {
+    "id": "doc_ada_trust_beneficiary",
+    "question": "Is Ada Okafor a general beneficiary of the Nguyen Family Trust?",
+    "answer": "Yes"
+  },
+  {
+    "id": "doc_trust_distribution_to_ada",
+    "question": "Has the Nguyen Family Trust ever made a distribution to Ada Okafor?",
+    "answer": "No"
+  },
+  {
+    "id": "doc_trung_attended_nov_session",
+    "question": "Did Trung Nguyen attend the family dispute resolution session scheduled for 18 November 2025?",
+    "answer": "No"
+  },
+  {
+    "id": "doc_trung_roles",
+    "question": "What roles does Trung Nguyen hold in Nguyen Constructions Pty Ltd and in the Nguyen Family Trust?",
+    "answer": "Sole director of Nguyen Constructions; appointor of the trust"
+  },
+  {
+    "id": "doc_home_value_and_loan",
+    "question": "What is the valuation of 27 Banksia Court and the balance of the home loan at 30 June 2026?",
+    "answer": "$742,000 valuation; $318,450.22 loan balance"
+  },
+  {
+    "id": "doc_draft_v2_clause_9_text",
+    "question": "What exactly does clause 9 of the draft consent orders dated 30 September 2026 say?",
+    "answer": "The Husband shall cause the sum of $52,500 to be transferred from his interest in the BuildersUnion Super account (member number BU 7730915) to the Wife's Southern Cross Super account (member number SCS 0048213) by way of splitting under Part VIIIB of the Act."
+  },
+  {
+    "id": "doc_trung_solicitor",
+    "question": "Which firm and which solicitor act for Trung Nguyen?",
+    "answer": "Castellan & Pryce Lawyers (Declan Pryce)"
+  },
+  {
+    "id": "doc_ada_barrister",
+    "question": "Who is the barrister briefed for Ada Okafor?",
+    "answer": "Callum Reyes"
+  },
+  {
+    "id": "doc_draft_orders_difference_summary",
+    "question": "How do draft consent orders v2 differ from v1?",
+    "answer": "V2 (30 September 2026) moves the relocation date from 1 February 2027 to 22 January 2028, increases the mother's paid flights from two to four a year, moves the house listing deadline from 28 February to 31 March 2027, changes the sale proceeds split from 65/35 to 60/40 in the wife's favour, increases the superannuation split from $40,000 to $52,500, and adds a clause vacating the final hearing."
+  },
+  {
+    "id": "doc_property_pool_summary",
+    "question": "Summarise the property pool.",
+    "answer": "The Banksia Court home in Bendigo is valued at $742,000 with a Murray Valley Bank loan of $318,450.22 (net equity $423,549.78). Other assets are Trung's company Nguyen Constructions Pty Ltd ($410,000), the Castlemaine unit held by the Nguyen Family Trust ($385,000 with a $142,300 loan), a 2020 Mazda CX-5 ($24,500), a 2019 Ford Ranger ($38,000), a joint account ($9,870.15 at 31 August 2026) and super: Ada $168,240.33 and Trung $311,905.60."
+  },
+  {
+    "id": "doc_receipt_number",
+    "question": "What is the receipt number on the Sunshine Interstate Removals deposit receipt?",
+    "answer": "R-20917"
+  },
+  {
+    "id": "doc_zara_class_teacher",
+    "question": "Who was Zara Okafor-Nguyen's class teacher in the Semester 1 2026 school report?",
+    "answer": "Ms Kelly Tran"
+  },
+  {
+    "id": "doc_zara_date_of_birth",
+    "question": "What is Zara Okafor-Nguyen's date of birth?",
+    "answer": "14 February 2016"
+  },
+  {
+    "id": "doc_zara_swim_time",
+    "question": "What day and time is Zara Okafor-Nguyen's swimming session according to Ada Okafor's handwritten handover note?",
+    "answer": "Thursday at 4.30pm"
+  },
+  {
+    "id": "doc_coral_coast_salary",
+    "question": "What base salary did Coral Coast Private Hospital offer Ada Okafor?",
+    "answer": "$118,000 per year"
+  },
+  {
+    "id": "doc_ada_super_balance",
+    "question": "What was Ada Okafor's Southern Cross Super balance at 30 June 2026?",
+    "answer": "$168,240.33"
+  },
+  {
+    "id": "doc_sale_split_latest",
+    "question": "How are the net proceeds of sale of the Banksia Court home to be divided in the latest draft consent orders?",
+    "answer": "60% to the Wife, 40% to the Husband"
+  },
+  {
+    "id": "doc_zara_attendance",
+    "question": "What attendance rate is recorded for Zara Okafor-Nguyen in her Semester 1 2026 report?",
+    "answer": "96%"
+  },
+  {
+    "id": "graph_trung_firm_solicitor",
+    "question": "Which solicitor works at the firm that represents Trung Nguyen?",
+    "answer": "Declan Pryce (Castellan Pryce)"
+  },
+  {
+    "id": "graph_children_rep_practice",
+    "question": "Who represents the children in the proceedings, and which practice does that person work for?",
+    "answer": "Marguerite Sallis, Sallis Children's Law"
+  },
+  {
+    "id": "graph_joint_account_bank",
+    "question": "Which bank issued the joint everyday account held by Ada Okafor and Trung Nguyen?",
+    "answer": "Murray Valley Bank"
+  },
+  {
+    "id": "graph_banksia_valuer_person",
+    "question": "Which person works for the firm that valued 27 Banksia Court?",
+    "answer": "Pamela Strachan (Goldfields Valuers)"
+  },
+  {
+    "id": "graph_ada_parents_residence",
+    "question": "Who are Ada Okafor's parents and where do they live?",
+    "answer": "Emeka and Ngozi Okafor, 19 Jacaranda Street, Chapel Hill QLD 4069"
+  },
+  {
+    "id": "graph_trust_beneficiaries",
+    "question": "List everyone and every entity named as a beneficiary of the Nguyen Family Trust.",
+    "answer": "Ada Okafor, Trung Nguyen, Zara Okafor-Nguyen, Lachlan Okafor-Nguyen and Nguyen Constructions Pty Ltd"
+  },
+  {
+    "id": "graph_trust_property_lender",
+    "question": "What property does the Nguyen Family Trust own, and which bank holds the loan over it?",
+    "answer": "Unit 3/45 Eucalypt Street, Castlemaine; Murray Valley Bank"
+  },
+  {
+    "id": "graph_ada_lawyers_firms",
+    "question": "Who are the lawyers acting for Ada Okafor and which firm does each work for?",
+    "answer": "Fiona Brennan-Hale and Sam Odhiambo (Harcourt Dunne Family Lawyers); barrister Callum Reyes"
+  },
+  {
+    "id": "graph_judge_and_court",
+    "question": "Which judge presides over the proceedings and in which court is the case heard?",
+    "answer": "Judge Ruth Ashdown, Federal Circuit and Family Court of Australia"
+  },
+  {
+    "id": "graph_bdrc_practitioner_cert",
+    "question": "Which certificate was issued through the Bendigo Dispute Resolution Centre and who signed it?",
+    "answer": "Section 60I certificate FDR-2026-0093, Owen Baptiste"
+  },
+  {
+    "id": "graph_goldfields_mediation_cert",
+    "question": "Which section 60I certificate was issued by the practitioner at Goldfields Family Mediation?",
+    "answer": "FDR-2025-0471 (Rosalind Teague)"
+  },
+  {
+    "id": "graph_ada_employers",
+    "question": "List the employers Ada Okafor has had or been offered work by.",
+    "answer": "Loddon Valley Hospital and Coral Coast Private Hospital"
+  },
+  {
+    "id": "graph_ada_debts",
+    "question": "What debts does Ada Okafor owe, and to whom?",
+    "answer": "A credit card, the Murray Valley Bank home loan, and fees to Harcourt Dunne Family Lawyers"
+  },
+  {
+    "id": "graph_trung_vehicles",
+    "question": "Which vehicles does Trung Nguyen own?",
+    "answer": "A 2019 Ford Ranger"
+  },
+  {
+    "id": "graph_lawyer_firm_children_lawyer",
+    "question": "Which firm does the lawyer who represents Zara and Lachlan work for?",
+    "answer": "Sallis Children's Law"
+  },
+  {
+    "id": "graph_mediation_certs_issuers",
+    "question": "Which organisations issued the section 60I certificates in the matter?",
+    "answer": "Goldfields Family Mediation and Bendigo Dispute Resolution Centre"
+  },
+  {
+    "id": "graph_trung_companies",
+    "question": "Which companies does Trung Nguyen own or work for?",
+    "answer": "Nguyen Constructions Pty Ltd and Nguyen Holdings Pty Ltd"
+  },
+  {
+    "id": "graph_coral_letter_author",
+    "question": "Who at Coral Coast Private Hospital wrote the letter of offer to Ada Okafor, and what is that person's position?",
+    "answer": "Hannah Mallory, Director of Nursing"
+  },
+  {
+    "id": "graph_trust_trustee_director",
+    "question": "Who is the trustee of the Nguyen Family Trust and who is its sole director?",
+    "answer": "Nguyen Holdings Pty Ltd is the trustee; Trung Nguyen is its sole director"
+  },
+  {
+    "id": "graph_sibling_pair",
+    "question": "Who are the siblings in this matter?",
+    "answer": "Zara Okafor-Nguyen and Lachlan Okafor-Nguyen"
+  },
+  {
+    "id": "graph_noone_fourth_lawyer",
+    "question": "Which firm employs the lawyer who represents the third child?",
+    "answer": "There is no third child; the matter has two children.",
+    "unanswerable": true
+  },
+  {
+    "id": "db_inv0402_total",
+    "question": "What is the total amount of invoice INV-26-0402?",
+    "answer": "$3,960.00"
+  },
+  {
+    "id": "db_inv0402_issued",
+    "question": "On what date was invoice INV-26-0402 issued?",
+    "answer": "2 October 2026"
+  },
+  {
+    "id": "db_inv0351_total",
+    "question": "What was the total amount of invoice INV-26-0351?",
+    "answer": "$11,895.50"
+  },
+  {
+    "id": "db_inv0351_paid_on",
+    "question": "On what date was invoice INV-26-0351 paid?",
+    "answer": "18 June 2026"
+  },
+  {
+    "id": "db_inv0370_total",
+    "question": "What was the total amount of invoice INV-26-0370?",
+    "answer": "$8,209.30"
+  },
+  {
+    "id": "db_inv0351_period",
+    "question": "What period of work does invoice INV-26-0351 cover?",
+    "answer": "16 March 2026 to 31 May 2026"
+  },
+  {
+    "id": "db_filing_fee",
+    "question": "What filing fee was paid to the court for Ada Okafor's Initiating Application?",
+    "answer": "$395.00"
+  },
+  {
+    "id": "db_valuation_fee",
+    "question": "What was Goldfields Valuers' fee for valuing 27 Banksia Court, and what share of it was Ada Okafor's?",
+    "answer": "$1,650.00 in total; Ada's share $825.00"
+  },
+  {
+    "id": "db_ferrant_fee",
+    "question": "What did Ferrant & Co charge for the business valuation of Nguyen Constructions Pty Ltd?",
+    "answer": "$6,600.00 (Ada Okafor's half is $3,300.00)"
+  },
+  {
+    "id": "db_transcript_cost",
+    "question": "How much did the transcript of the interim hearing cost?",
+    "answer": "$184.80"
+  },
+  {
+    "id": "db_trust_receipt_oct",
+    "question": "What is the receipt reference for the trust money received from Ada Okafor on 2 October 2026?",
+    "answer": "TR-0882"
+  },
+  {
+    "id": "db_retainer_receipt",
+    "question": "What trust receipt number was issued for Ada Okafor's $7,500 retainer?",
+    "answer": "TR-0791"
+  },
+  {
+    "id": "db_sam_brief_time",
+    "question": "How much time did Sam Odhiambo record on 21 August 2026, and on what?",
+    "answer": "3.0 hours (180 minutes): preparing the brief to counsel for the interim hearing"
+  },
+  {
+    "id": "db_voss_organisation",
+    "question": "Which organisation is Dr Helena Voss's contact record listed under?",
+    "answer": "Ravenswood Family Psychology"
+  },
+  {
+    "id": "db_super_form_fee",
+    "question": "What fee did BuildersUnion Super charge for the superannuation information form?",
+    "answer": "$150.00"
+  },
+  {
+    "id": "agg_total_fees",
+    "question": "What is the total value of the professional fees recorded on the Okafor matter to date, excluding GST?",
+    "answer": "$36,175.00"
+  },
+  {
+    "id": "agg_total_hours",
+    "question": "How many hours of work in total have been recorded on the Okafor matter?",
+    "answer": "76.9 hours"
+  },
+  {
+    "id": "agg_sam_sept_value",
+    "question": "What was the value of the time Sam Odhiambo recorded in September 2026?",
+    "answer": "$2,360.00"
+  },
+  {
+    "id": "agg_fiona_sept",
+    "question": "How many hours did Fiona Brennan-Hale record in September 2026, and what were they worth?",
+    "answer": "8.7 hours, $5,916.00"
+  },
+  {
+    "id": "agg_entries_total",
+    "question": "How many separate time entries have been recorded on the Okafor matter in total?",
+    "answer": "68"
+  },
+  {
+    "id": "agg_busiest_month",
+    "question": "In which month was the most time recorded on the matter, and how many hours?",
+    "answer": "August 2026, 20.2 hours"
+  },
+  {
+    "id": "agg_total_disbursements",
+    "question": "What is the total of the disbursements incurred on the matter that are payable by Ada Okafor?",
+    "answer": "$5,350.40"
+  },
+  {
+    "id": "agg_unbilled_disbursements",
+    "question": "Which disbursements have been incurred but not yet billed, and what is the client's share of them in total?",
+    "answer": "Ferrant & Co Chartered Accountants ($3,300.00); BuildersUnion Super ($150.00); Court Transcription Services ($184.80); total $3,634.80"
+  },
+  {
+    "id": "agg_total_invoiced",
+    "question": "What is the total amount invoiced to Ada Okafor to date, including GST?",
+    "answer": "$33,910.40"
+  },
+  {
+    "id": "agg_total_outstanding",
+    "question": "What is the total amount outstanding across all invoices on the matter?",
+    "answer": "$5,305.60"
+  },
+  {
+    "id": "agg_total_paid",
+    "question": "How much has Ada Okafor paid the firm directly (excluding money applied from trust)?",
+    "answer": "$21,104.80"
+  },
+  {
+    "id": "agg_trust_received",
+    "question": "What is the total amount received into the firm's trust account on the matter?",
+    "answer": "$13,000.00"
+  },
+  {
+    "id": "agg_sam_share",
+    "question": "What share of the time recorded on the matter is Sam Odhiambo's?",
+    "answer": "52.8%"
+  },
+  {
+    "id": "agg_wip",
+    "question": "What is the value of the time recorded on the matter that has not yet been invoiced?",
+    "answer": "$10,507.00"
+  },
+  {
+    "id": "agg_longest_entry",
+    "question": "What is the longest single time entry recorded on the matter, and who recorded it?",
+    "answer": "3.5 hours (210 minutes) by Sam Odhiambo on 7 September 2026"
+  },
+  {
+    "id": "conf_invoice_balance",
+    "question": "What is the current outstanding balance on invoice INV-26-0388?",
+    "answer": "$1,345.60 (after a part-payment of $1,000.00 on 6 October 2026)"
+  },
+  {
+    "id": "conf_invoice_due",
+    "question": "By what date is the balance of invoice INV-26-0388 now due?",
+    "answer": "30 October 2026"
+  },
+  {
+    "id": "conf_final_hearing",
+    "question": "On what date is the final hearing in the Okafor and Nguyen proceedings now listed?",
+    "answer": "22 March 2027"
+  },
+  {
+    "id": "conf_next_event",
+    "question": "What is the next court event listed in the Okafor and Nguyen proceedings?",
+    "answer": "A directions hearing on 20 November 2026"
+  },
+  {
+    "id": "conf_trust_balance",
+    "question": "How much is currently held in the firm's trust account for Ada Okafor?",
+    "answer": "$5,500.00"
+  },
+  {
+    "id": "conf_stage2_estimate",
+    "question": "What is the current estimate of costs for Stage 2 of the matter (from the interim hearing to the end of the final hearing)?",
+    "answer": "$58,000 to $74,000 plus GST (revised 6 October 2026)"
+  },
+  {
+    "id": "conf_counsel_interim_fee",
+    "question": "What did counsel charge for appearing at the interim hearing on 26 August 2026?",
+    "answer": "$2,400.00 plus GST, charged as a half day"
+  },
+  {
+    "id": "conf_fiona_rate",
+    "question": "At what hourly rate is Fiona Brennan-Hale's time currently recorded on the Okafor matter?",
+    "answer": "$680 per hour"
+  },
+  {
+    "id": "pol_relocation_signoff",
+    "question": "Which form must be completed and signed before the firm files an application seeking to relocate children, and who signs it?",
+    "answer": "Form HD-R1, signed by the supervising principal and briefed counsel"
+  },
+  {
+    "id": "pol_relocation_summary_form",
+    "question": "What document must accompany a client's affidavit in a relocation matter under the firm's policy?",
+    "answer": "A Relocation Proposal Summary, form RPS-1"
+  },
+  {
+    "id": "pol_trust_transfer_requirements",
+    "question": "What is required before money can be transferred from the firm's trust account to its office account?",
+    "answer": "An issued invoice, the client's written authority and the approval of the Practice Manager, Lucinda Marr"
+  },
+  {
+    "id": "pol_trust_reconciliation_signer",
+    "question": "Who signs the monthly trust account reconciliation?",
+    "answer": "The Trust Principal, Gideon Harcourt"
+  },
+  {
+    "id": "pol_trust_bank",
+    "question": "With which bank is the firm's trust account held?",
+    "answer": "Campaspe Mutual Bank"
+  },
+  {
+    "id": "pol_conflict_timing",
+    "question": "Within how many hours of a new party being identified on a file must a conflict search be run?",
+    "answer": "48 hours"
+  },
+  {
+    "id": "pol_conflict_escalation",
+    "question": "To whom must an actual or potential conflict of interest be escalated?",
+    "answer": "The Risk Partner, Nadia Lindqvist"
+  },
+  {
+    "id": "pol_closure_days",
+    "question": "Within how many days of the final invoice being paid must a file be closed?",
+    "answer": "75 days"
+  },
+  {
+    "id": "pol_closure_storage",
+    "question": "Where are the firm's closed files stored, and for how long are they retained?",
+    "answer": "With Ironbark Records Management, for seven years from the closure date"
+  },
+  {
+    "id": "pol_pd_commencement",
+    "question": "On what date did Family Law Practice Direction 2026/3 commence?",
+    "answer": "1 September 2026"
+  },
+  {
+    "id": "pol_pd_outline_length",
+    "question": "What is the maximum length of a case outline under Family Law Practice Direction 2026/3?",
+    "answer": "16 pages"
+  },
+  {
+    "id": "pol_pd_outline_deadline",
+    "question": "How many days before the first day of the final hearing must the applicant's case outline be filed under Practice Direction 2026/3?",
+    "answer": "42 days"
+  },
+  {
+    "id": "pol_photocopy_rate",
+    "question": "What does the firm charge per page for black and white photocopying?",
+    "answer": "$0.30 per page"
+  },
+  {
+    "id": "pol_disclosure_threshold",
+    "question": "By what percentage must expected costs exceed the current estimate before a revised estimate must be given to the client?",
+    "answer": "12.5 per cent"
+  },
+  {
+    "id": "pol_estimate_review",
+    "question": "How often must the costs estimate on an open matter be reviewed?",
+    "answer": "Every 120 days"
+  },
+  {
+    "id": "api_directions_courtroom",
+    "question": "In which courtroom is the directions hearing in file MLC1184/2026 on 20 November 2026 listed?",
+    "answer": "Courtroom 6D"
+  },
+  {
+    "id": "api_directions_time",
+    "question": "At what time is the directions hearing on 20 November 2026 in file MLC1184/2026 listed to start?",
+    "answer": "9:15am"
+  },
+  {
+    "id": "api_directions_officer",
+    "question": "Which judicial officer is listed for the directions hearing on 20 November 2026 in file MLC1184/2026?",
+    "answer": "Judicial Registrar Tamsin Oyelaran"
+  },
+  {
+    "id": "api_final_listing_ref",
+    "question": "What is the court's listing reference for the final hearing of file MLC1184/2026?",
+    "answer": "L-2027-00418"
+  },
+  {
+    "id": "api_final_status",
+    "question": "What is the listing status of the final hearing of file MLC1184/2026 on 22 March 2027?",
+    "answer": "Provisional"
+  },
+  {
+    "id": "api_company_incorporated",
+    "question": "On what date was Nguyen Constructions Pty Ltd (ACN 612 000 345) incorporated?",
+    "answer": "3 August 2011"
+  },
+  {
+    "id": "api_company_registered_office",
+    "question": "What is the registered office address of Nguyen Constructions Pty Ltd (ACN 612 000 345)?",
+    "answer": "Suite 5, 210 McIvor Road, Bendigo VIC 3550"
+  },
+  {
+    "id": "api_company_secretary",
+    "question": "Who is the company secretary of Nguyen Constructions Pty Ltd (ACN 612 000 345)?",
+    "answer": "Khoa Nguyen"
+  },
+  {
+    "id": "api_company_former_name",
+    "question": "What was Nguyen Constructions Pty Ltd (ACN 612 000 345) formerly called?",
+    "answer": "TN Carpentry Pty Ltd"
+  },
+  {
+    "id": "api_company_shares",
+    "question": "How many shares has Nguyen Constructions Pty Ltd (ACN 612 000 345) issued?",
+    "answer": "120 ordinary shares"
+  },
+  {
+    "id": "multi_balance_trust_rule",
+    "question": "What is the outstanding balance on invoice INV-26-0388, and what does the firm's trust accounting procedure require before trust money can be applied to it?",
+    "answer": "$1,345.60; an issued invoice, the client's written authority and the Practice Manager's approval"
+  },
+  {
+    "id": "multi_hearing_outline_due",
+    "question": "When is the final hearing now listed, and by what date must the applicant's case outline be filed under Family Law Practice Direction 2026/3?",
+    "answer": "22 March 2027; the case outline is due 42 days before, by 8 February 2027"
+  },
+  {
+    "id": "multi_invoiced_vs_estimate",
+    "question": "How much has been invoiced to Ada Okafor to date, and how does that compare with the Stage 1 estimate in her costs agreement?",
+    "answer": "$33,910.40 including GST, against a Stage 1 estimate of $18,500 to $22,000 plus GST"
+  },
+  {
+    "id": "multi_icl_and_registrar",
+    "question": "Who is the Independent Children's Lawyer for Zara and Lachlan, and which judicial officer is listed for the directions hearing on 20 November 2026?",
+    "answer": "Marguerite Sallis; Judicial Registrar Tamsin Oyelaran"
+  },
+  {
+    "id": "multi_most_time_role",
+    "question": "Which fee earner has recorded the most time on the Okafor matter, and what role and hourly rate does the costs agreement give that person?",
+    "answer": "Sam Odhiambo (40.6 hours); paralegal at $295 per hour"
+  },
+  {
+    "id": "multi_company_status_value",
+    "question": "Is Nguyen Constructions Pty Ltd still registered, and what value did Ferrant & Co place on it?",
+    "answer": "Yes, registered and active; $410,000"
+  },
+  {
+    "id": "multi_stage2_estimate_then_now",
+    "question": "What estimate did the costs agreement give for Stage 2 of the matter, and what is the current Stage 2 estimate?",
+    "answer": "$52,000 to $68,000 plus GST in the agreement; revised on 6 October 2026 to $58,000 to $74,000 plus GST",
+    "conflict": {
+      "fact_key": "stage2_estimate",
+      "authoritative_source": "practice_db",
+      "authoritative_value": "$58,000 to $74,000 plus GST",
+      "conflicting_source": "matter_docs",
+      "conflicting_doc_id": "2026-04-02_Costs_Agreement_and_Disclosure.docx",
+      "conflicting_value": "$52,000 to $68,000 plus GST",
+      "resolution_rule": "freshness",
+      "expected_disclosure": "the agreement's figure has been revised; the current estimate prevails"
+    }
+  },
+  {
+    "id": "multi_fiona_rate_then_now",
+    "question": "What hourly rate does the costs agreement give for Fiona Brennan-Hale, and at what rate is her time currently recorded on the matter?",
+    "answer": "$650 per hour in the agreement; $680 per hour now",
+    "conflict": {
+      "fact_key": "fiona_rate",
+      "authoritative_source": "practice_db",
+      "authoritative_value": "$680 per hour",
+      "conflicting_source": "matter_docs",
+      "conflicting_doc_id": "2026-04-02_Costs_Agreement_and_Disclosure.docx",
+      "conflicting_value": "$650 per hour",
+      "resolution_rule": "freshness",
+      "expected_disclosure": "the rate in the agreement has since changed; the recorded rate prevails"
+    }
+  },
+  {
+    "id": "multi_inv0388_total_vs_balance",
+    "question": "What was the total of invoice INV-26-0388, and what balance is outstanding on it now?",
+    "answer": "$9,845.60 in total; $1,345.60 outstanding after the part-payment"
+  },
+  {
+    "id": "multi_home_value_vs_valuer_fee",
+    "question": "What market value did Goldfields Valuers place on 27 Banksia Court, and what was Ada Okafor's share of their fee?",
+    "answer": "$742,000; her share of the fee is $825.00"
+  },
+  {
+    "id": "multi_business_value_vs_fee",
+    "question": "What value did Ferrant & Co place on Nguyen Constructions Pty Ltd, and what did they charge for the valuation?",
+    "answer": "$410,000; the fee was $6,600.00, of which Ada Okafor's half is $3,300.00"
+  },
+  {
+    "id": "multi_counsel_rate_vs_interim_fee",
+    "question": "What daily rate does the costs agreement give for Callum Reyes, and what did counsel charge for the interim hearing on 26 August 2026?",
+    "answer": "$4,200 per hearing day; the interim hearing was charged as a half day at $2,400.00 plus GST"
+  },
+  {
+    "id": "multi_super_split_vs_trust_held",
+    "question": "What superannuation split do the draft consent orders (v2) propose, and how much is held in the firm's trust account for Ada Okafor now?",
+    "answer": "$52,500 from Trung Nguyen's BuildersUnion Super interest; $5,500.00 held in trust"
+  },
+  {
+    "id": "multi_retainer_vs_receipt",
+    "question": "What retainer did the costs agreement require, and what trust receipt number was issued for it?",
+    "answer": "$7,500, paid on 2 April 2026; receipt TR-0791"
+  },
+  {
+    "id": "multi_payment_terms_vs_due",
+    "question": "Within how many days are invoices payable under the costs agreement, and by what date is the balance of invoice INV-26-0388 now due?",
+    "answer": "14 days; the balance is now due by 30 October 2026"
+  },
+  {
+    "id": "multi_sam_rate_vs_hours",
+    "question": "What hourly rate does the costs agreement give for Sam Odhiambo, and how many hours has he recorded on the matter?",
+    "answer": "$295 per hour; 40.6 hours"
+  },
+  {
+    "id": "multi_estimate_review_due",
+    "question": "When was the costs estimate on the Okafor matter last revised, and by when must it next be reviewed under the firm's policy?",
+    "answer": "6 October 2026; every 120 days, so by 3 February 2027"
+  },
+  {
+    "id": "multi_disclosure_threshold_vs_invoiced",
+    "question": "By what percentage must expected costs exceed the current estimate before a revised estimate must be given, and how much has been invoiced to Ada Okafor to date?",
+    "answer": "12.5 per cent; $33,910.40 invoiced to date including GST"
+  },
+  {
+    "id": "multi_closure_days_vs_outstanding",
+    "question": "Within how many days of the final invoice being paid must the file be closed, and how much is outstanding across all invoices on the matter now?",
+    "answer": "75 days; $5,305.60 outstanding"
+  },
+  {
+    "id": "multi_trust_approver_vs_receipt",
+    "question": "Who must approve a transfer from the trust account to the office account, and what is the receipt reference for the trust money received from Ada Okafor on 2 October 2026?",
+    "answer": "The Practice Manager, Lucinda Marr; receipt TR-0882"
+  },
+  {
+    "id": "multi_reconciliation_signer_vs_balance",
+    "question": "Who signs the monthly trust account reconciliation, and how much is held in trust for Ada Okafor?",
+    "answer": "The Trust Principal, Gideon Harcourt; $5,500.00"
+  },
+  {
+    "id": "multi_trust_bank_vs_received",
+    "question": "With which bank is the firm's trust account held, and how much has been received into trust on the Okafor matter in total?",
+    "answer": "Campaspe Mutual Bank; $13,000.00"
+  },
+  {
+    "id": "multi_conflict_timing_vs_voss",
+    "question": "Within how many hours of a new party being identified must a conflict search be run, and under which organisation is Dr Helena Voss's contact record listed?",
+    "answer": "48 hours; Ravenswood Family Psychology"
+  },
+  {
+    "id": "multi_photocopy_rate_vs_transcript",
+    "question": "What does the firm charge per page for black and white photocopying, and how much did the transcript of the interim hearing cost?",
+    "answer": "$0.30 per page; $184.80"
+  },
+  {
+    "id": "multi_hearing_orders_vs_list",
+    "question": "On what date did the interim orders list the final hearing, and what does the court list show for the final hearing now?",
+    "answer": "15 March 2027 in the interim orders; the court list shows that listing vacated and the hearing relisted provisionally for 22 March 2027 (listing L-2027-00418)",
+    "conflict": {
+      "fact_key": "final_hearing_date",
+      "authoritative_source": "court_api",
+      "authoritative_value": "22 March 2027",
+      "conflicting_source": "matter_docs",
+      "conflicting_doc_id": "2026-08-26_Interim_Orders.pdf",
+      "conflicting_value": "15 March 2027",
+      "resolution_rule": "freshness",
+      "expected_disclosure": "the orders' date was vacated; the court list's relisting prevails"
+    }
+  },
+  {
+    "id": "multi_shares_vs_value_per_share",
+    "question": "How many shares has Nguyen Constructions Pty Ltd issued, and what is each share worth on Ferrant & Co's valuation?",
+    "answer": "120 ordinary shares; $410,000 for all of them, so about $3,416.67 per share"
+  },
+  {
+    "id": "multi_former_name_vs_valuation_date",
+    "question": "What was Nguyen Constructions Pty Ltd formerly called, and as at what date did Ferrant & Co value it?",
+    "answer": "TN Carpentry Pty Ltd (until 29 February 2016); valuation date 30 June 2026"
+  },
+  {
+    "id": "multi_registered_office_vs_home",
+    "question": "What is the registered office of Nguyen Constructions Pty Ltd, and where does Trung Nguyen say he lives in his Response?",
+    "answer": "Suite 5, 210 McIvor Road, Bendigo VIC 3550; 27 Banksia Court, Bendigo"
+  },
+  {
+    "id": "multi_directions_officer_vs_counsel",
+    "question": "Which judicial officer is listed for the directions hearing on 20 November 2026, and who appeared as counsel for the applicant at the interim hearing?",
+    "answer": "Judicial Registrar Tamsin Oyelaran; Callum Reyes of counsel"
+  },
+  {
+    "id": "multi_review_date_vs_revenue",
+    "question": "What is the next review date for Nguyen Constructions Pty Ltd on the company register, and what was its revenue for the year ended 30 June 2026?",
+    "answer": "3 August 2027; revenue of $1,920,000"
+  },
+  {
+    "id": "multi_next_event_vs_time",
+    "question": "What is the next court event recorded in the firm's diary for the Okafor matter, and at what time and in which courtroom is it listed?",
+    "answer": "A directions hearing on 20 November 2026; listed at 9:15am in courtroom 6D"
+  },
+  {
+    "id": "multi_listing_ref_vs_diary",
+    "question": "What is the court's listing reference for the final hearing, and on what date does the firm's diary record the final hearing?",
+    "answer": "L-2027-00418; 22 March 2027"
+  },
+  {
+    "id": "multi_filing_fee_vs_first_listing",
+    "question": "What filing fee did the firm pay for Ada Okafor's Initiating Application, and what is the court's listing reference for the first court date?",
+    "answer": "$395.00; listing L-2026-02117 (5 June 2026)"
+  },
+  {
+    "id": "multi_courtroom_vs_brief_time",
+    "question": "In which courtroom is the directions hearing on 20 November 2026 listed, and how much time did Sam Odhiambo record on 21 August 2026 preparing the brief to counsel?",
+    "answer": "Courtroom 6D; 3.0 hours"
+  },
+  {
+    "id": "multi_trustee_director_vs_officers",
+    "question": "Who is the sole director of the trustee of the Nguyen Family Trust, and whom does the company register list as the officers of Nguyen Constructions Pty Ltd?",
+    "answer": "Trung Nguyen (of Nguyen Holdings Pty Ltd); the register lists Trung Nguyen as director and Khoa Nguyen as secretary"
+  },
+  {
+    "id": "multi_trading_name_vs_secretary_appointed",
+    "question": "Under what name does Nguyen Constructions Pty Ltd trade, and when was its company secretary appointed?",
+    "answer": "Nguyen Building & Renovations; the secretary, Khoa Nguyen, was appointed on 14 May 2019"
+  },
+  {
+    "id": "multi_ada_debts_vs_owed_firm",
+    "question": "What debts does Ada Okafor's financial statement list against her, and how much does she owe the firm now?",
+    "answer": "A credit card balance of $2,115.60 and her half of the joint home loan; $5,305.60 outstanding to the firm"
+  },
+  {
+    "id": "multi_icl_vs_voss_organisation",
+    "question": "Who is the Independent Children's Lawyer for Zara and Lachlan, and under which organisation is the family report writer's contact record listed?",
+    "answer": "Marguerite Sallis; Dr Helena Voss is listed under Ravenswood Family Psychology"
+  },
+  {
+    "id": "multi_s60i_issuer_vs_filing_fee",
+    "question": "Which service issued the section 60I certificates, and what filing fee was paid for the Initiating Application?",
+    "answer": "Goldfields Family Mediation; $395.00"
+  },
+  {
+    "id": "none_mazda_registration",
+    "question": "What is the registration plate number of Ada Okafor's 2020 Mazda CX-5?",
+    "answer": "No source records the car's registration number.",
+    "unanswerable": true
+  },
+  {
+    "id": "none_pryce_rate",
+    "question": "What hourly rate does Declan Pryce charge Trung Nguyen?",
+    "answer": "No source records Castellan & Pryce's rates.",
+    "unanswerable": true
+  },
+  {
+    "id": "none_pi_insurance",
+    "question": "What is the policy number of the firm's professional indemnity insurance?",
+    "answer": "No source records the firm's professional indemnity policy.",
+    "unanswerable": true
+  },
+  {
+    "id": "none_brisbane_school",
+    "question": "Which Brisbane school has confirmed a place for Zara Okafor-Nguyen?",
+    "answer": "No source records a confirmed school place in Brisbane.",
+    "unanswerable": true
+  },
+  {
+    "id": "none_directions_outcome",
+    "question": "What orders were made at the directions hearing on 20 November 2026?",
+    "answer": "None yet: the directions hearing has not taken place.",
+    "unanswerable": true
+  },
+  {
+    "id": "none_ada_tfn",
+    "question": "What is Ada Okafor's tax file number?",
+    "answer": "No source records a tax file number.",
+    "unanswerable": true
+  }
+]

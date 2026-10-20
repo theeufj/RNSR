@@ -107,11 +107,24 @@ class TestAnthropicOffline:
         assert resp.usage.cost_usd > 0
         assert captured["calls"][0]["model"] == "claude-haiku-4-5"
         assert captured["calls"][0]["messages"][0]["content"] == "ping"
+        # Legacy generations still accept temperature; 5.x models reject it.
+        assert captured["calls"][0]["temperature"] == 0.0
+        assert "thinking" not in captured["calls"][0]
+        # 5.5 models think by default and would spend max_tokens on it; each
+        # accepts exactly one off-switch.
+        await client.complete("ping", model="claude-sonnet-5-5", system="s")
+        assert "temperature" not in captured["calls"][-1]
+        assert captured["calls"][-1]["thinking"] == {"type": "between_tools"}
+        await client.complete("ping", model="claude-haiku-5-5", system="s")
+        assert captured["calls"][-1]["thinking"] == {"type": "disabled"}
+        # Always-on thinking models get neither parameter.
+        await client.complete("ping", model="claude-opus-5-5", system="s")
+        assert not {"temperature", "thinking"} & set(captured["calls"][-1])
 
         vis = await client.vision("what", PNG, model="claude-haiku-4-5")
         assert vis.text == "a single pixel"
         assert vis.usage.cost_usd > 0
-        assert captured["calls"][1]["messages"][0]["content"][0]["type"] == "image"
+        assert captured["calls"][-1]["messages"][0]["content"][0]["type"] == "image"
 
         with pytest.raises(NotImplementedError):
             await client.embed(["x"], model="none")

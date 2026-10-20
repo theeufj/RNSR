@@ -31,9 +31,14 @@ def expand_document(parsed: ParsedDocument, parse: ParseFn,
             tmp_path = Path(tmp.name)
         try:
             child = parse(tmp_path)
-        except Exception:
+        except Exception as exc:
             if strict:
                 raise
+            parsed.attachment_failures.append({
+                "source": f"{parsed.source_path}::{name}",
+                "parent_doc_id": parsed.doc_id,
+                "error": f"{type(exc).__name__}: {exc}"[:300],
+            })
             continue
         finally:
             tmp_path.unlink(missing_ok=True)

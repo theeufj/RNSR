@@ -1,0 +1,108 @@
+[
+  {
+    "id": "trung_firm_solicitor",
+    "question": "Which solicitor works at the firm that represents Trung Nguyen?",
+    "answer": "Declan Pryce (Castellan Pryce)"
+  },
+  {
+    "id": "children_rep_practice",
+    "question": "Who represents the children in the proceedings, and which practice does that person work for?",
+    "answer": "Marguerite Sallis, Sallis Children's Law"
+  },
+  {
+    "id": "joint_account_bank",
+    "question": "Which bank issued the joint everyday account held by Ada Okafor and Trung Nguyen?",
+    "answer": "Murray Valley Bank"
+  },
+  {
+    "id": "banksia_valuer_person",
+    "question": "Which person works for the firm that valued 27 Banksia Court?",
+    "answer": "Pamela Strachan (Goldfields Valuers)"
+  },
+  {
+    "id": "ada_parents_residence",
+    "question": "Who are Ada Okafor's parents and where do they live?",
+    "answer": "Emeka and Ngozi Okafor, 19 Jacaranda Street, Chapel Hill QLD 4069"
+  },
+  {
+    "id": "trust_beneficiaries",
+    "question": "List everyone and every entity named as a beneficiary of the Nguyen Family Trust.",
+    "answer": "Ada Okafor, Trung Nguyen, Zara Okafor-Nguyen, Lachlan Okafor-Nguyen and Nguyen Constructions Pty Ltd"
+  },
+  {
+    "id": "trust_property_lender",
+    "question": "What property does the Nguyen Family Trust own, and which bank holds the loan over it?",
+    "answer": "Unit 3/45 Eucalypt Street, Castlemaine; Murray Valley Bank"
+  },
+  {
+    "id": "ada_lawyers_firms",
+    "question": "Who are the lawyers acting for Ada Okafor and which firm does each work for?",
+    "answer": "Fiona Brennan-Hale and Sam Odhiambo (Harcourt Dunne Family Lawyers); barrister Callum Reyes"
+  },
+  {
+    "id": "judge_and_court",
+    "question": "Which judge presides over the proceedings and in which court is the case heard?",
+    "answer": "Judge Ruth Ashdown, Federal Circuit and Family Court of Australia"
+  },
+  {
+    "id": "bdrc_practitioner_cert",
+    "question": "Which certificate was issued through the Bendigo Dispute Resolution Centre and who signed it?",
+    "answer": "Section 60I certificate FDR-2026-0093, Owen Baptiste"
+  },
+  {
+    "id": "goldfields_mediation_cert",
+    "question": "Which section 60I certificate was issued by the practitioner at Goldfields Family Mediation?",
+    "answer": "FDR-2025-0471 (Rosalind Teague)"
+  },
+  {
+    "id": "ada_employers",
+    "question": "List the employers Ada Okafor has had or been offered work by.",
+    "answer": "Loddon Valley Hospital and Coral Coast Private Hospital"
+  },
+  {
+    "id": "ada_debts",
+    "question": "What debts does Ada Okafor owe, and to whom?",
+    "answer": "A credit card, the Murray Valley Bank home loan, and fees to Harcourt Dunne Family Lawyers"
+  },
+  {
+    "id": "trung_vehicles",
+    "question": "Which vehicles does Trung Nguyen own?",
+    "answer": "A 2019 Ford Ranger"
+  },
+  {
+    "id": "lawyer_firm_children_lawyer",
+    "question": "Which firm does the lawyer who represents Zara and Lachlan work for?",
+    "answer": "Sallis Children's Law"
+  },
+  {
+    "id": "mediation_certs_issuers",
+    "question": "Which organisations issued the section 60I certificates in the matter?",
+    "answer": "Goldfields Family Mediation and Bendigo Dispute Resolution Centre"
+  },
+  {
+    "id": "trung_companies",
+    "question": "Which companies does Trung Nguyen own or work for?",
+    "answer": "Nguyen Constructions Pty Ltd and Nguyen Holdings Pty Ltd"
+  },
+  {
+    "id": "coral_letter_author",
+    "question": "Who at Coral Coast Private Hospital wrote the letter of offer to Ada Okafor, and what is that person's position?",
+    "answer": "Hannah Mallory, Director of Nursing"
+  },
+  {
+    "id": "trust_trustee_director",
+    "question": "Who is the trustee of the Nguyen Family Trust and who is its sole director?",
+    "answer": "Nguyen Holdings Pty Ltd is the trustee; Trung Nguyen is its sole director"
+  },
+  {
+    "id": "sibling_pair",
+    "question": "Who are the siblings in this matter?",
+    "answer": "Zara Okafor-Nguyen and Lachlan Okafor-Nguyen"
+  },
+  {
+    "id": "noone_fourth_lawyer",
+    "question": "Which firm employs the lawyer who represents the third child?",
+    "answer": "There is no third child; the matter has two children.",
+    "unanswerable": true
+  }
+]

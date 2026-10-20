@@ -66,6 +66,45 @@ class TestHealth:
         assert body["status"] == "ready"
         assert "anthropic" in body["providers"]
         assert body["run_dir_writable"] is True
+        assert set(body["roles"]) == {"root", "sub"}
+        assert body["corpus_root_readable"] is True
+
+    def test_readyz_rejects_a_key_for_the_wrong_configured_provider(self, tmp_path, monkeypatch):
+        from rnsr.service import create_app
+
+        monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+        monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
+        monkeypatch.setenv("OPENAI_API_KEY", "test-openai")
+        app = create_app(Settings(provider="anthropic", service_token="test",
+            service_corpus_root=tmp_path), run_dir=tmp_path / "runs")
+        with TestClient(app, headers={"Authorization": "Bearer test"}) as client:
+            response = client.get("/readyz")
+        assert response.status_code == 503
+        assert response.json()["detail"]["providers"] == ["openai"]
+        assert response.json()["detail"]["roles"] == {}
+
+    def test_readyz_requires_both_roles_and_never_calls_a_provider(self, client, monkeypatch):
+        import httpx
+
+        from rnsr.llm.router import Router
+
+        async def no_live_requests(*args, **kwargs):
+            pytest.fail("readiness must not make a provider request")
+
+        monkeypatch.setattr(httpx.AsyncClient, "send", no_live_requests)
+        assert client.get("/readyz").status_code == 200
+        resolve = Router.resolve
+
+        def unavailable_sub(self, role):
+            if role == "sub":
+                raise RuntimeError("private provider configuration details")
+            return resolve(self, role)
+
+        monkeypatch.setattr(Router, "resolve", unavailable_sub)
+        response = client.get("/readyz")
+        assert response.status_code == 503
+        assert set(response.json()["detail"]["roles"]) == {"root"}
+        assert "private provider" not in response.text
 
     def test_readyz_503_without_a_provider_key(self, tmp_path, monkeypatch):
         from rnsr.service import create_app
@@ -228,8 +267,103 @@ class TestRunJob:
         assert job.error
 
 
+class TestAuditResults:
+    @pytest.mark.parametrize("encrypted", [False, True])
+    def test_results_include_evidence_and_authorized_audit_without_host_paths(
+            self, client, corpus_db, tmp_path, monkeypatch, encrypted):
+        import json
+
+        from rnsr.harness.trajectory import TrajectoryWriter
+        from rnsr.sdk import BatchAnswer
+
+        key = ""
+        if encrypted:
+            pytest.importorskip("cryptography")
+            from cryptography.fernet import Fernet
+
+            key = Fernet.generate_key().decode()
+            client.app.state.settings.trajectory_key = key
+        source_path = str(tmp_path.parent / "private-client-source.pdf")
+        outside = tmp_path / "outside.jsonl"
+        outside.write_text('{"kind":"outside"}\n')
+
+        async def answers(questions, corpus_db, **kwargs):
+            directory = kwargs["run_dir"]
+            with TrajectoryWriter(directory, "q", key=key) as writer:
+                writer.event("cell", ok=True, stdout="private document content",
+                    code=source_path, source_path=source_path)
+                writer.event("cell", phase=source_path, status=source_path, n=source_path,
+                    ok="true", timeout_s=source_path)
+                trajectory = writer.path
+            return [BatchAnswer(question=questions[0], answer="7714", status="final",
+                evidence={"quotes_total": 1, "quotes_verified": 1, "docs_cited": ["doc"]},
+                citations=[{"quote": "The secret number is 7714.", "matched": True,
+                    "doc_id": "doc", "char_start": 0, "char_end": 26,
+                    "source_context": {"page": 1, "source_path": source_path,
+                        "heading_paths": ["Fiscal2021"],
+                        "sections": [{"heading_path": "Fiscal2021"}]},
+                    "matches": [{"doc_id": "doc", "source_context": {"source_path": source_path}}]}],
+                health={"grade": "ok"}, claim_review={"status": "supported", "required": True},
+                trajectory_paths=[str(trajectory), str(outside)])]
+
+        monkeypatch.setattr("rnsr.sdk.answer_batch", answers)
+        response = client.post("/jobs", json={"questions": ["Number?"], "corpus_db": str(corpus_db)})
+        assert response.status_code == 202
+        job_id = response.json()["id"]
+        job = wait_for_job(client, job_id)
+        result = job["results"][0]
+        assert result["evidence"]["quotes_verified"] == 1
+        assert result["citations"][0]["source_context"] == {"page": 1,
+            "heading_paths": ["Fiscal2021"], "sections": [{"heading_path": "Fiscal2021"}]}
+        assert result["citations"][0]["char_start"] == 0
+        assert result["health"] == {"grade": "ok"}
+        assert result["claim_review"] == {"status": "supported", "required": True}
+        assert source_path not in json.dumps(job)
+        assert str(tmp_path) not in json.dumps(job)
+        assert len(result["audit_refs"]) == 1
+        reference = result["audit_refs"][0]
+        assert reference.startswith(f"/jobs/{job_id}/audit/")
+        assert client.get(reference, headers={"Authorization": ""}).status_code == 401
+        audit = client.get(reference)
+        assert audit.status_code == 200
+        assert audit.json()["content"] == "metadata"
+        event = audit.json()["events"][0]
+        assert set(event) == {"kind", "t", "ok"}
+        assert event["kind"] == "cell" and event["ok"] is True
+        forged = audit.json()["events"][1]
+        assert set(forged) == {"kind", "t"}
+        assert source_path not in audit.text and "private document content" not in audit.text
+        assert client.get(f"/jobs/other/audit/{reference.rsplit('/', 1)[1]}").status_code == 404
+        trajectory = next(iter(client.app.state.store.get(job_id).audit_paths.values()))
+        trajectory.unlink()
+        trajectory.symlink_to(outside)
+        assert client.get(reference).status_code == 404
+
+    def test_service_jobs_apply_retention_to_previous_job_directories(
+            self, client, corpus_db, tmp_path, monkeypatch):
+        import os
+
+        from rnsr.sdk import BatchAnswer
+
+        stale = tmp_path / "runs" / "service" / "previous-job" / "q.jsonl"
+        stale.parent.mkdir(parents=True)
+        stale.write_text("{}\n")
+        expired = time.time() - 3 * 86400
+        os.utime(stale, (expired, expired))
+        client.app.state.settings.trajectory_retention_days = 1
+
+        async def answers(questions, corpus_db, **kwargs):
+            assert not stale.exists()
+            return [BatchAnswer(question=questions[0], answer="7714", status="final")]
+
+        monkeypatch.setattr("rnsr.sdk.answer_batch", answers)
+        response = client.post("/jobs", json={"questions": ["Number?"], "corpus_db": str(corpus_db)})
+        assert wait_for_job(client, response.json()["id"])["state"] == "done"
+        assert not stale.exists()
+
+
 class TestAuthorization:
-    @pytest.mark.parametrize("path", ["/readyz", "/metrics", "/jobs", "/jobs/id"])
+    @pytest.mark.parametrize("path", ["/readyz", "/metrics", "/jobs", "/jobs/id", "/jobs/id/audit/ref"])
     def test_protected_reads(self, client, path):
         assert client.get(path, headers={"Authorization": ""}).status_code == 401
         assert client.get(path, headers={"Authorization": "Bearer wrong"}).status_code == 401

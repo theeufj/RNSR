@@ -30,6 +30,8 @@ jobs:
     timeout-minutes: 60
     env:
       ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
       RNSR_LOG_FORMAT: json
       # a runaway run must not be able to empty the account
       RNSR_RUN_SPEND_CEILING_USD: "25"
@@ -52,7 +54,7 @@ jobs:
       - name: Check for a provider key
         id: guard
         run: |
-          if [ -z "$ANTHROPIC_API_KEY" ]; then
+          if [ -z "$ANTHROPIC_API_KEY" ] && [ -z "$OPENAI_API_KEY" ] && [ -z "$GOOGLE_API_KEY" ]; then
             echo "No provider key configured; skipping the live regression."
             echo "run=false" >> "$GITHUB_OUTPUT"
           else
@@ -118,4 +120,85 @@ jobs:
             runs/regression/out/run_report.json
             runs/regression/out/autopsy.json
             runs/regression/out/loss-ledger.md
+          retention-days: 30
+
+  generic-coverage:
+    # Fresh generated coverage without Mitchell's tuned form conventions.
+    # Once failures inform a fix, these seeds become regression controls;
+    # new independent matters/forms are still needed for generalization claims.
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - benchmark: matter
+            seed: 901
+          - benchmark: office
+            seed: 902
+    env:
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
+      RNSR_PROFILE: production
+      RNSR_RUN_SPEND_CEILING_USD: "10"
+      BENCHMARK: ${{ matrix.benchmark }}
+      SEED: ${{ matrix.seed }}
+      MIN_GENERIC_ACCURACY: "0.80"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Check for a provider key
+        id: guard
+        run: |
+          if [ -z "$ANTHROPIC_API_KEY" ] && [ -z "$OPENAI_API_KEY" ] && [ -z "$GOOGLE_API_KEY" ]; then
+            echo "No provider key configured; live generic coverage was not run."
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Install
+        if: steps.guard.outputs.run == 'true'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y bubblewrap
+          pip install -e ".[ingest,eval,dev]"
+      - name: Verify configured models and pricing
+        if: steps.guard.outputs.run == 'true'
+        run: rnsr doctor --check-models
+      - name: Evaluate frozen generic policy
+        if: steps.guard.outputs.run == 'true'
+        run: |
+          rnsr eval --benchmark "$BENCHMARK" --seed "$SEED" \
+            --system docdb --concurrency 2 --run-dir runs/generic-coverage
+      - name: Gate accuracy and truly absent-item false positives
+        if: steps.guard.outputs.run == 'true'
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          path = Path("runs/generic-coverage") / (os.environ["BENCHMARK"] + "-docdb") / "summary.json"
+          summary = json.loads(path.read_text())
+          if summary["n"] == 0:
+              raise SystemExit("Generic coverage produced no scored questions")
+          if summary["status_counts"].get("error", 0):
+              raise SystemExit("Generic coverage contained query errors")
+          if summary["accuracy"] < float(os.environ["MIN_GENERIC_ACCURACY"]):
+              raise SystemExit("Generic coverage accuracy was below the regression floor")
+          if summary["false_positive_rate"] > 0.15:
+              raise SystemExit("Generic coverage false-positive rate exceeded 15%")
+          PY
+      - name: Upload sanitized run identity and summary
+        if: always() && steps.guard.outputs.run == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: generic-${{ matrix.benchmark }}-${{ matrix.seed }}
+          path: |
+            runs/generic-coverage/*-docdb/summary.json
+            runs/generic-coverage/*-docdb/run_manifest.json
           retention-days: 30

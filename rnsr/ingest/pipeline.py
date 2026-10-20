@@ -215,6 +215,7 @@ def ingest(
             continue
         for child in expand_document(parsed, parse, seen_ids):
             parsed_ok.append((src, child))
+            report.parse_failed.extend(child.attachment_failures)
 
     n_scanned = sum(len(p.scanned_pages) for _, p in parsed_ok)
     if n_scanned and transcriber is not None:
@@ -254,6 +255,8 @@ def ingest(
     corpus = CorpusDB.create(tmp_db)
     conn = corpus.conn
     try:
+        from rnsr.ingest.outcomes import record_failure
+
         for src, parsed in parsed_ok:
             written = write_document(
                 conn, src, parsed, config, prose_checker=prose_checker,
@@ -262,6 +265,9 @@ def ingest(
             )
             report.documents.append(written.document)
             report.tables.extend(written.tables)
+
+        for failure in report.parse_failed:
+            record_failure(conn, failure)
 
         report.n_chunks = fts.populate_fts(conn)
         schema.record_ingest_batch(

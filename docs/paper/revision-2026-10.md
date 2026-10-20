@@ -6,8 +6,8 @@ working tree now carries ~1,800 lines of changes and a 20 October benchmark on
 three synthetic legal matters. These notes give replacement or insertion text,
 section by section, so the manuscript can be re-pinned to the next commit.
 
-Placeholder: `<COMMIT>` is the hash of the commit that lands the current
-working tree.
+The working tree described here was committed as `ded0c42`
+(`ded0c42957ee9f9374938cf157fed5bd050f03b9`).
 
 Conventions: text in blockquotes is ready to paste; everything else is a note
 to the editor.
@@ -59,10 +59,10 @@ Replace:
 
 with:
 
-> The implementation examined here is repository revision `<COMMIT>`, dated
+> The implementation examined here is repository revision `ded0c42`, dated
 > October 2026 [14]. The engineering runs in Section 6.1–6.3 were recorded
 > against the earlier revision d622678; Section 6.4 reports a later run
-> against `<COMMIT>`. Where the two revisions differ in a way that matters to
+> against `ded0c42`. Where the two revisions differ in a way that matters to
 > a claim, the text says which revision it describes.
 
 The rest of the paragraph ("Mechanisms described as implemented refer to that
@@ -136,7 +136,7 @@ with:
 
 ### "Population identity must survive repair" — final paragraph
 
-The scope bug is still present in `<COMMIT>` (`annotate.py` selects the newest
+The scope bug is still present in `ded0c42` (`annotate.py` selects the newest
 `annotation_log` row for a table/column; `classification.py` aggregates over
 it). Replace the final sentence:
 
@@ -145,7 +145,7 @@ it). Replace the final sentence:
 
 with:
 
-> This contract is a design proposal. It is not implemented in `<COMMIT>`:
+> This contract is a design proposal. It is not implemented in `ded0c42`:
 > the finalizer still revalidates the newest contract recorded for a table and
 > annotation column, so the failure in Section 6.2 remains reproducible.
 
@@ -184,7 +184,7 @@ Give the existing subsections numbers so the new one can be referenced:
 
 > **6.4 A second review-loop pathology under a newer model generation**
 >
-> On 20 October 2026, revision `<COMMIT>` was run over three synthetic legal
+> On 20 October 2026, revision `ded0c42` was run over three synthetic legal
 > matters authored for benchmarking: an employment dispute (40 documents, 111
 > questions), a family-law property matter (37 documents, 85 questions), and a
 > partner-visa matter (43 documents, 90 questions). Documents include Word and
@@ -342,7 +342,7 @@ Replace "external storage can still coexist with an overflowing prompt" with:
 
 ## Artifact and Reproducibility Statement — replace in full
 
-> The implementation audit targets commit `<COMMIT>` in the RNSR repository
+> The implementation audit targets commit `ded0c42957ee9f9374938cf157fed5bd050f03b9` (ded0c42) in the RNSR repository
 > [14]. Relevant modules include `db/schema.py`, `ingest/writer.py`,
 > `env/search.py`, `env/annotate.py`, `env/classification.py`,
 > `env/calculations.py`, `env/evidence.py`, `harness/claim_review.py`,
@@ -366,7 +366,8 @@ Replace "external storage can still coexist with an overflowing prompt" with:
 
 Editorial prerequisites for that statement to be true:
 
-1. Commit the working tree and substitute the hash for `<COMMIT>`.
+1. Done: the working tree is committed as `ded0c42` and the hash is
+   substituted throughout these notes.
 2. Done: `testMatter/matters/*.zip` is ignored; `.cache/`, `.DS_Store` and
    `__pycache__/` were already ignored.
 3. Add a `LICENSE` file to the repository. The artifact statement points
@@ -381,7 +382,7 @@ Editorial prerequisites for that statement to be true:
 
 Update [14]:
 
-> [14] RNSR. 2026. Source implementation at commit `<COMMIT>`. Versioned
+> [14] RNSR. 2026. Source implementation at commit `ded0c42957ee9f9374938cf157fed5bd050f03b9`. Versioned
 > repository, https://github.com/theeufj/RNSR. Examined 21 October 2026.
 
 [15] unchanged. Add [16] only if the Section 2 caching sentence is kept.

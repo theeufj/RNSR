@@ -29,7 +29,7 @@ MAX_OPERANDS = 0
 MAX_SOURCES = 0
 MAX_ROW_CHARS = 20_000
 PRECISION = 50
-AGGREGATE_QUOTE_SAMPLE = 8        # quotes forwarded per aggregate; the certificate carries every row
+AGGREGATE_QUOTE_SAMPLE = 3        # quotes forwarded per aggregate; the certificate carries every row
 MAX_FINAL_QUOTES = 32             # the reviewer's evidence limit for calculation proofs
 AGGREGATE_OPERATIONS = ('sum', 'count', 'mean', 'min', 'max')
 

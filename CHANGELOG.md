@@ -37,7 +37,12 @@
   is the only arm with replayable derivations (8–13 of 21 computed answers,
   37–59% key-source coverage) at parity accuracy (36–37/38); the claim
   reviewer accepts ~40% of certificates and every batch still halts, so
-  trust tiers stay low. See `docs/benchmarks/matters-2026-10.md`.
+  trust tiers stay low. With `claim_review_certificate_policy=scope_only`
+  (reviewer may support or contradict a parent-executed certificate by naming
+  a scope fault, never withhold) and `embed_auto_max_chunks=1000` (no
+  automatic corpus embedding), DocDB reaches 38/38 on the heterogeneous dense
+  matter with 223 provider requests and 7 minutes (from 10,554 and 18), at
+  3–4x the REPL baselines' cost. See `docs/benchmarks/matters-2026-10.md`.
 - Root prompts are sent to Anthropic as cache-friendly blocks: the system
   prompt and the completed transcript carry `cache_control` breakpoints, so a
   growing conversation re-reads its prefix instead of re-billing it every

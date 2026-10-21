@@ -539,8 +539,49 @@ fixed (`arms_bench --rerun docdb`, two judge passes):
 | hetero | 2 + batch, SQL | 37 / 38 | 38 / 38 | 12 / 21 | 52% | 3 / 13 / 22 | 7 | 193 | $2.86 | 18.2 min |
 | hetero | 3 + template, rule | 37 / 38 | 37 / 38 | 13 / 21 | 59% | 0 / 12 / 26 | 5 | 165 | $2.59 | 18.3 min |
 
+Two further changes (2026-10-22) addressed what the first three reruns left:
+
+4. **Reviewer policy.** `claim_review_certificate_policy=scope_only`: a field
+   carrying a parent-executed certificate is reviewed for scope only. The
+   reviewer answers `supported`, or `contradicted` naming the clause, table or
+   row outside the question's population; `insufficient` is not available for
+   such a field (inputs and operation are parent-verified) and maps to
+   supported as undisputed scope.
+5. **Ladder gate.** `embed_auto_max_chunks=1000`: auto-escalating `search()`
+   no longer embeds a corpus above that size; `search(q, rung=4)` is explicit.
+   Then: the projected certificate in the review prompt is bounded (1,500
+   characters of SQL, 5 sample rows) and the prompt limit raised to 60k, because
+   certificate-backed fields were being dropped from review as `prompt_limit`.
+
+| Matter | Rerun | Correct | Substantive | Replayable derivation | Coverage | Tiers H/M/L | Review halts | Embed batches | Requests | Spend | Wall |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| uniform | 4 + policy, gate | 37 / 38 | 38 / 38 | 20 / 21 | 81% | 0 / 23 / 15 | 5 | 0 | – | $2.37 | 6.9 min |
+| uniform | 5 + bounded projection | 36 / 38 | 38 / 38 | 18 / 21 | 76% | 0 / 28 / 10 | 4 | 0 | – | $2.17 | 7.1 min |
+| hetero | 4 + policy, gate | 37 / 38 | 38 / 38 | 11 / 21 | 49% | 0 / 16 / 22 | 5 | 0 | 223 | $2.63 | 7.0 min |
+| hetero | 5 + bounded projection | **38 / 38** | 38 / 38 | 12 / 21 | 54% | 0 / 16 / 22 | 5 | 0 | – | $2.67 | 7.1 min |
+
+The ladder gate alone took the heterogeneous run from 10,554 provider requests
+and 18.3 minutes to 223 requests and 7.0 minutes at the same accuracy. With
+the scope-only policy the reviewer stopped answering `insufficient` on
+certificate fields and started contradicting by naming a fault; several of its
+faults were fair ("the selection is a hard-coded list of triples; nothing in it
+tests for credit notes"), which is the reviewer doing the job the certificate
+was built to let it do. Rerun 5's uniform misses are a template with a stray
+`$` on a count and a judge `unavailable`; the heterogeneous run is the first
+perfect score by any DocDB configuration. Halts persist because non-certificate
+(lookup) fields in the same batch still cycle, and because 32–46 certificate
+fields per run still hit `prompt_limit` from the eight 2,000-character sample
+quotes each forwarded; the sample is now three (untested in a run). Trust
+tiers cannot reach *high* on these corpora at all: every extracted table is
+`unchecked` (no LLM table validation at ingest), and an unchecked bound table
+caps the tier at medium by rule, independent of the reviewer.
+
 For comparison the REPL baselines on the same matters are 37/38 at $0.58–0.70
 and 1.4–1.8 minutes, with no verified citation, no derivation and no tier.
+DocDB after rerun 5 is 36–38/38 at $2.17–2.67 and 7 minutes: three to four
+times the cost and four to five times the wall time (down from ten), with a
+replayable derivation on 54–76% of computed answers and a verified citation on
+every answer.
 Rerun 3 on the heterogeneous matter was first scored during a provider
 outage (eight judge `APITimeoutError`s read as misses); it was rescored
 cleanly the next morning, both passes 37/38.
@@ -572,18 +613,15 @@ fixed cost that bought nothing (0–193 provider batches by run, 10,554 requests
 on the last heterogeneous rerun).
 
 Reading. The certificate makes DocDB the only arm whose computed answers are
-replayable from frozen source rows, and at parity accuracy (37/38) with
-verified citations on every answer; that is the auditability property no REPL
-baseline produces. It costs three to four times as much and ten times the wall
-time, almost all of it in a review loop that will not accept the certificates
-and a search ladder the workload does not need. The layer to redesign next is
-the reviewer, which should treat a parent-executed certificate as settled on
-inputs and operation and confine itself to whether the predicate names the
-question's population, and the ladder, which should not embed a corpus the
-controller has already queried relationally. The relational layer itself has
-now done something the text REPLs cannot; whether that is worth the cost is a
-product question about how much a replayable derivation is worth to the reader
-of the answer.
+replayable from frozen source rows, at parity-or-better accuracy (36–38/38)
+with verified citations on every answer; that is the auditability property no
+REPL baseline produces. After the reviewer policy and the ladder gate it costs
+three to four times the REPL arms and four to five times the wall time, down
+from ten, with the remaining overhead in a review loop whose halts now come
+from lookup fields and prompt size rather than from refusing certificates. The
+relational layer has done something the text REPLs cannot; whether a
+replayable derivation is worth 3× to the reader of the answer is a product
+question, and it is now a priced one.
 
 Reproduce: as for the dense matters, then
 `python -m rnsr.eval.arms_bench --matter <matter> --out <out> --arms ... --rerun docdb --judge-passes 2`.

@@ -103,6 +103,9 @@ Caller metric contracts define an explicitly requested convention, not universal
 economic truth. A caller_nonpositive_numerator_zero operation requires a supplied,
 satisfied caller-declared contract with nonpositive_numerator='zero'. Without it,
 clipping a negative result to zero (or inventing a positive result) is unsupported.
+A field with review_mode "certificate_scope" carries its own instruction in
+certificate_note: judge the recorded selection SQL against the question's scope
+only; 'supported' or 'contradicted' (naming the fault), never 'insufficient'.
 Return ONLY JSON: {"reviews":[{"field_id":"f0","verdict":"supported",
 "evidence_ids":["f0q0m0"],"reason":"brief evidence-based explanation",
 "requirement_checks":[{"requirement_id":"id from requirements.checks",
@@ -292,6 +295,29 @@ def _proof(report: object, field_id: str) -> list[dict]:
     return []
 
 
+def _parent_certificate(evidence: list[dict]) -> dict | None:
+    """The first parent-executed aggregate certificate among a field's proofs."""
+    for item in evidence:
+        if item.get("kind") not in _CALCULATION_CHECKS:
+            continue
+        for record in item.get("records") or []:
+            if isinstance(record, dict) and record.get("kind") == "aggregate" \
+                    and record.get("selection_executed_by") == "parent":
+                return {"evidence_id": item["evidence_id"], "operation": record.get("operation"),
+                        "n_rows": record.get("n_rows"), "selection": record.get("selection")}
+    return None
+
+
+CERTIFICATE_SCOPE_NOTE = (
+    "This field carries a parent-executed aggregate certificate: the parent ran the recorded "
+    "selection SQL on frozen source tables, re-read every selected row, and computed the operation; "
+    "inputs and arithmetic are settled and are not under review. Decide only whether the SQL "
+    "selects the population the question asks about. Answer 'supported', or 'contradicted' naming "
+    "the predicate clause, table or row that puts the selection outside the question's scope. "
+    "'insufficient' is not available for this field: a certificate whose scope you cannot fault is "
+    "supported.")
+
+
 def candidate_key(final: dict, question: tuple[str, str], *, batch: bool,
                   category_definitions: str | None = None) -> str:
     """Bind cached decisions to claim, task and the exact reviewed evidence."""
@@ -368,6 +394,22 @@ def _parse_reply(text: str, fields: list[dict]) -> tuple[dict, dict]:
             raise ValueError("invalid_response")
         outcome = {"status": "reviewed", "verdict": verdict,
                    "reason_code": "model_review", "evidence_ids": refs}
+        if expected[fid].get("review_mode") == "certificate_scope" and verdict != "contradicted":
+            # Inputs and operation are parent-verified; only a named scope fault
+            # can withhold support. An undisputed scope is support.
+            cert_ids = [e["evidence_id"] for e in expected[fid]["evidence"] if e.get("kind") in _CALCULATION_CHECKS]
+            outcome.update(verdict="supported", evidence_ids=list(dict.fromkeys([*refs, *cert_ids])),
+                           reason_code="certificate_scope_undisputed" if verdict == "insufficient" else "model_review")
+            needed = {r["requirement_id"] for r in expected[fid].get("requirements", {}).get("checks", [])}
+            if needed:
+                outcome["requirements_met"] = sorted(needed)
+            objection = expected[fid].get("prior_objection")
+            if objection:
+                outcome.update(objection_id=objection["objection_id"], objection_resolved=True,
+                               resolution_sha256=_digest("certificate"))
+            outcomes[fid] = outcome
+            reasons[fid] = reason
+            continue
         requirements = expected[fid].get("requirements", {}).get("checks", [])
         if verdict == "supported" and requirements:
             checks = row.get("requirement_checks")
@@ -445,6 +487,7 @@ async def review_final(
     category_definitions: str | None = None, seed: int | None = None,
     phase: str = "review",
     prior_objections: dict[str, dict] | None = None,
+    certificate_policy: str = "scope_only",
 ) -> dict:
     """Return a trajectory event payload; make at most one provider call.
 
@@ -528,6 +571,11 @@ async def review_final(
         candidate = {"field_id": fid, "question": question, "answer": answer_text,
                      "evidence": evidence, "evidence_truncated": truncated,
                      "requirements": requirements}
+        certificate = _parent_certificate(evidence) if certificate_policy == "scope_only" else None
+        if certificate:
+            candidate["review_mode"] = "certificate_scope"
+            candidate["certificate_note"] = CERTIFICATE_SCOPE_NOTE
+            record["certificate"] = {k: certificate[k] for k in ("evidence_id", "operation", "n_rows")}
         objection = (prior_objections or {}).get(_digest(qid))
         if objection is not None:
             old_id = objection.get("field_id", fid)
@@ -614,7 +662,8 @@ class ReviewGate:
     async def check(self, final: dict, questions: list[tuple[str, str]], *, batch: bool,
                     client: LLMClient, model: str, adjudicator: LLMClient,
                     adjudicator_model: str, ledger: BudgetLedger,
-                    category_definitions: str | None = None, seed: int | None = None) -> dict:
+                    category_definitions: str | None = None, seed: int | None = None,
+                    certificate_policy: str = "scope_only") -> dict:
         by_qid = {_digest(qid): (qid, text) for qid, text in questions}
         keys = {_digest(qid): candidate_key(final, (qid, text), batch=batch,
                                            category_definitions=category_definitions)
@@ -648,7 +697,8 @@ class ReviewGate:
                 client=adjudicator if phase == "adjudication" else client,
                 model=adjudicator_model if phase == "adjudication" else model,
                 ledger=ledger, category_definitions=category_definitions,
-                seed=seed, phase=phase, prior_objections=objections)
+                seed=seed, phase=phase, prior_objections=objections,
+                certificate_policy=certificate_policy)
             events.append(result)
             retry = []
             for record in result.get("fields", []):

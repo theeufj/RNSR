@@ -1003,3 +1003,38 @@ def test_review_breaker_settings_parse_from_env(monkeypatch, tmp_path):
     monkeypatch.setenv("RNSR_CLAIM_REVIEW_MAX_ROUNDS", "9")
     s = Settings.from_env()
     assert s.claim_review_max_stalls == 0 and s.claim_review_max_rounds == 9
+
+
+def test_certificate_scope_policy_cannot_be_withheld():
+    from rnsr.harness.claim_review import _parse_reply
+
+    cert = {"evidence_id": "f0p0", "kind": "source_bound_calculation", "answer": "15",
+            "records": [{"kind": "aggregate", "selection_executed_by": "parent", "n_rows": 15,
+                         "operation": "count", "selection": "SELECT ..."}]}
+    quote = {"evidence_id": "f0q0m0", "kind": "quote"}
+    fields = [{"field_id": "f0", "evidence": [quote, cert], "review_mode": "certificate_scope",
+               "requirements": {"checks": [{"requirement_id": "r1"}]},
+               "prior_objection": {"objection_id": "o1", "verdict": "insufficient", "reason": "x"}}]
+    reply = '{"reviews":[{"field_id":"f0","verdict":"insufficient","evidence_ids":[],"reason":"cannot confirm every row"}]}'
+    outcomes, reasons = _parse_reply(reply, fields)
+    out = outcomes["f0"]
+    assert out["verdict"] == "supported" and out["reason_code"] == "certificate_scope_undisputed"
+    assert "f0p0" in out["evidence_ids"] and out["requirements_met"] == ["r1"] and out["objection_resolved"] is True
+    reply = '{"reviews":[{"field_id":"f0","verdict":"contradicted","evidence_ids":["f0p0"],"reason":"the WHERE clause selects PRJ-BRAVO only"}]}'
+    outcomes, _ = _parse_reply(reply, fields)
+    assert outcomes["f0"]["verdict"] == "contradicted"
+    # Without the mode, the legacy path applies and insufficient stands.
+    plain = [{**fields[0], "review_mode": None, "requirements": {}, "prior_objection": None}]
+    reply = '{"reviews":[{"field_id":"f0","verdict":"insufficient","evidence_ids":[],"reason":"n"}]}'
+    assert _parse_reply(reply, plain)[0]["f0"]["verdict"] == "insufficient"
+
+
+def test_parent_certificate_detection():
+    from rnsr.harness.claim_review import _parent_certificate
+
+    ev = [{"evidence_id": "f0q0m0", "kind": "quote"},
+          {"evidence_id": "f0p0", "kind": "source_bound_calculation",
+           "records": [{"kind": "aggregate", "selection_executed_by": "controller"}]}]
+    assert _parent_certificate(ev) is None
+    ev[1]["records"][0]["selection_executed_by"] = "parent"
+    assert _parent_certificate(ev)["evidence_id"] == "f0p0"

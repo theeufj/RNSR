@@ -390,6 +390,7 @@ class RootRunner:
                       "metric_contract": env.metric_contract,
                       "calc_limits": {"max_records": s.calc_max_records, "max_operands": s.calc_max_operands,
                                       "max_sources": s.calc_max_sources},
+                      "embed_auto_max_chunks": s.embed_auto_max_chunks,
                       "model_identities": {
                           "root": f"{getattr(self.root_client, 'provider', 'unknown')}:{self.root_model}",
                           "sub": f"{getattr(self.sub_client, 'provider', 'unknown')}:{self.sub_model}",
@@ -590,7 +591,7 @@ class RootRunner:
                             client=self.sub_client, model=self.sub_model,
                             adjudicator=self.root_client, adjudicator_model=self.root_model,
                             ledger=ledger, category_definitions=env.category_definitions,
-                            seed=s.llm_seed)
+                            seed=s.llm_seed, certificate_policy=s.claim_review_certificate_policy)
                         for event in review["events"]:
                             trajectory.event("claim_review", **event)
                         trajectory.event("claim_review_decision", supported=review["supported"],

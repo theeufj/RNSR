@@ -55,6 +55,7 @@ class Ladder:
     expansion_max_rounds: int = 3
     sweep_chunk_batch: int = 20    # chunks per rung-5 sub-call
     enable_embeddings: bool = True
+    embed_auto_max_chunks: int = 1000   # auto mode skips rung 4 above this many chunks (0 = never)
     rebuild_cells: bool = False  # public replay/validation seam
     _cell_relation: str | None = field(default=None, init=False, repr=False)
     _embedding_store: object | None = field(default=None, init=False, repr=False)
@@ -72,7 +73,12 @@ class Ladder:
             return []
         if rung is not None:
             return self._run_rung(rung, query, k)
+        n_chunks = self.conn.execute("SELECT count(*) FROM chunks").fetchone()[0]
+        skipped_embed = False
         for r in (0, 1, 2, 3, 4):
+            if r == 4 and self.embed_auto_max_chunks and n_chunks > self.embed_auto_max_chunks:
+                skipped_embed = True   # embedding the whole corpus is an explicit choice, not a fallback
+                continue
             try:
                 hits = self._run_rung(r, query, k)
             except Exception:
@@ -81,7 +87,16 @@ class Ladder:
                 raise
             if hits:
                 return hits
-        n_chunks = self.conn.execute("SELECT count(*) FROM chunks").fetchone()[0]
+        if skipped_embed:
+            self._log(4, query, 0)
+            return [{
+                "rung": 4, "kind": "estimate", "text": "", "score": None, "provenance": {},
+                "estimated_sub_calls": -(-n_chunks // 64),
+                "note": (f"rungs 0-3 found nothing; the embedding rung was not run automatically on a "
+                         f"{n_chunks}-chunk corpus. Prefer SQL over the tables or a sharper lexical "
+                         "query; search(query, rung=4) embeds the corpus if semantic search is needed, "
+                         "search(query, rung=5) sweeps it."),
+            }]
         return [{
             "rung": 5, "kind": "estimate", "text": "", "score": None, "provenance": {},
             "estimated_sub_calls": -(-n_chunks // self.sweep_chunk_batch),

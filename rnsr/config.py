@@ -63,6 +63,17 @@ class Settings:
     calc_max_records: int = 0
     calc_max_operands: int = 0
     calc_max_sources: int = 0
+    # How the claim reviewer treats a parent-executed aggregate certificate.
+    # "scope_only": inputs and operation are settled by the parent; the
+    # reviewer may only contradict by naming a predicate clause or row outside
+    # the question's population, and an "insufficient" verdict counts as
+    # undisputed scope. "full": the legacy behaviour (reviewer may withhold).
+    claim_review_certificate_policy: str = "scope_only"
+    # Auto-escalating search() skips the embedding rung when the corpus has
+    # more chunks than this (0 = never skip); search(query, rung=4) still works.
+    # Embedding every chunk of a large corpus cost thousands of provider
+    # requests on workloads the controller had already answered relationally.
+    embed_auto_max_chunks: int = 1000
 
     # --- run-level provider governance (rnsr.llm.governor) ---
     # Optional budgets above cap ONE query; these cap the run. 0 disables a limit.
@@ -160,6 +171,8 @@ class Settings:
                      "health_min_validation_rate", "health_max_parse_failed_rate"):
             if getattr(self, name) > 1:
                 raise ValueError(f"{name} must be between 0 and 1")
+        if self.claim_review_certificate_policy not in ("scope_only", "full"):
+            raise ValueError("claim_review_certificate_policy must be 'scope_only' or 'full'")
 
     @classmethod
     def production(cls, **overrides) -> Settings:

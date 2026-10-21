@@ -50,6 +50,7 @@ def build_namespace(corpus_db: str, child, init_msg: dict) -> dict:
         conn=conn, doc=doc, manifest=manifest, rpc=child.rpc,
         expansion_max_rounds=init_msg.get("expansion_max_rounds", 3),
         enable_embeddings=init_msg.get("enable_embeddings", True),
+        embed_auto_max_chunks=init_msg.get("embed_auto_max_chunks", 1000),
     )
     def semantic_annotate(table, new_col, prompt, *, where=None, batch_size=None,
                           model="sub", force=False, votes=1, allowed_labels=None):

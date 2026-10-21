@@ -27,7 +27,9 @@ MAX_ANSWER_CHARS = 3000
 MAX_DEFINITION_CHARS = 4000
 MAX_QUOTE_CHARS = 2000
 MAX_CONTEXT_CHARS = 2000
-MAX_PROMPT_CHARS = 32_000
+MAX_PROMPT_CHARS = 60_000
+MAX_SELECTION_CHARS = 1_500     # projected certificate SQL; the full text stays in the record
+MAX_ROWS_SAMPLE = 5
 MAX_RESPONSE_CHARS = 48_000
 MAX_REASON_CHARS = 600
 MAX_REVIEW_S = 30.0
@@ -254,6 +256,16 @@ def _proof(report: object, field_id: str) -> list[dict]:
             if not isinstance(record, dict):
                 raise ValueError("invalid_calculation_proof")
             item = {key: record[key] for key in keys if key in record}
+            if record.get("kind") == "aggregate":
+                # Keep the reviewer's prompt bounded: a selection may be thousands
+                # of characters of row literals; the certificate itself is intact.
+                sel = item.get("selection")
+                if isinstance(sel, str) and len(sel) > MAX_SELECTION_CHARS:
+                    item["selection"] = sel[:MAX_SELECTION_CHARS] + f" … [{len(sel) - MAX_SELECTION_CHARS} more characters]"
+                if isinstance(item.get("rows_sample"), list):
+                    item["rows_sample"] = item["rows_sample"][:MAX_ROWS_SAMPLE]
+                # Per-row quotes are not needed when the certificate is present.
+                item.pop("quote", None)
             if record.get("operation") == "caller_nonpositive_numerator_zero" and not (
                     contract and contract.get("authority") == "caller_declared"
                     and contract.get("nonpositive_numerator") == "zero"

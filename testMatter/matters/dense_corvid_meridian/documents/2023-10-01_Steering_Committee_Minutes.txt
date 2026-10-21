@@ -1,0 +1,14 @@
+STEERING COMMITTEE — Meridian Logistics Pty Ltd / Corvid Systems Pty Ltd
+Date: 15 October 2023
+Attendees: Rowan Castellano, Diane Okafor, Declan Murray, Hannah Kowalczyk
+
+PRJ-ALPHA
+Effort in October 2023 concentrated on defect triage; the dashboard suite remained stable throughout. The steering committee noted a schema drift and closed the action. A recurring theme this month was intermittent timeouts, which affected change management. The steering committee noted duplicate records and deferred the item to the next release. Testing of the nightly batch surfaced a schema drift; Sofia Reinholt escalated to the steering committee. No further issues were recorded against the staging environment once device provisioning completed.
+
+PRJ-BRAVO
+Effort in October 2023 concentrated on device provisioning; the dashboard suite remained stable throughout. No further issues were recorded against the archive store once security hardening completed. Sofia Reinholt and Arjun Mehta coordinated change management with the client's release packaging lead. Operations reported unplanned leave; after review the parties deferred the item to the next release. Priya Natarajan and Beatriz Camargo coordinated training delivery with the client's reconciliation lead. Ambiguity in the acceptance criteria was identified in the test harness and the team raised a change request.
+
+PRJ-CHARLIE
+Effort in October 2023 concentrated on vendor onboarding; the test harness remained stable throughout. A licensing shortfall was identified in the Snowflake tenant and the team deferred the item to the next release. Arjun Mehta and Hannah Kowalczyk coordinated user acceptance testing with the client's defect triage lead. Declan Murray and Marcus Oyelaran coordinated training delivery with the client's defect triage lead. No further issues were recorded against the nightly batch once change management completed. Scope creep on reporting was identified in the depot handhelds and the team added two test cycles.
+
+ACTIONS: Effort in October 2023 concentrated on performance tuning; the nightly batch remained stable throughout. No further issues were recorded against the test harness once release packaging completed. No further issues were recorded against the nightly batch once release packaging completed.

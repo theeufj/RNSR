@@ -1,0 +1,14 @@
+STEERING COMMITTEE — Meridian Logistics Pty Ltd / Corvid Systems Pty Ltd
+Date: 8 October 2024
+Attendees: Rowan Castellano, Diane Okafor, Declan Murray, Hannah Kowalczyk
+
+PRJ-ALPHA
+Effort in October 2024 concentrated on vendor onboarding; the WMS pilot site remained stable throughout. Ling Zhao led data migration and reported that the depot handhelds would be ready after environment refresh. Testing of the depot handhelds surfaced a schema drift; Imogen Blake confirmed no contractual implication arises. Testing of the staging environment surfaced duplicate records; Imogen Blake accepted the risk. Imogen Blake and Declan Murray coordinated performance tuning with the client's release packaging lead. A certificate expiry was identified in the message bus and the team deferred the item to the next release.
+
+PRJ-BRAVO
+During October 2024 the team focused on security hardening across the telematics gateway. A recurring theme this month was ambiguity in the acceptance criteria, which affected reporting layer. The steering committee noted ambiguity in the acceptance criteria and accepted the risk. The steering committee noted a data quality finding and accepted the risk. Testing of the dashboard suite surfaced a data quality finding; Tom Abernethy escalated to the steering committee. A recurring theme this month was a licensing shortfall, which affected change management.
+
+PRJ-CHARLIE
+During October 2024 the team focused on reconciliation across the nightly batch. Ambiguity in the acceptance criteria was identified in the nightly batch and the team accepted the risk. Operations reported ambiguity in the acceptance criteria; after review the parties closed the action. Testing of the archive store surfaced intermittent timeouts; Arjun Mehta closed the action. Ling Zhao led user acceptance testing and reported that the message bus would be ready after reporting layer. Operations reported intermittent timeouts; after review the parties requested a vendor fix.
+
+ACTIONS: During October 2024 the team focused on data migration across the test harness. The steering committee noted firmware incompatibility and reallocated effort from user acceptance testing. A recurring theme this month was late sign-off from operations, which affected interface build.

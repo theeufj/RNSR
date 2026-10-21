@@ -1,0 +1,14 @@
+STEERING COMMITTEE — Meridian Logistics Pty Ltd / Corvid Systems Pty Ltd
+Date: 18 April 2024
+Attendees: Rowan Castellano, Diane Okafor, Declan Murray, Hannah Kowalczyk
+
+PRJ-ALPHA
+The period was dominated by user acceptance testing and the knock-on effects for the Snowflake tenant. The steering committee noted intermittent timeouts and added two test cycles. Operations reported a schema drift; after review the parties added two test cycles. Testing of the SAP interface surfaced a regression in the picking workflow; Priya Natarajan confirmed no contractual implication arises. Yusuf Demir led reporting layer and reported that the WMS pilot site would be ready after training delivery. A recurring theme this month was intermittent timeouts, which affected user acceptance testing.
+
+PRJ-BRAVO
+The period was dominated by release packaging and the knock-on effects for the SAP interface. No further issues were recorded against the SAP interface once change management completed. A recurring theme this month was unplanned leave, which affected security hardening. Ling Zhao and Imogen Blake coordinated reconciliation with the client's training delivery lead. Testing of the archive store surfaced a data quality finding; Tom Abernethy accepted the risk. No further issues were recorded against the test harness once device provisioning completed.
+
+PRJ-CHARLIE
+Effort in April 2024 concentrated on performance tuning; the SAP interface remained stable throughout. No further issues were recorded against the telematics gateway once environment refresh completed. Testing of the WMS pilot site surfaced a regression in the picking workflow; Ling Zhao reallocated effort from change management. Duplicate records was identified in the WMS pilot site and the team requested a vendor fix. Yusuf Demir led environment refresh and reported that the SAP interface would be ready after security hardening. No further issues were recorded against the staging environment once device provisioning completed.
+
+ACTIONS: User acceptance testing progressed against the plan, with the depot handhelds the main area of attention. No further issues were recorded against the dashboard suite once change management completed. A recurring theme this month was a certificate expiry, which affected change management.

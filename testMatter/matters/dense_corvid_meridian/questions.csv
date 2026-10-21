@@ -1,0 +1,39 @@
+ground_truth_question,field_id
+"What was the total amount invoiced (ex GST) for project PRJ-ALPHA in FY2025 (1 July 2024 to 30 June 2025), excluding invoices that were cancelled by credit note?",agg_alpha_fy25_exgst
+"How many tax invoices were issued for project PRJ-BRAVO over the whole engagement, counting a replacement invoice but not the cancelled invoice it replaced?",agg_bravo_count
+What was the total invoiced (inc GST) for project PRJ-CHARLIE in FY2026?,agg_charlie_fy26_incgst
+How many hours in total were invoiced for the Data Engineer role across all projects over the whole engagement (excluding cancelled invoices)?,agg_de_hours
+How much GST was charged on tax invoices dated in calendar year 2025 (excluding cancelled invoices)?,agg_gst_cal2025
+"How many live tax invoices (not cancelled) have a total due including GST greater than $80,000?",agg_count_over_80k
+"What is the total amount (ex GST) invoiced for work by Priya Natarajan across the engagement, excluding cancelled invoices?",agg_priya_total
+"Which project has the highest total invoiced amount (ex GST) over the engagement, excluding cancelled invoices?",agg_top_project
+"Which service period (month) had the highest total invoiced amount including GST, excluding cancelled invoices?",agg_top_month
+How many distinct consultants billed time to project PRJ-CHARLIE over the engagement?,agg_charlie_people
+What is the total value (inc GST) of all credit notes issued by the vendor?,agg_credit_notes_total
+How many credit notes did the vendor issue?,agg_credit_notes_count
+What was the total amount remitted by the client under remittance advices dated in FY2025?,agg_remit_fy25
+"What was the average total due (inc GST) per live tax invoice dated in FY2026, to the nearest cent?",agg_avg_fy26
+What is the total value (inc GST) of the tax invoices the client formally disputed by letter?,agg_disputed_total
+"What was the total amount outstanding (inc GST) on tax invoices as at 2 July 2026, after all credit notes and all remittance advices dated on or before that day?",set_outstanding_asat
+How many live tax invoices dated in FY2025 had not been paid under any remittance advice by the end of the engagement?,set_unpaid_fy25_count
+How many tax invoices are replacements for an earlier invoice that was cancelled by credit note?,set_reissued_count
+"After the SOW rate variation took effect on 1 January 2025, how many tax invoices still billed the Senior Consultant role at the superseded hourly rate of $285?",join_rate_error_count
+Which invoice numbers billed the Senior Consultant role at the superseded rate after the rate variation took effect?,join_rate_error_invoices
+"By how much (ex GST) were those rate-error invoices under-billed in total, compared with the varied Senior Consultant rate?",join_rate_error_shortfall
+What is the current hourly rate for a Data Engineer under Statement of Work No. 1?,cross_de_rate_now
+"If the client receives a tax invoice from the vendor today, within how many days must it be paid?",cross_payment_terms_now
+"What is the indemnity cap currently in effect under the MSA, taking into account all amendments?",cross_indemnity_now
+What was the indemnity cap under the Master Services Agreement as originally executed?,cross_indemnity_original
+What purchase order number is quoted on tax invoice INV-2527?,lookup_po
+Who signed the Master Services Agreement for the Vendor?,lookup_signatory
+Who is the project manager for PRJ-BRAVO according to the monthly status reports?,lookup_pm_bravo
+What is the total due including GST on tax invoice INV-2644?,lookup_inv_total
+What outstanding amount does the vendor's letter of demand state?,lookup_stale_demand
+By what date must the client remedy the breach identified in the vendor's notice of breach?,time_cure_deadline
+What is the date of the most recent remittance advice in the matter?,time_last_remittance
+What is the date of the earliest live tax invoice for project PRJ-CHARLIE?,time_first_charlie
+On what date was Amendment No. 2 to the MSA made?,time_amend2
+Is there a personal guarantee from Peter Halloway anywhere in the matter file?,abs_guarantee
+Do the parties agree to arbitration of disputes under the MSA?,abs_arbitration
+How many tax invoices were issued for project PRJ-DELTA?,abs_delta
+What tax invoice was issued for pro forma quote Q-2400?,abs_quote_invoice

@@ -22,6 +22,8 @@ Run date: 2026-10-20. Three synthetic legal matters from `testMatter/matters/`, 
 
 ## Headline results
 
+> Pass-3 scoring. See [Scoring pass 4](#scoring-pass-4-2026-10-21-map-needs_value-correction) for the corrected totals (275/286) and the reason; the tables in this and the following three sections are retained as the pass-3 record.
+
 | Matter | Q | Accuracy | Substantive | Unanswerable handled | False-positive rate | Judge-scored | Spend | Wall |
 |---|---|---|---|---|---|---|---|---|
 | Employment law — Reyes v Harbourline Freight | 111 | 109/111 (98.2%) | 92/94 (97.9%) | 7/7 (100.0%) | 0.0% | 76 | $7.86 | 4.1 min |
@@ -109,6 +111,33 @@ The baseline arms below exist to make that explicit.
 
 One image in the employment matter (the payslip photo) initially failed transcription because the vision model placed trailing text blocks inside the JSON `tables` array and the parser rejected the page. `_parse_transcription` now relocates such blocks; the document was re-ingested with `--replace` and all three corpora reached health grade `ok` before answering.
 
+## Scoring pass 4 (2026-10-21): map `needs_value` correction
+
+The headline, per-type, tier and miss tables above are pass 3. Pass 4 fixes a
+scoring defect that affected every arm in this document: `map.json` marked
+every question `needs_value: true`, which `fan_out` treats as a typed value
+field and so rewrites any negative answer ("No", "Not applicable", "unknown")
+to the not-found phrase before scoring. An explicit "No" to a Yes/No question
+therefore scored as an abstention and failed against a gold of "No". The two
+DocDB misses read above as *Not found in matter corpus* where the gold is *No*
+were "No" answers. Pass 4 sets `needs_value: false` for every benchmark
+question (pass-3 scores are kept in `score_pass3/`). No answer changed.
+
+| Matter | Pass 3 | Pass 4 | Substantive | Judge-scored | High tier acc. | Auto-accept |
+|---|---|---|---|---|---|---|
+| Employment law | 109/111 | 108/111 (97.3%) | 91/94 | 77 | 98.2% | 50.5% |
+| Family law | 83/85 | 82/85 (96.5%) | 69/72 | 54 | 100.0% | 14.1% |
+| Immigration law | 84/90 | 85/90 (94.4%) | 71/76 | 60 | 90.9% | 24.4% |
+| **All** | 276/286 | **275/286 (96.2%)** | 231/242 | 191 | – | – |
+
+Pass 4 also exposes judge variance. Re-running the judge over unchanged answers
+moved three DocDB items from OK to miss (`mf_two_dates`, `combined_super_balance`,
+`s56_response_attachment_count`: each states the gold value and adds detail; the
+judge returned `unavailable` or rejected) and one from miss to OK. Every DocDB
+miss on pass 4 is a correct value with added context that the judge did not
+accept. Treat differences of fewer than about three questions on 286 as judge
+noise, on top of the binomial error of about three.
+
 ## Baseline arms (2026-10-21)
 
 Three baselines were run on the same 286 questions, the same `corpus.db`
@@ -129,39 +158,38 @@ artifacts under `runs/matters-bench-arms/<matter>/<arm>/` (git-ignored).
 
 | Arm | Correct | Accuracy | Spend (3 matters) | Wall (slowest matter) |
 |---|---|---|---|---|
-| Whole matter in context | 279 / 286 | 97.6% | $1.15 | 1.3 min |
-| Classic (flat string in REPL) | 274 / 286 | 95.8% | $2.78 | 2.4 min |
-| Direct corpus interaction | 281 / 286 | 98.3% | $2.79 | 2.5 min |
-| DocDB (October run) | 276 / 286 | 96.5% | $34.33 | 9.1 min |
+| Whole matter in context | 278 / 286 | 97.2% | $1.15 | 1.3 min |
+| Classic (flat string in REPL) | 280 / 286 | 97.9% | $2.78 | 2.4 min |
+| Direct corpus interaction | 285 / 286 | 99.7% | $2.79 | 2.5 min |
+| DocDB (October run, pass 4) | 275 / 286 | 96.2% | $34.33 | 9.1 min |
 
 | Matter | Whole matter | Classic | DCI | DocDB |
 |---|---|---|---|---|
-| Employment law | 109 / 111 ($0.45) | 105 / 111 ($0.96) | 111 / 111 ($0.88) | 109 / 111 ($7.86) |
-| Family law | 83 / 85 ($0.32) | 82 / 85 ($0.80) | 82 / 85 ($0.81) | 83 / 85 ($11.61) |
-| Immigration law | 87 / 90 ($0.38) | 87 / 90 ($1.01) | 88 / 90 ($1.10) | 84 / 90 ($14.87) |
+| Employment law | 109 / 111 ($0.45) | 108 / 111 ($0.96) | 111 / 111 ($0.88) | 108 / 111 ($7.86) |
+| Family law | 83 / 85 ($0.32) | 83 / 85 ($0.80) | 84 / 85 ($0.81) | 82 / 85 ($11.61) |
+| Immigration law | 86 / 90 ($0.38) | 89 / 90 ($1.01) | 90 / 90 ($1.10) | 85 / 90 ($14.87) |
 
 | Question type | Whole matter | Classic | DCI | DocDB |
 |---|---|---|---|---|
 | `value_lookup` | 102 / 104 | 103 / 104 | 104 / 104 | 103 / 104 |
-| `existence` | 39 / 41 | 32 / 41 | 37 / 41 | 38 / 41 |
-| `multi_fact` | 34 / 34 | 33 / 34 | 34 / 34 | 34 / 34 |
-| `relationship` | 28 / 29 | 28 / 29 | 28 / 29 | 27 / 29 |
-| `count_list` | 25 / 27 | 27 / 27 | 27 / 27 | 25 / 27 |
+| `existence` | 38 / 41 | 40 / 41 | 41 / 41 | 40 / 41 |
+| `multi_fact` | 34 / 34 | 32 / 34 | 33 / 34 | 32 / 34 |
+| `relationship` | 28 / 29 | 28 / 29 | 29 / 29 | 27 / 29 |
+| `count_list` | 25 / 27 | 26 / 27 | 27 / 27 | 24 / 27 |
 | `summary` | 19 / 19 | 19 / 19 | 19 / 19 | 18 / 19 |
 | `unanswerable` | 19 / 19 | 19 / 19 | 19 / 19 | 19 / 19 |
 | `quote` | 13 / 13 | 13 / 13 | 13 / 13 | 12 / 13 |
 
-Reading. The four arms are within seven questions of each other on 286; the
-binomial standard error at this accuracy is about three questions, so no arm is
+All numbers are scoring pass 4. Reading. The four arms are within ten
+questions of each other on 286; binomial error is about three questions and
+judge variance about three more, so the ordering is not reliable and no arm is
 distinguishable from another on accuracy. They are distinguishable on cost by
 12–30× and on wall time by 4–7×. On the dense question types the structure was
-meant to serve (`count_list`, `relationship`), DocDB is not ahead: classic and
-DCI are 27/27 on counts, DocDB 25/27. Every baseline miss is one of the two
-scorer artifacts already noted for the DocDB run: a correct answer with added
-context that the judge rejected (e.g. `overtime_hours_total`: gold "208.0 hours",
-answer "208.0 hours. The underpayment calculation …", rejected), or "Not found
-in matter corpus" where the gold is "No" (eight of classic's nine `existence`
-misses; two each for DCI and DocDB). None is a retrieval failure.
+meant to serve (`count_list`, `relationship`), DocDB is not ahead: DCI is 27/27
+on counts, DocDB 24/27. Every baseline miss is a correct answer with added
+context that the judge rejected (e.g. `overtime_hours_total`: gold "208.0
+hours", answer "208.0 hours. The underpayment calculation …", rejected). None
+is a retrieval failure.
 
 What this does and does not show. At 11–15k tokens per matter, the corpus fits
 in one call, and putting it there is the cheapest and about the most accurate
@@ -188,6 +216,91 @@ done
 python -m rnsr.eval.matter_arms_report --docdb runs/matters-bench \
   --arms runs/matters-bench-arms --matters-src testMatter/matters \
   --out runs/matters-bench-arms/summary.json
+```
+
+## Four arms on the 999-document matter (2026-10-21)
+
+The same four arms on Test Set 6, the vendor-built family-law matter used for
+the archived corpus-scale result (`benchmark-history.md`): 1,004 files (467
+PDF, 390 email, 65 Word, 30 text, 27 CSV, 22 PNG) across seven folders, and a
+90-field verification key for the FCFCOA Initiating Application with planted
+traps (a decoy separation date, a chronology with wrong dates, fields that must
+be left blank). Documents are short: 999 ingested, 400k characters of retained
+text (~100k tokens), largest document 3,180 characters, 30 extracted
+transaction tables. Still inside one Sonnet 5.5 call.
+
+Inputs (`testMatter/ts6_arms_prep.py` → `runs/ts6-arms/`): the 90 enriched
+form questions as shipped, except that the one tool-specific evidence bullet
+("use `search()` … and SQL over tables") is replaced by a tool-neutral one, so
+all four arms, including the fresh DocDB run, see identical task text. Roles,
+evidence rules and the answer format are unchanged. One generic `field_context`
+for the judge; `needs_value: false`. These questions are the development
+fixture the archived 90/90 was tuned on, which favours DocDB if anything.
+
+Fresh fast-tier ingest under `ded0c42`+ (999 docs, 22 scans transcribed, health
+`ok`, no parse failures). Same caps as above; run ceiling $40.
+
+| Arm | Correct | Accuracy | Spend | Requests | Wall |
+|---|---|---|---|---|---|
+| Whole matter in context | 78 / 90 | 86.7% | $2.87 | 90 | 1.1 min |
+| Classic (flat string in REPL) | 81 / 90 | 90.0% | $1.09 | 109 | 1.8 min |
+| Direct corpus interaction | 78 / 90 | 86.7% | $1.03 | 92 | 1.5 min |
+| DocDB (claim review on) | 80 / 90 | 88.9% | $1.75 | 198 | 4.2 min |
+
+DocDB spend includes the 22 scan transcriptions; its judge pass returned 79 on
+a first run and 80 on a rerun with no answer changed. Trust tiers: 34 high /
+55 medium / 1 low; high-tier accuracy 85.3%, auto-accept 37.8%, review recall
+50%. One claim-review halt (`review_stalled`).
+
+| Part | Whole matter | Classic | DCI | DocDB |
+|---|---|---|---|---|
+| Part A (orders sought, lawyer details) | 11 / 13 | 13 / 13 | 12 / 13 | 12 / 13 |
+| Part B (parties) | 25 / 25 | 24 / 25 | 23 / 25 | 24 / 25 |
+| Part D (children) | 19 / 22 | 22 / 22 | 21 / 22 | 22 / 22 |
+| Part F (existing orders, cases) | 6 / 9 | 6 / 9 | 6 / 9 | 6 / 9 |
+| Part H (de facto relationship) | 3 / 7 | 2 / 7 | 2 / 7 | 2 / 7 |
+| Cover, C, E, G, I–K | 14 / 14 | 14 / 14 | 14 / 14 | 14 / 14 |
+
+Misses. Five are shared by all four arms: four Part H items where the gold packs
+the sub-field detail into the Yes/No ("Yes — Victoria", "Yes — three children")
+and every arm answered "Yes", and one two-date field (`50c`) where every arm
+returned one of the two dates. One more (`49a`, "Yes — one") is missed by three
+arms the same way. These are answer-format mismatches shared across arms, not
+retrieval. The arm-specific misses are small in number: whole-matter gave a
+wrong postcode (3058 for 3000), the applicant's phone numbers for the lawyer's,
+"Grace" for "Thea Grace" and a role for a name (four substantive errors, the
+only ones in the table that read as lost-in-context); DCI and DocDB each
+dropped "Melbourne" from an address and "Registered nurse" from an occupation;
+classic missed one language field. There is no DocDB-only miss.
+
+Reading. At 999 documents and ~100k tokens the four arms remain within noise
+of one another (binomial error ≈ 3 on 90, judge variance ≈ 1). The planted
+traps (decoy separation date, wrong chronology) were handled by every arm.
+DocDB is now cheaper than whole-matter prompting, because the baseline pays
+~100k input tokens per question and the REPL arms do not, but it is 2–4× slower
+and not more accurate. Whole-matter prompting shows the first substantive
+errors of the kind long-context evaluation predicts, at a rate (4/90) too low
+to establish. Document *count* is not the dimension that separates these
+designs; token volume and answer-support density are, and neither corpus here
+reaches them: the average document is 400 characters and the form asks for
+lookups, not aggregates over the 30 transaction tables. The archived 90/90 on
+this matter was a loose-scorer, multi-run result on tuned questions; under the
+current scorer, single-pass, the comparable figure is 80/90.
+
+Reproduce:
+
+```bash
+python testMatter/ts6_arms_prep.py
+export RNSR_MAX_ROOT_ITERS=16 RNSR_MAX_WALL_S=300 RNSR_MAX_SPEND_USD=1 RNSR_RUN_SPEND_CEILING_USD=40
+rnsr answer-csv --corpus "testMatter/Test Set 6 - Initiating Application (999 Documents)/Matter Documents" \
+  --questions runs/ts6-arms/questions.csv --output runs/ts6-arms/docdb/out \
+  --work-dir runs/ts6-arms/work --fast-ingest --batch-size 8 --concurrency 3 --max-error-rate 1
+for arm in stuffing classic dci; do
+  python -m rnsr.eval.matter_arms --matter-dir runs/ts6-arms --arm $arm --out runs/ts6-arms/$arm \
+    --questions runs/ts6-arms/questions.csv --id-col qid --batch-size 8 --concurrency 3
+done
+# score each arm: rnsr regress --answers <arm>/answers_chunk1.csv --golden runs/ts6-arms/golden.json \
+#   --map runs/ts6-arms/map.json --out <arm>/score   (re-key docdb answers_status.csv row -> qid first)
 ```
 
 ## Run status and cost

@@ -41,6 +41,8 @@ supporting detail naming the document it rests on.
 that an earlier value was superseded.
 - If the corpus does not contain the information asked for, or the question \
 rests on a premise the documents contradict, reply exactly: {not_found}
+- If the question specifies its own answer format (including its own wording \
+for unknown or not-applicable answers), that format governs.
 
 CORPUS
 ======
@@ -65,10 +67,10 @@ def load_documents(corpus_db: Path) -> dict[str, str]:
     return docs
 
 
-def load_questions(path: Path) -> list[tuple[str, str]]:
+def load_questions(path: Path, id_col: str = "field_id") -> list[tuple[str, str]]:
     with open(path, newline="", encoding="utf-8") as fh:
         rows = list(csv.DictReader(fh))
-    return [(r["field_id"], r["ground_truth_question"]) for r in rows]
+    return [(r[id_col], r["ground_truth_question"]) for r in rows]
 
 
 def flat_context(docs: dict[str, str]) -> str:
@@ -173,12 +175,17 @@ def main(argv: list[str] | None = None) -> None:
     ap.add_argument("--batch-size", type=int, default=8)
     ap.add_argument("--concurrency", type=int, default=3)
     ap.add_argument("--limit", type=int, default=0, help="first N questions only (smoke test)")
+    ap.add_argument("--corpus-db", type=Path, default=None,
+                    help="corpus artifact (default <matter-dir>/work/corpora/corpus.db)")
+    ap.add_argument("--questions", type=Path, default=None,
+                    help="questions CSV (default <matter-dir>/questions.csv)")
+    ap.add_argument("--id-col", default="field_id", help="question id column in the CSV")
     args = ap.parse_args(argv)
 
     settings = Settings.from_env()
-    corpus_db = args.matter_dir / "work" / "corpora" / "corpus.db"
+    corpus_db = args.corpus_db or args.matter_dir / "work" / "corpora" / "corpus.db"
     docs = load_documents(corpus_db)
-    qs = load_questions(args.matter_dir / "questions.csv")
+    qs = load_questions(args.questions or args.matter_dir / "questions.csv", args.id_col)
     if args.limit:
         qs = qs[:args.limit]
     corpus_chars = sum(len(t) for t in docs.values())

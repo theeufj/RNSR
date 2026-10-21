@@ -67,7 +67,14 @@ hits. A task-scoped NOT_FOUND can be supported by complete coverage of that
 task's relevant source scope; an explicit negative provision can also support a
 negative answer. Consider supplied definitions, exclusions and surrounding
 headings; do not invent definitions when none are supplied. Do not certify an
-aggregate unless supplied evidence establishes its inputs and operation. Multiple
+aggregate unless supplied evidence establishes its inputs and operation. A parent
+record of kind "aggregate" is such evidence: it binds one operation to an exact set
+of n_rows source rows that the parent re-read from frozen tables (tables, documents,
+columns, min/max and a rows_sample are shown; the set is fixed by rows_digest).
+Review whether that selection matches the question's scope (right column, right
+tables, totals/subtotals excluded, right period or project), using the recorded
+selection text as the controller's description of how rows were chosen; do not
+demand a quotation for every row and do not reject it for being large. Multiple
 quote locations may have different scopes; do not silently select a convenient
 one. Evidence is bounded and may omit relevant qualifications or cross-references.
 For a requested financial calculation, computed numeric claims require a supplied
@@ -217,7 +224,11 @@ def _proof(report: object, field_id: str) -> list[dict]:
             return []
         keys = {"id", "kind", "value", "raw_value", "quote", "unit", "period",
                 "operation", "operand_ids", "source_ids", "precision", "rounding",
-                "metadata_check"}
+                "metadata_check",
+                # aggregate certificate: the exact row set is bound by digest; the
+                # reviewer sees its size, scope and a sample, not every row
+                "n_rows", "rows_digest", "tables", "documents", "columns", "min", "max",
+                "rows_sample", "selection"}
         source_keys = {"doc_id", "table", "rowid", "column", "page", "char_start",
                        "char_end", "table_title", "heading_paths", "source_span_id",
                        "generation_sha256", "kind"}

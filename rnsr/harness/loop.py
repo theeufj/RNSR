@@ -388,6 +388,8 @@ class RootRunner:
         init_extra = {"enable_embeddings": self.embed_client is not None
                       and n_documents >= s.embed_auto_on_docs,
                       "metric_contract": env.metric_contract,
+                      "calc_limits": {"max_records": s.calc_max_records, "max_operands": s.calc_max_operands,
+                                      "max_sources": s.calc_max_sources},
                       "model_identities": {
                           "root": f"{getattr(self.root_client, 'provider', 'unknown')}:{self.root_model}",
                           "sub": f"{getattr(self.sub_client, 'provider', 'unknown')}:{self.sub_model}",

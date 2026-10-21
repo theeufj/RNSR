@@ -153,6 +153,15 @@ def build_namespace(corpus_db: str, child, init_msg: dict) -> dict:
         return child.rpc({'op': 'calculation', 'action': 'compute',
                           'operation': operation, 'operand_ids': operand_ids})['result']
 
+    def aggregate(operation, rows, *, selection=None):
+        """One parent certificate for sum/count/mean/min/max over an exact set of
+        source rows ({table, rowid, column} or (table, rowid, column)); no operand
+        cap. selection: your own description of how the rows were chosen (e.g. the
+        SQL), recorded verbatim for the reviewer."""
+        return child.rpc({'op': 'calculation', 'action': 'aggregate', 'operation': operation,
+                          'rows': [list(r) if isinstance(r, tuple) else r for r in rows],
+                          'selection': selection})['result']
+
     def source_text_number(doc_id, char_start, char_end, *, unit_span=None, period_span=None):
         return child.rpc({'op': 'calculation', 'action': 'source_text', 'doc_id': doc_id,
                           'char_start': char_start, 'char_end': char_end,
@@ -205,6 +214,7 @@ def build_namespace(corpus_db: str, child, init_msg: dict) -> dict:
         "source_number": source_number,
         "source_text_number": source_text_number,
         "calculate": calculate,
+        "aggregate": aggregate,
         "calculate_financial": calculate_financial,
         "calculation": calculation,
         "FINAL_CALC": FINAL_CALC,

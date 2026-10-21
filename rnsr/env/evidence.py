@@ -38,6 +38,10 @@ def bind_table_evidence(conn: sqlite3.Connection, report: dict, *, batch: bool =
         source = record.get("source") if isinstance(record, dict) else None
         if isinstance(source, dict) and isinstance(source.get("table"), str):
             add(source["table"], "source")
+        if isinstance(record, dict) and record.get("kind") == "aggregate":
+            for table in record.get("tables") or []:
+                if isinstance(table, str):
+                    add(table, "source")
     classification = report.get("classification") or {}
     if isinstance(classification.get("table"), str):
         add(classification["table"], "source")

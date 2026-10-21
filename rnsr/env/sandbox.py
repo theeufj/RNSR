@@ -130,8 +130,10 @@ class SandboxedRepl:
                 self._source_generation = _document_generation(self._corpus.conn)
                 stat = self._corpus.path.stat()
                 self._source_identity = (stat.st_dev, stat.st_ino)
+                limits = self._init_options.get("calc_limits") or {}
                 self._calculations = CalculationRegistry(
-                    self._corpus.conn, metric_contract=self._init_options.get("metric_contract"))
+                    self._corpus.conn, metric_contract=self._init_options.get("metric_contract"),
+                    **{k: int(v) for k, v in limits.items() if k in ("max_records", "max_operands", "max_sources")})
             if self._scratch is None:
                 self._scratch = os.path.realpath(tempfile.mkdtemp(prefix="rnsr-sandbox-"))
             from rnsr.env.osguard import launch_command
@@ -348,6 +350,7 @@ class SandboxedRepl:
             'financial': (self._calculations.calculate_financial, {'metric', 'inputs', 'convention'}),
             'render': (self._calculations.resolve_finals, {'template', 'results', 'decimals'}),
             'compute': (self._calculations.calculate, {'operation', 'operand_ids'}),
+            'aggregate': (self._calculations.aggregate, {'operation', 'rows', 'selection'}),
             'get': (self._calculations.get, {'record_id'}),
             'metric': (self._calculations.calculate_metric, set()),
         }

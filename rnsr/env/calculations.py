@@ -20,11 +20,18 @@ from rnsr.db.metadata import decode_table_schema
 from rnsr.db.schema import quote_ident
 from rnsr.env.evidence import SourceContext
 
-MAX_RECORDS = 512
-MAX_OPERANDS = 32
-MAX_SOURCES = 32
+# Session limits. Operands, sources and records bound the parent's work per
+# untrusted request; 0 means unlimited (the research default, see Settings).
+# A sum over N invoices is one certificate over N rows, not N round-trips, so
+# the aggregate path does not need an operand cap at all.
+MAX_RECORDS = 0
+MAX_OPERANDS = 0
+MAX_SOURCES = 0
 MAX_ROW_CHARS = 20_000
 PRECISION = 50
+AGGREGATE_QUOTE_SAMPLE = 8        # quotes forwarded per aggregate; the certificate carries every row
+MAX_FINAL_QUOTES = 32             # the reviewer's evidence limit for calculation proofs
+AGGREGATE_OPERATIONS = ('sum', 'count', 'mean', 'min', 'max')
 
 
 def _digest(value) -> str:
@@ -59,8 +66,11 @@ class CalculationRegistry:
     rounding; precision lost during ingestion cannot be reconstructed here.
     """
 
-    def __init__(self, conn: sqlite3.Connection, *, metric_contract: dict | None = None):
+    def __init__(self, conn: sqlite3.Connection, *, metric_contract: dict | None = None,
+                 max_records: int = MAX_RECORDS, max_operands: int = MAX_OPERANDS,
+                 max_sources: int = MAX_SOURCES):
         self.conn = conn
+        self.max_records, self.max_operands, self.max_sources = max_records, max_operands, max_sources
         self._deadline: float | None = None
         self._context = SourceContext(conn, check=self._check_deadline)
         self._records: dict[str, dict] = {}
@@ -127,7 +137,7 @@ class CalculationRegistry:
 
     def _store(self, record: dict, prefix: str) -> dict:
         self._check_deadline()
-        if len(self._records) >= MAX_RECORDS:
+        if self.max_records and len(self._records) >= self.max_records:
             raise ValueError("calculation session record limit exceeded")
         record['id'] = prefix + secrets.token_hex(16)
         self._records[record['id']] = copy.deepcopy(record)
@@ -223,6 +233,9 @@ class CalculationRegistry:
         self._check_generation()
         for source_id in source_ids:
             fact = self._lookup(source_id)
+            if fact['kind'] == 'aggregate':
+                self._validate_rows(fact)
+                continue
             source = fact['source']
             current = (self._read_text_number(source['doc_id'], source['char_start'], source['char_end'])
                        if source.get('kind') == 'text' else
@@ -237,7 +250,8 @@ class CalculationRegistry:
 
     def calculate(self, operation: str, operand_ids: list[str]) -> dict:
         self._check_deadline()
-        arities = {'sum': (1, MAX_OPERANDS), 'mean': (1, MAX_OPERANDS), 'subtract': (2, 2),
+        many = self.max_operands or float('inf')
+        arities = {'sum': (1, many), 'mean': (1, many), 'subtract': (2, 2),
                    'multiply': (2, 2), 'divide': (2, 2), 'percent': (1, 1)}
         if not isinstance(operation, str) or operation not in arities:
             raise ValueError("operation must be sum, mean, subtract, multiply, divide or percent")
@@ -246,9 +260,9 @@ class CalculationRegistry:
             raise ValueError("wrong number of calculation operands")
         operands = [self._lookup(key) for key in operand_ids]
         sources = list(dict.fromkeys(source for record in operands
-                                    for source in ([record['id']] if record['kind'] == 'source'
+                                    for source in ([record['id']] if record['kind'] in ('source', 'aggregate')
                                                    else record['source_ids'])))
-        if len(sources) > MAX_SOURCES:
+        if self.max_sources and len(sources) > self.max_sources:
             raise ValueError("calculation exceeds the source evidence limit")
         self._validate_sources(sources)
         values = [_decimal(r['value']) for r in operands]
@@ -279,9 +293,86 @@ class CalculationRegistry:
                             'period': None,
                             'metadata_check': 'operand units/periods retained; compatibility not certified'}, 'calc_')
 
+    # --- aggregate certificate ----------------------------------------------
+
+    def _row_fact(self, row) -> dict:
+        if isinstance(row, (list, tuple)) and len(row) == 3:
+            row = {'table': row[0], 'rowid': row[1], 'column': row[2]}
+        if not isinstance(row, dict) or set(row) != {'table', 'rowid', 'column'}:
+            raise ValueError("aggregate rows are {table, rowid, column} triples")
+        cell = self._read_cell(row['table'], row['rowid'], row['column'])
+        src = cell['source']
+        return {'table': src['table'], 'rowid': src['rowid'], 'column': src['column'],
+                'doc_id': src['doc_id'], 'page': src['page'],
+                'char_start': src['char_start'], 'char_end': src['char_end'],
+                'source_span_id': src['source_span_id'], 'generation_sha256': src['generation_sha256'],
+                'value': cell['value'], 'raw_value': cell['raw_value'], 'quote': cell['quote']}
+
+    @staticmethod
+    def _rows_digest(rows) -> str:
+        return _digest([(r['table'], r['rowid'], r['column'], r['value']) for r in rows])
+
+    def _validate_rows(self, record: dict) -> None:
+        current = [self._row_fact({'table': r['table'], 'rowid': r['rowid'], 'column': r['column']})
+                   for r in record['rows']]
+        if self._rows_digest(current) != record['rows_digest'] or any(
+                c['quote'] != r['quote'] or c['source_span_id'] != r['source_span_id']
+                for c, r in zip(current, record['rows'], strict=True)):
+            raise ValueError("aggregate source rows changed since the certificate was issued")
+
+    def aggregate(self, operation: str, rows: list, *, selection: str | None = None) -> dict:
+        """One certificate for an operation over an exact set of source rows.
+
+        Every row is re-read from the frozen tables with its canonical span, so
+        the certificate binds (operation, rows, values) and can be revalidated
+        at FINAL time. ``selection`` is the controller's own description of how
+        the rows were chosen (typically the SQL); it is recorded verbatim as
+        model-described provenance and is not verified here.
+        """
+        self._check_deadline()
+        self._check_generation()
+        if not isinstance(operation, str) or operation not in AGGREGATE_OPERATIONS:
+            raise ValueError("aggregate operation must be sum, count, mean, min or max")
+        if not isinstance(rows, list) or not rows:
+            raise ValueError("aggregate requires a nonempty list of rows")
+        if selection is not None and (not isinstance(selection, str) or len(selection) > 4000):
+            raise ValueError("selection must be a string of at most 4000 characters")
+        seen = set()
+        facts = []
+        for row in rows:
+            fact = self._row_fact(row)
+            key = (fact['table'], fact['rowid'], fact['column'])
+            if key in seen:
+                raise ValueError(f"aggregate row repeated: {key}")
+            seen.add(key)
+            facts.append(fact)
+        values = [_decimal(f['value']) for f in facts]
+        with localcontext() as ctx:
+            ctx.prec = PRECISION
+            ctx.rounding = ROUND_HALF_EVEN
+            value = {'sum': lambda: sum(values, Decimal(0)),
+                     'count': lambda: Decimal(len(values)),
+                     'mean': lambda: sum(values, Decimal(0)) / len(values),
+                     'min': lambda: min(values), 'max': lambda: max(values)}[operation]()
+            rendered = _render(value)
+        tables = sorted({f['table'] for f in facts})
+        documents = sorted({f['doc_id'] for f in facts})
+        columns = sorted({f['column'] for f in facts})
+        return self._store({
+            'kind': 'aggregate', 'value': rendered, 'operation': operation,
+            'n_rows': len(facts), 'rows': facts, 'rows_digest': self._rows_digest(facts),
+            'tables': tables, 'documents': documents, 'columns': columns,
+            'min': _render(min(values)), 'max': _render(max(values)),
+            'rows_sample': [{k: f[k] for k in ('table', 'rowid', 'column', 'value')}
+                            for f in facts[:8]],
+            'selection': selection, 'operand_ids': [], 'source_ids': [],
+            'precision': PRECISION, 'rounding': 'ROUND_HALF_EVEN', 'unit': None, 'period': None,
+            'metadata_check': ('rows re-read from frozen tables and bound by digest; '
+                               'selection is model-described and not verified')}, 'agg_')
+
     def get(self, record_id: str) -> dict:
         record = self._lookup(record_id)
-        sources = [record_id] if record['kind'] == 'source' else record['source_ids']
+        sources = [record_id] if record['kind'] in ('source', 'aggregate') else record['source_ids']
         self._validate_sources(sources)
         if record.get('metric_contract') and self._metric_contract:
             self._metric_contract.validate_sources(self)
@@ -417,8 +508,8 @@ class CalculationRegistry:
 
     def resolve_final(self, result_id: str, submitted_value) -> tuple[str, dict]:
         result = self.get(result_id)
-        if result['kind'] != 'calculation':
-            raise ValueError("FINAL_CALC requires a calculation result id")
+        if result['kind'] not in ('calculation', 'aggregate'):
+            raise ValueError("FINAL_CALC requires a calculation or aggregate result id")
         if self._metric_contract is not None and (
                 result_id != self._metric_result_id
                 or result.get('metric_contract', {}).get('sha256') != self._metric_contract.digest):
@@ -426,14 +517,26 @@ class CalculationRegistry:
         if not isinstance(submitted_value, str) or submitted_value != result['value']:
             raise ValueError("FINAL_CALC value differs from the parent calculation result")
         facts = [self.get(source_id) for source_id in result['source_ids']]
+        if result['kind'] == 'aggregate':
+            facts = [result]
         quotes = []
         for fact in facts:
+            if fact['kind'] == 'aggregate':
+                # A bounded sample of row quotes; the certificate itself carries every row.
+                for row in fact['rows'][:AGGREGATE_QUOTE_SAMPLE]:
+                    quotes.append({'quote': row['quote'], 'matched': True,
+                                   'source_context': self._context(
+                                       doc_id=row['doc_id'], char_start=row['char_start'],
+                                       char_end=row['char_end']),
+                                   **{key: row[key] for key in ('doc_id', 'char_start', 'char_end')}})
+                continue
             source = fact['source']
             quotes.append({'quote': fact['quote'], 'matched': True,
                            'source_context': self._context(
                                doc_id=source['doc_id'], char_start=source['char_start'],
                                char_end=source['char_end']),
                            **{key: source[key] for key in ('doc_id', 'char_start', 'char_end')}})
+        quotes = quotes[:MAX_FINAL_QUOTES]
         # Include the entire bounded expression graph, not just the last step.
         graph = {}
         def visit(record_id):

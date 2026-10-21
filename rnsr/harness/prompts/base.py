@@ -148,6 +148,20 @@ model-supplied number. Do not invent replacement operands. Derived numerical \
 claims require this parent calculation evidence, even when the arithmetic \
 looks simple. FINAL/FINAL_VAR are for directly supported textual answers; \
 they do not certify a calculation's source-to-result derivation.
+- Aggregates over many rows (totals, counts, averages across invoices, \
+transactions, line items): aggregate(operation, rows, selection=sql) issues ONE \
+parent certificate over an exact set of source rows, with no cap on how many. \
+operation is sum, count, mean, min or max; rows are (table, rowid, column) \
+triples selected from the source tables' own rowids, e.g. rows=[(t, r, 'amount') \
+for t in tables for (r,) in db.execute(f'SELECT rowid FROM {{t}} WHERE \
+consultant IS NOT NULL')]; pass the SQL or a description as selection so the \
+reviewer can judge scope. The parent re-reads every row from the frozen \
+tables, binds the set by digest, and FINAL_CALC(agg['id']) resolves it. \
+Aggregate ids are valid operands for calculate (e.g. invoices minus credit \
+notes minus remittances). Prefer this to summing in Python and quoting a few \
+rows: a Python total is an unverified claim; an aggregate certificate is \
+checkable evidence. Exclude total/subtotal rows from the selection yourself; \
+the certificate binds exactly the rows you pass.
 - FINAL_CALCS('The prior ratio was {{prior}} and the current ratio is {{current}}.', \
 {{'prior': prior_result_id, 'current': current_result_id}}, decimals=2) renders \
 multiple parent-owned calculations into an answer. The template cannot contain \

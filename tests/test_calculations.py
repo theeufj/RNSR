@@ -171,19 +171,72 @@ def test_same_generation_cell_replacement_cannot_reuse_result(registry, arithmet
 
 def test_source_id_cannot_be_presented_as_a_computation(registry):
     a = fact(registry, 1)
-    with pytest.raises(ValueError, match='calculation result id'):
+    with pytest.raises(ValueError, match='calculation or aggregate result id'):
         registry.resolve_final(a['id'], a['value'])
 
 
-def test_operand_and_session_capacity_are_bounded(registry, monkeypatch):
-    from rnsr.env import calculations
-
+def test_limits_are_configurable_and_unlimited_by_default(registry, arithmetic_corpus):
     a = fact(registry, 1)
-    with pytest.raises(ValueError, match='wrong number'):
-        registry.calculate('sum', [a['id']] * 33)
-    monkeypatch.setattr(calculations, 'MAX_RECORDS', 1)
-    with pytest.raises(ValueError, match='record limit'):
-        fact(registry, 2)
+    # Research default: no operand cap. A 33-operand sum is one calculation.
+    total = registry.calculate('sum', [a['id']] * 33)
+    assert total['value'] == '3300.0'
+    with CorpusDB(arithmetic_corpus) as corpus:
+        bounded = CalculationRegistry(corpus.conn, max_operands=2, max_sources=1, max_records=2)
+        x = bounded.source_number('t_report_001', 1, 'amount')
+        with pytest.raises(ValueError, match='wrong number'):
+            bounded.calculate('sum', [x['id']] * 3)
+        with pytest.raises(ValueError, match='record limit'):
+            bounded.source_number('t_report_001', 2, 'amount')
+            bounded.source_number('t_report_001', 3, 'amount')
+
+
+def test_aggregate_certificate_binds_rows_and_revalidates(registry, arithmetic_corpus):
+    rows = [('t_report_001', r, 'amount') for r in (1, 2, 3)]
+    agg = registry.aggregate('sum', rows, selection="SELECT rowid FROM t_report_001 WHERE rowid<=3")
+    assert agg['kind'] == 'aggregate' and agg['value'] == '360.0' and agg['n_rows'] == 3
+    assert agg['tables'] == ['t_report_001'] and agg['columns'] == ['amount']
+    assert agg['min'] == '10.0' and agg['max'] == '250.0' and len(agg['rows_digest']) == 64
+    assert [r['quote'] for r in agg['rows']] == ['Revenue | 100', 'Costs | 250', 'Interest | 10']
+    assert registry.aggregate('count', rows)['value'] == '3'
+    assert registry.aggregate('mean', rows)['value'] == '120.0'
+    with pytest.raises(ValueError, match='repeated'):
+        registry.aggregate('sum', rows + [rows[0]])
+    with pytest.raises(ValueError, match='nonempty'):
+        registry.aggregate('sum', [])
+    with pytest.raises(ValueError, match='operation'):
+        registry.aggregate('median', rows)
+    # Aggregates compose with calculate and resolve through FINAL_CALC.
+    credit = registry.aggregate('sum', [('t_report_001', 3, 'amount')])
+    net = registry.calculate('subtract', [agg['id'], credit['id']])
+    assert net['value'] == '350.0' and set(net['source_ids']) == {agg['id'], credit['id']}
+    value, report = registry.resolve_final(net['id'], '350.0')
+    assert value == '350.0' and report['check'] == 'source_bound_calculation'
+    kinds = {r['kind'] for r in report['records']}
+    assert kinds == {'calculation', 'aggregate'}
+    assert 1 <= len(report['quotes']) <= 32 and all(q['matched'] for q in report['quotes'])
+    # Source tables are immutable in the artifact (trigger), so tampering can
+    # only reach the stored certificate; revalidation re-reads the rows and
+    # detects a digest that no longer matches them.
+    with sqlite3.connect(arithmetic_corpus) as rw, pytest.raises(sqlite3.IntegrityError, match='immutable'):
+        rw.execute('UPDATE t_report_001 SET amount=999 WHERE rowid=2')
+    registry._records[agg['id']]['rows_digest'] = '0' * 64
+    with pytest.raises(ValueError, match='changed'):
+        registry.get(agg['id'])
+
+
+async def test_real_sandbox_aggregate_final_calc(arithmetic_corpus):
+    async with SandboxedRepl() as sandbox:
+        await sandbox.start(mode='docdb', corpus_db=str(arithmetic_corpus))
+        cell = await sandbox.exec_cell("""
+rows = [('t_report_001', r, 'amount') for (r,) in db.execute("SELECT rowid FROM t_report_001 WHERE rowid <= 3")]
+agg = aggregate('sum', rows, selection='rowid <= 3')
+FINAL_CALC(agg['id'])
+""")
+        assert cell.ok, cell.error
+        assert cell.final['value'] == '360.0'
+        v = cell.final['verification']
+        assert v['check'] == 'source_bound_calculation' and v['calculation']['n_rows'] == 3
+        assert v['source_tables'] and v['source_tables'][0]['table'] == 't_report_001'
 
 
 def test_ambiguous_canonical_rows_are_not_certified(tmp_path):

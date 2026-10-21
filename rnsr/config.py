@@ -57,6 +57,12 @@ class Settings:
     # `claim_review_max_rounds` rejected reviews in total. 0 disables a cap.
     claim_review_max_stalls: int = 1
     claim_review_max_rounds: int = 6
+    # Source-bound calculation limits per sandbox session; 0 = unlimited. An
+    # aggregate certificate binds any number of rows in one record, so sums
+    # over hundreds of invoices do not need an operand cap.
+    calc_max_records: int = 0
+    calc_max_operands: int = 0
+    calc_max_sources: int = 0
 
     # --- run-level provider governance (rnsr.llm.governor) ---
     # Optional budgets above cap ONE query; these cap the run. 0 disables a limit.

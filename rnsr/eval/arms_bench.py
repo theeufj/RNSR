@@ -89,6 +89,22 @@ def ingest(matter: Path, out: Path, fast: bool) -> Path:
     return db
 
 
+def archive_previous(arm: str, out: Path) -> None:
+    """Move an arm's earlier outputs aside so a rerun starts clean. answer-csv
+    resumes from work/answers_partial.jsonl, so that and the DocDB trajectories
+    are archived too; the corpus artifact is kept."""
+    stamp = time.strftime("%Y%m%d-%H%M%S")
+    dest = out / "_prev" / f"{arm}-{stamp}"
+    moved = False
+    for src in ([out / arm] + ([out / "work" / "answers_partial.jsonl", out / "work" / "trajectories"] if arm == "docdb" else [])):
+        if src.exists():
+            dest.mkdir(parents=True, exist_ok=True)
+            shutil.move(str(src), str(dest / src.name))
+            moved = True
+    if moved:
+        print(f"{arm}: previous outputs archived to {dest}")
+
+
 def run_arm(arm: str, matter: Path, out: Path, batch_size: int, concurrency: int, stuffing_concurrency: int) -> None:
     arm_dir = out / arm
     if arm == "docdb":
@@ -188,6 +204,99 @@ def evidence_stats(arm: str, out: Path) -> dict:
     return {"tiers": dict(tiers), "answers_with_verified_quotes": quoted, "n": len(rows)}
 
 
+COMPUTED_TYPES = {"aggregation", "set_logic", "join", "count_list"}
+DERIVATION_CHECKS = {"source_bound_calculation", "source_bound_calculations", "classification_aggregate"}
+
+
+def _slug(name: str) -> str:
+    stem = Path(name).stem if "." in name else name
+    return re.sub(r"[^a-z0-9]+", "_", stem.lower()).strip("_")[:40]
+
+
+def _final_reports(arm: str, out: Path, qids: list[str]) -> dict[str, dict]:
+    """field_id -> the last parent verification report for that answer, from the
+    arm's trajectories. answer-csv keys batch finals q000..; solo retries are
+    keyed by the trajectory's query id. Later files override earlier ones."""
+    tdir = (out / "work" / "trajectories") if arm == "docdb" else (out / arm / "trajectories")
+    pos = {f"q{i:03d}": fid for i, fid in enumerate(qids)}
+    reports: dict[str, dict] = {}
+    if not tdir.exists():
+        return reports
+    for f in sorted(tdir.glob("*.jsonl"), key=lambda p: p.stat().st_mtime):
+        with open(f, encoding="utf-8") as fh:
+            lines = fh.readlines()
+        for line in lines:
+            try:
+                r = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if r.get("kind") != "final":
+                continue
+            value, ver = r.get("value"), r.get("verification")
+            if isinstance(value, dict):
+                for q in value:
+                    fid = pos.get(q, q)
+                    reports[fid] = ver.get(q) if isinstance(ver, dict) else None
+            else:
+                q = r.get("query_id") or f.name.split(".", 1)[0]
+                reports[pos.get(q, q)] = ver if isinstance(ver, dict) else None
+    return reports
+
+
+def _report_facts(report: dict | None) -> dict:
+    """What an answer's parent report establishes mechanically."""
+    if not isinstance(report, dict):
+        return {"verified_quotes": 0, "docs": set(), "check": None, "cert_docs": set(), "cert_rows": 0}
+    quotes = [q for q in (report.get("quotes") or []) if isinstance(q, dict) and q.get("matched")]
+    docs = {q.get("doc_id") for q in quotes if q.get("doc_id")}
+    cert_docs, cert_rows = set(), 0
+    for rec in report.get("records") or []:
+        if not isinstance(rec, dict):
+            continue
+        if rec.get("kind") == "aggregate":
+            cert_docs.update(rec.get("documents") or [])
+            cert_rows += int(rec.get("n_rows") or 0)
+        src = rec.get("source")
+        if isinstance(src, dict) and src.get("doc_id"):
+            cert_docs.add(src["doc_id"])
+            cert_rows += 1
+    cls = report.get("classification")
+    if isinstance(cls, dict) and report.get("check") == "classification_aggregate":
+        cert_rows += int(cls.get("total") or 0)
+    return {"verified_quotes": len(quotes), "docs": docs | cert_docs, "check": report.get("check"),
+            "cert_docs": cert_docs, "cert_rows": cert_rows}
+
+
+def citation_stats(arm: str, out: Path, matter: Path) -> dict:
+    """Auditability, independent of correctness: machine-verified citations,
+    citations that reach a key source, and replayable derivations for
+    computed answers with their coverage of the key sources."""
+    key = {q["id"]: q for q in json.loads((matter / "answer_key.json").read_text())}
+    qids = [r["field_id"] for r in read_csv(matter / "questions.csv")]
+    reports = _final_reports(arm, out, qids)
+    n = len(qids)
+    answerable = [q for q in qids if not key[q].get("unanswerable")]
+    computed = [q for q in qids if key[q].get("question_type") in COMPUTED_TYPES]
+    verified = key_hit = derived = 0
+    coverage = []
+    for q in qids:
+        facts = _report_facts(reports.get(q))
+        if facts["verified_quotes"] or facts["check"] in DERIVATION_CHECKS:
+            verified += 1
+        key_docs = {_slug(s) for s in key[q].get("sources") or []}
+        cited = {_slug(d) for d in facts["docs"]}
+        if q in answerable and key_docs and cited & key_docs:
+            key_hit += 1
+        if q in computed:
+            if facts["check"] in DERIVATION_CHECKS:
+                derived += 1
+            cert = {_slug(d) for d in facts["cert_docs"]}
+            coverage.append(len(cert & key_docs) / len(key_docs) if key_docs else 0.0)
+    return {"n": n, "verified_citation": verified, "key_source_citation": key_hit, "answerable": len(answerable),
+            "computed": len(computed), "replayable_derivation": derived,
+            "derivation_coverage": round(sum(coverage) / len(coverage), 3) if coverage else None}
+
+
 def run_numbers(arm: str, out: Path) -> dict:
     p = _answers_dir(arm, out) / "run_report.json"
     if not p.exists():
@@ -212,7 +321,8 @@ def build_report(matter: Path, out: Path, arms: list[str], judge_passes: int, ca
     n = len(key)
     totals = {a: {"correct": passes[a][0], "total": n, "judge_passes": passes[a],
                   "judge_range": [min(passes[a]), max(passes[a])], **run_numbers(a, out),
-                  "trajectory": trajectory_stats(a, out), "evidence": evidence_stats(a, out)} for a in arms}
+                  "trajectory": trajectory_stats(a, out), "evidence": evidence_stats(a, out),
+                  "citations": citation_stats(a, out, matter)} for a in arms}
     by_type = defaultdict(lambda: {a: [0, 0] for a in arms})
     for qid, q in key.items():
         for a in arms:
@@ -254,6 +364,17 @@ def build_report(matter: Path, out: Path, arms: list[str], judge_passes: int, ca
                  f"{tj.get('cells_annotate', 0)} | {tj.get('cells_calc', 0)} | {tj.get('cells_llm', 0)} | {tj.get('embed_batches', 0)} | "
                  f"{tj.get('claim_reviews', 0)} | {tj.get('review_halts', 0)} | {tiers.get('high', 0)}/{tiers.get('medium', 0)}/{tiers.get('low', 0)} | "
                  f"{ev['answers_with_verified_quotes']}/{ev['n']} |")
+    L += ["", "## Auditability (independent of correctness)", "",
+          "| Arm | Verified citation | Cites a key source (answerable) | Replayable derivation (computed) | Derivation coverage of key sources | High tier |",
+          "|---|---|---|---|---|---|"]
+    for a in arms:
+        c, ev = totals[a]["citations"], totals[a]["evidence"]
+        cov = "–" if c["derivation_coverage"] is None else f"{c['derivation_coverage']:.0%}"
+        L.append(f"| {ARM_LABELS[a]} | {c['verified_citation']} / {c['n']} | {c['key_source_citation']} / {c['answerable']} | "
+                 f"{c['replayable_derivation']} / {c['computed']} | {cov} | {ev['tiers'].get('high', 0)} / {ev['n']} |")
+    L += ["", "*Verified citation*: the parent matched at least one quotation against retained source coordinates, or issued a calculation/classification certificate. "
+          "*Replayable derivation*: a computed answer (aggregation, set logic, join, count) carries a parent certificate that re-resolves from frozen source rows. "
+          "*Derivation coverage*: share of the answer key's source documents bound by that certificate, averaged over computed questions (0 when there is none).", ""]
     L += ["", "## Misses (X = scored wrong)", "", "| id | type | gold | " + " | ".join(arms) + " |", "|---|---|---|" + "---|" * len(arms)]
     for m in misses:
         L.append(f"| `{m['id']}` | {m['type']} | {m['gold'][:40]} | " + " | ".join("X" if m["arms"][a]["miss"] else "" for a in arms) + " |")
@@ -282,7 +403,8 @@ def main(argv=None) -> None:
     ap.add_argument("--concurrency", type=int, default=3)
     ap.add_argument("--stuffing-concurrency", type=int, default=1)
     ap.add_argument("--judge-passes", type=int, default=1)
-    ap.add_argument("--force", action="store_true", help="re-run arms that already have scores")
+    ap.add_argument("--force", action="store_true", help="re-run every arm that already has scores")
+    ap.add_argument("--rerun", default="", help="comma-separated arms to re-run (previous outputs archived)")
     ap.add_argument("--report-only", action="store_true")
     args = ap.parse_args(argv)
     arms = [a for a in ARM_ORDER if a in {x.strip() for x in args.arms.split(",")}]
@@ -291,10 +413,14 @@ def main(argv=None) -> None:
     if not args.report_only:
         db = ingest(args.matter, args.out, args.fast_ingest)
         print(f"corpus: {db}")
+        rerun = {x.strip() for x in args.rerun.split(",") if x.strip()}
         for arm in arms:
-            if (args.out / arm / "score" / "comparison.csv").exists() and not args.force:
-                print(f"{arm}: already scored, skipping (--force to rerun)")
+            scored = (args.out / arm / "score" / "comparison.csv").exists()
+            if scored and not (args.force or arm in rerun):
+                print(f"{arm}: already scored, skipping (--rerun {arm} to redo)")
                 continue
+            if scored:
+                archive_previous(arm, args.out)
             started = time.monotonic()
             print(f"{arm}: running …", flush=True)
             run_arm(arm, args.matter, args.out, args.batch_size, args.concurrency, args.stuffing_concurrency)

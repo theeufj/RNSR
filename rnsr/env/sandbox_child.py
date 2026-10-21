@@ -52,6 +52,65 @@ def _install_limits(cpu_s: int, mem_bytes: int) -> None:
     _apply(resource.RLIMIT_AS, mem_bytes)
 
 
+def _dci_namespace(files: dict[str, str]) -> dict:
+    """Direct-corpus-interaction baseline: one text file per document plus
+    shell-shaped helpers (``ls``, ``grep`` like ``rg -n``, ``read`` like
+    ``sed -n``). Files live under the child's private scratch so plain
+    ``open()`` works too. No index, no tables, no retriever."""
+    import os
+    import re
+    import tempfile
+
+    root = os.path.join(tempfile.gettempdir(), "corpus")
+    os.makedirs(root, exist_ok=True)
+    names = []
+    for name, text in files.items():
+        safe = re.sub(r"[^A-Za-z0-9._-]+", "_", name) or "document"
+        if not safe.endswith(".txt"):
+            safe += ".txt"
+        with open(os.path.join(root, safe), "w", encoding="utf-8") as fh:
+            fh.write(text or "")
+        names.append(safe)
+    names.sort()
+
+    def ls() -> list[str]:
+        """File names in the corpus directory, sorted."""
+        return list(names)
+
+    def read(path: str, start: int = 1, end: int | None = None) -> str:
+        """Lines start..end (1-based, inclusive) of one file, numbered like
+        ``sed -n 'start,endp' | cat -n``."""
+        with open(os.path.join(root, os.path.basename(path)), encoding="utf-8") as fh:
+            lines = fh.read().splitlines()
+        stop = len(lines) if end is None else min(end, len(lines))
+        return "\n".join(f"{i}: {lines[i - 1]}" for i in range(max(1, start), stop + 1))
+
+    def grep(pattern: str, path: str | None = None, *, max_hits: int = 50,
+             context: int = 0, ignore_case: bool = True) -> str:
+        """``rg -n [-i] [-C context] pattern [file]`` over the corpus. Returns
+        ``file:line: text`` rows, at most ``max_hits``; pipe-style narrowing
+        is ordinary Python over the returned string."""
+        rx = re.compile(pattern, re.IGNORECASE if ignore_case else 0)
+        targets = [os.path.basename(path)] if path else names
+        out, hits = [], 0
+        for name in targets:
+            with open(os.path.join(root, name), encoding="utf-8") as fh:
+                lines = fh.read().splitlines()
+            for i, line in enumerate(lines):
+                if rx.search(line):
+                    hits += 1
+                    lo, hi = max(0, i - context), min(len(lines), i + context + 1)
+                    out.extend(f"{name}:{j + 1}: {lines[j]}" for j in range(lo, hi))
+                    if context:
+                        out.append("--")
+                    if hits >= max_hits:
+                        out.append(f"[grep] stopped at {max_hits} hits; narrow the pattern")
+                        return "\n".join(out)
+        return "\n".join(out) if out else "[grep] no matches"
+
+    return {"CORPUS_DIR": root, "ls": ls, "read": read, "grep": grep}
+
+
 def _prewarm_native() -> None:
     """Import the native-extension modules a cell may need, before the
     guard forbids ctypes.
@@ -147,6 +206,8 @@ class Child:
         }
         if msg.get("mode") == "classic":
             self.namespace["context"] = msg.get("context", "")
+        elif msg.get("mode") == "dci":
+            self.namespace.update(_dci_namespace(msg.get("files") or {}))
         elif msg.get("mode") == "docdb":
             from rnsr.env.tools import build_namespace
 

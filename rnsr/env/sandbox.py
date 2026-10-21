@@ -103,7 +103,8 @@ class SandboxedRepl:
     _source_identity: tuple = ()
 
     async def start(self, *, mode: str, context: str | None = None,
-                    corpus_db: str | None = None, init_extra: dict | None = None) -> None:
+                    corpus_db: str | None = None, init_extra: dict | None = None,
+                    files: dict[str, str] | None = None) -> None:
         if self._proc is not None:
             if self._proc.returncode is None:
                 raise SandboxError("sandbox session is already running")
@@ -144,7 +145,7 @@ class SandboxedRepl:
                 start_new_session=True,
             )
             init = {"op": "init", "mode": mode, "context": context, "corpus_db": corpus_db,
-                    "cpu_s": self.cpu_s, "mem_bytes": self.mem_bytes,
+                    "files": files, "cpu_s": self.cpu_s, "mem_bytes": self.mem_bytes,
                     "fs_guard": self.fs_guard, **(init_extra or {})}
             result = await self._roundtrip(init, timeout=60.0)
             if not result.get("ok"):

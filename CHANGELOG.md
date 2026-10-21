@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Baseline arms for the matter benchmark (`rnsr.eval.matter_arms`): whole
+  matter in context, classic flat-string REPL, and a direct-corpus-interaction
+  `dci` sandbox mode (one text file per document with `ls`/`grep`/`read`
+  helpers, after arXiv:2605.05242). `matter_arms_report` compares arms per
+  matter and question type. On the October matters (11–15k tokens each) all
+  arms are within noise of DocDB on accuracy at 1/12–1/30 of the cost; see
+  `docs/benchmarks/matters-2026-10.md`.
 - Root prompts are sent to Anthropic as cache-friendly blocks: the system
   prompt and the completed transcript carry `cache_control` breakpoints, so a
   growing conversation re-reads its prefix instead of re-billing it every

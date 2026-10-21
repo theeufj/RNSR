@@ -123,8 +123,9 @@ async def _validate_metric_contract(env: EnvSpec, timeout_s: float) -> None:
 class EnvSpec:
     """What gets preloaded into the sandbox."""
 
-    mode: str                       # 'classic' | 'docdb'
+    mode: str                       # 'classic' | 'docdb' | 'dci'
     context: str | None = None      # classic: the flat string
+    files: dict[str, str] | None = None  # dci: file name -> text, one per document
     corpus_db: str | None = None    # docdb: artifact path
     manifest: dict | None = None    # docdb: rendered into the system prompt
     playbook: object | None = None  # rnsr.harness.playbook.Playbook | None
@@ -440,7 +441,7 @@ class RootRunner:
                                 evidence=_signals(final=candidate, status=status))
 
         try:
-            await sandbox.start(mode=env.mode, context=env.context,
+            await sandbox.start(mode=env.mode, context=env.context, files=env.files,
                                 corpus_db=env.corpus_db, init_extra=init_extra)
             while final is None:
                 cap = ledger.breached()
@@ -488,7 +489,7 @@ class RootRunner:
                     log(_LOG, logging.WARNING, "sandbox.restarted",
                         query_id=query_id, error=str(e)[:200])
                     metrics().incr("sandbox_restarts")
-                    await sandbox.start(mode=env.mode, context=env.context,
+                    await sandbox.start(mode=env.mode, context=env.context, files=env.files,
                                         corpus_db=env.corpus_db, init_extra=init_extra)
                     turns.append((code, (
                         f"[harness] {e} The sandbox was restarted: db/doc/"

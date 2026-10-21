@@ -88,7 +88,107 @@ The same answers were scored three times while the scoring inputs were corrected
 | Family law — Okafor & Nguyen | 37 | 37 | 67 | 18 | 6 | 0 | 0 | ok |
 | Immigration law — Tanaka Partner visa | 43 | 43 | 131 | 4 | 8 | 0 | 0 | ok |
 
+### Corpus size
+
+Retained text per matter (`doc_text`, all pages), measured 2026-10-21. Token
+counts are characters ÷ 4; the Claude tokenizer will be within ~20% of that.
+
+| Matter | Retained text | ≈ tokens | Largest single document |
+|---|---|---|---|
+| Employment law | 52,538 chars | ~13k | 2,205 chars |
+| Family law | 44,381 chars | ~11k | 1,846 chars |
+| Immigration law | 60,054 chars | ~15k | 2,372 chars |
+
+Every matter fits in a single model call with room to spare, and all three
+together are ~40k tokens. These matters are therefore *inside* the regime
+where the archived regime map (`benchmark-history.md`) found no accuracy
+advantage for DocDB over putting the document in context. They test whether
+the system completes a multi-document workload on realistic document types
+(scans, Word, PDF, email, tables); they do not test the beyond-window regime.
+The baseline arms below exist to make that explicit.
+
 One image in the employment matter (the payslip photo) initially failed transcription because the vision model placed trailing text blocks inside the JSON `tables` array and the parser rejected the page. `_parse_transcription` now relocates such blocks; the document was re-ingested with `--replace` and all three corpora reached health grade `ok` before answering.
+
+## Baseline arms (2026-10-21)
+
+Three baselines were run on the same 286 questions, the same `corpus.db`
+retained text, the same models (`claude-sonnet-5-5` root, `claude-haiku-5-5`
+sub/judge), the same per-query caps, and scored with the same `rnsr regress`
+protocol and `golden.json` as the DocDB run above. Each arm presents the corpus
+differently and nothing else changes:
+
+| Arm | Corpus presentation | Loop | Claim review |
+|---|---|---|---|
+| Whole matter in context | every document in the prompt; one call per question; corpus as a cached prefix | none | none |
+| Classic | one flat string `context` in the REPL (the RLM-classic environment) | same root loop, batch 8 | not applicable |
+| Direct corpus interaction | one `.txt` per document under `CORPUS_DIR` with `ls` / `grep` (≈ `rg -n`) / `read` (≈ `sed -n`) helpers (arXiv:2605.05242) | same root loop, batch 8 | not applicable |
+| DocDB | typed tables, search ladder, annotations, claim review (the run above) | same root loop, batch 8 | enabled |
+
+Runner: `rnsr/eval/matter_arms.py`; comparison: `rnsr/eval/matter_arms_report.py`;
+artifacts under `runs/matters-bench-arms/<matter>/<arm>/` (git-ignored).
+
+| Arm | Correct | Accuracy | Spend (3 matters) | Wall (slowest matter) |
+|---|---|---|---|---|
+| Whole matter in context | 279 / 286 | 97.6% | $1.15 | 1.3 min |
+| Classic (flat string in REPL) | 274 / 286 | 95.8% | $2.78 | 2.4 min |
+| Direct corpus interaction | 281 / 286 | 98.3% | $2.79 | 2.5 min |
+| DocDB (October run) | 276 / 286 | 96.5% | $34.33 | 9.1 min |
+
+| Matter | Whole matter | Classic | DCI | DocDB |
+|---|---|---|---|---|
+| Employment law | 109 / 111 ($0.45) | 105 / 111 ($0.96) | 111 / 111 ($0.88) | 109 / 111 ($7.86) |
+| Family law | 83 / 85 ($0.32) | 82 / 85 ($0.80) | 82 / 85 ($0.81) | 83 / 85 ($11.61) |
+| Immigration law | 87 / 90 ($0.38) | 87 / 90 ($1.01) | 88 / 90 ($1.10) | 84 / 90 ($14.87) |
+
+| Question type | Whole matter | Classic | DCI | DocDB |
+|---|---|---|---|---|
+| `value_lookup` | 102 / 104 | 103 / 104 | 104 / 104 | 103 / 104 |
+| `existence` | 39 / 41 | 32 / 41 | 37 / 41 | 38 / 41 |
+| `multi_fact` | 34 / 34 | 33 / 34 | 34 / 34 | 34 / 34 |
+| `relationship` | 28 / 29 | 28 / 29 | 28 / 29 | 27 / 29 |
+| `count_list` | 25 / 27 | 27 / 27 | 27 / 27 | 25 / 27 |
+| `summary` | 19 / 19 | 19 / 19 | 19 / 19 | 18 / 19 |
+| `unanswerable` | 19 / 19 | 19 / 19 | 19 / 19 | 19 / 19 |
+| `quote` | 13 / 13 | 13 / 13 | 13 / 13 | 12 / 13 |
+
+Reading. The four arms are within seven questions of each other on 286; the
+binomial standard error at this accuracy is about three questions, so no arm is
+distinguishable from another on accuracy. They are distinguishable on cost by
+12–30× and on wall time by 4–7×. On the dense question types the structure was
+meant to serve (`count_list`, `relationship`), DocDB is not ahead: classic and
+DCI are 27/27 on counts, DocDB 25/27. Every baseline miss is one of the two
+scorer artifacts already noted for the DocDB run: a correct answer with added
+context that the judge rejected (e.g. `overtime_hours_total`: gold "208.0 hours",
+answer "208.0 hours. The underpayment calculation …", rejected), or "Not found
+in matter corpus" where the gold is "No" (eight of classic's nine `existence`
+misses; two each for DCI and DocDB). None is a retrieval failure.
+
+What this does and does not show. At 11–15k tokens per matter, the corpus fits
+in one call, and putting it there is the cheapest and about the most accurate
+option. DocDB's retrieval layer (tables, ladder, annotations) buys nothing here
+and its claim-review loop accounts for most of the 30× cost. This is the result
+the archived regime map predicted for within-window corpora. It says nothing
+about collections that exceed a context window, about dense aggregation over
+hundreds of rows, or about the evidence layer (source-bound calculations,
+coordinate-checked quotations, trust tiers), which no baseline arm produces and
+which the scorer does not measure. The matched comparison the paper asks for in
+its evaluation agenda, at a scale where the arms can diverge, remains to be run.
+
+Reproduce:
+
+```bash
+export RNSR_MAX_ROOT_ITERS=16 RNSR_MAX_WALL_S=300 RNSR_MAX_SPEND_USD=1 RNSR_RUN_SPEND_CEILING_USD=20
+for arm in stuffing classic dci; do
+  python -m rnsr.eval.matter_arms --matter-dir runs/matters-bench/$M --arm $arm \
+    --out runs/matters-bench-arms/$M/$arm --batch-size 8 --concurrency 3
+  rnsr regress --answers runs/matters-bench-arms/$M/$arm/answers_chunk1.csv \
+    --golden runs/matters-bench/$M/golden.json --map runs/matters-bench/$M/map.json \
+    --out runs/matters-bench-arms/$M/$arm/score
+done
+python -m rnsr.eval.matter_arms_report --docdb runs/matters-bench \
+  --arms runs/matters-bench-arms --matters-src testMatter/matters \
+  --out runs/matters-bench-arms/summary.json
+```
 
 ## Run status and cost
 

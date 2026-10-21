@@ -67,6 +67,18 @@ it with slicing, regex, and string search; delegate semantic reading of \
 selected excerpts to llm_query/llm_map.
 """
 
+_DCI = """\
+The corpus is a directory of plain-text files, one per source document, \
+under `CORPUS_DIR` (file names carry the document's date and title). There \
+is no index, table or retriever. Work the way a shell user would: \
+`ls()` lists the files; `grep(pattern, path=None, max_hits=50, context=0)` \
+is `rg -n -i` over every file (or one file) and returns `file:line: text` \
+rows; `read(path, start=1, end=None)` is `sed -n` for a line range. Narrow \
+with successive greps, read only the lines you need, and compare across \
+files before answering. Ordinary `open()` on files under `CORPUS_DIR` also \
+works. Delegate semantic reading of selected excerpts to llm_query/llm_map.
+"""
+
 _DOCDB = """\
 The corpus is preloaded as a typed environment:
 - `db`: sqlite3 connection. Extracted document tables (schemas below) are \
@@ -275,6 +287,8 @@ def render_system(mode: str, *, manifest: dict | None = None,
         parts.append(guardrail)
     if mode == "classic":
         parts.append(_CLASSIC)
+    elif mode == "dci":
+        parts.append(_DCI)
     elif mode == "docdb":
         parts.append(_DOCDB.format(
             manifest=json.dumps(compact_manifest(manifest or {}), indent=1,

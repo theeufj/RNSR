@@ -251,7 +251,7 @@ def from_records(records: list[dict], *,
         budget_warned=any(r.get("kind") == "budget_warning" for r in records),
         health_grade=health_grade,
         rungs_used=list(dict.fromkeys(rungs)),
-        claim_review_status=("not_applicable" if start.get("mode") == "classic" else
+        claim_review_status=("not_applicable" if start.get("mode") in ("classic", "dci") else
                              "disabled" if start.get("claim_review_enabled") is False else None),
         claim_review_required=start.get("mode") == "docdb",
         qid=qid,

@@ -67,6 +67,30 @@ def load_documents(corpus_db: Path) -> dict[str, str]:
     return docs
 
 
+def load_documents_raw(docs_dir: Path) -> dict[str, str]:
+    """file name -> text from fast extraction of the original files: pdfium text
+    for PDFs, paragraph/table text for Office files, email bodies, plain text.
+    No layout model, no table typing, no OCR: an image yields an empty file.
+    This is what a shell agent over the folder gets before any ingest."""
+    from rnsr.ingest.dispatch import is_ingestable, parse_any_fast
+
+    docs: dict[str, str] = {}
+    for p in sorted(docs_dir.iterdir()):
+        if not p.is_file() or p.name.startswith(".") or not is_ingestable(p):
+            continue
+        name = p.stem + ".txt" if p.suffix.lower() != ".txt" else p.name
+        if p.suffix.lower() in {".png", ".jpg", ".jpeg", ".tif", ".tiff", ".webp"}:
+            docs[name] = f"[image file {p.name}: no text layer]"
+            continue
+        try:
+            d = parse_any_fast(p)
+        except Exception as exc:  # unreadable file stays visible as such
+            docs[name] = f"[unreadable {p.name}: {type(exc).__name__}]"
+            continue
+        docs[name] = "\n".join(e.text or "" for e in d.elements)
+    return docs
+
+
 def load_questions(path: Path, id_col: str = "field_id") -> list[tuple[str, str]]:
     with open(path, newline="", encoding="utf-8") as fh:
         rows = list(csv.DictReader(fh))
@@ -180,11 +204,18 @@ def main(argv: list[str] | None = None) -> None:
     ap.add_argument("--questions", type=Path, default=None,
                     help="questions CSV (default <matter-dir>/questions.csv)")
     ap.add_argument("--id-col", default="field_id", help="question id column in the CSV")
+    ap.add_argument("--source", choices=("corpus", "raw"), default="corpus",
+                    help="corpus: retained text from corpus.db (after ingest); raw: fast text "
+                         "extraction of the original files, no tables, no OCR")
+    ap.add_argument("--documents", type=Path, default=None, help="original documents dir (for --source raw)")
     args = ap.parse_args(argv)
 
     settings = Settings.from_env()
     corpus_db = args.corpus_db or args.matter_dir / "work" / "corpora" / "corpus.db"
-    docs = load_documents(corpus_db)
+    if args.source == "raw":
+        docs = load_documents_raw(args.documents or args.matter_dir / "documents")
+    else:
+        docs = load_documents(corpus_db)
     qs = load_questions(args.questions or args.matter_dir / "questions.csv", args.id_col)
     if args.limit:
         qs = qs[:args.limit]
@@ -199,7 +230,7 @@ def main(argv: list[str] | None = None) -> None:
         results, provider = asyncio.run(_run_loop(args.arm, qs, docs, settings, args.out,
                                                   args.batch_size, args.concurrency, corpus_db))
         extra = {"batch_size": args.batch_size, "root_model": settings.root_model,
-                 "sub_model": settings.sub_model}
+                 "sub_model": settings.sub_model, "source": args.source}
     write_outputs(args.arm, qs, results, provider, args.out, time.monotonic() - started,
                   {**extra, "documents": len(docs), "corpus_chars": corpus_chars,
                    "concurrency": args.concurrency})

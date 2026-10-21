@@ -407,6 +407,106 @@ done
 # score each arm with rnsr regress --golden $M/golden.json --map $M/map.json (re-key docdb status row -> field_id)
 ```
 
+## Five arms on the heterogeneous dense matter (2026-10-21)
+
+The caveat on the dense result was that every invoice shared one layout.
+`matter_dense --heterogeneous` writes the same facts, and therefore
+byte-identical golds, with the invoices in five layouts across four formats,
+assigned by billing period and chance the way a vendor's paperwork drifts:
+102 standard-grid PDFs, 34 scanned PNG copies of the grid (no text layer),
+91 PDFs with a reordered schema (key-value header table, `Description / Qty
+(hrs) / Unit price / Line total`, `Net amount / GST 10% / Amount payable`,
+`dd/mm/yyyy` dates), 48 narrative invoices with no table at all (21 PDFs, 27
+emails: "Priya Natarajan (Senior Consultant): 42.5 hrs @ $285.00 = $12,112.50"),
+and 100 Word ledgers (`Item / Staff / Grade / Units / Rate / Ext.`, `Balance
+due`). Generated instance: `testMatter/matters/dense_corvid_meridian_hetero`.
+
+Ingest (Docling + vision): 566 docs, 2.18M chars, 3,901 chunks, 641 tables
+(506 on invoice documents: 192 PDF, 100 DOCX, 34 transcribed scans; the 48
+narrative invoices correctly yield none), all 34 scans transcribed, one PDF
+failed on a transient network error and was appended afterwards. Run through
+the orchestrator (`rnsr.eval.arms_bench`, same caps as the uniform run, two
+judge passes). A fifth arm isolates ingest from tables: **DCI over raw
+files** gives the same shell-style agent fast text extraction of the original
+documents (pdfium text, Office paragraph/table text, email bodies) with no
+layout model, no table typing and no OCR, so a scanned invoice is a file that
+reads `[image file …: no text layer]`. That is what a shell agent over the
+folder gets before any ingest.
+
+| Arm | Correct | Accuracy | Judge range | Spend | Requests | Wall |
+|---|---|---|---|---|---|---|
+| Whole matter in context | 24 / 38 | 63.2% | 24–25 | $4.99 | 38 | 4.7 min |
+| Classic (ingested text in REPL) | 37 / 38 | 97.4% | 37–37 | $0.69 | 71 | 1.8 min |
+| DCI (ingested text, per-file) | 37 / 38 | 97.4% | 37–37 | $0.70 | 70 | 1.7 min |
+| **DCI over raw files (no ingest)** | **30 / 38** | **78.9%** | – | $1.08 | 103 | 2.8 min |
+| DocDB (claim review on) | 36 / 38 | 94.7% | 36–37 | $2.06 | 2,742 | 7.1 min |
+
+| Question type | Whole matter | Classic | DCI | DCI raw | DocDB |
+|---|---|---|---|---|---|
+| `aggregation` (15) | 3 | 15 | 15 | 8 | 14 |
+| `set_logic` (3) | 1 | 3 | 3 | 3 | 2 |
+| `join` (3) | 3 | 3 | 3 | 3 | 3 |
+| `cross_doc` (4) | 4 | 4 | 4 | 4 | 4 |
+| `value_lookup` (6) | 6 | 6 | 6 | 6 | 6 |
+| `timeline` (4) | 4 | 4 | 4 | 4 | 4 |
+| `existence` (1) | 1 | 1 | 1 | 1 | 1 |
+| `unanswerable` (2) | 2 | 1 | 1 | 1 | 2 |
+
+Misses. DocDB's two are correct values with an itemisation the judge marked
+`unavailable` (substantively 38/38, as on the uniform corpus). Classic and DCI
+again answer "0" for the nonexistent project. Whole-matter prompting fails as
+before. **DCI over raw files returned seven confident wrong aggregates**:
+$2,344,743.75 for $2,354,562.50; $2,616,886.25 for $2,567,248.75; 20,555.0
+hours for 22,720.0; $730,977.92 GST for $733,073.75; 86 invoices over $80k
+for 89; $1,877,087.50 for Priya Natarajan's $2,101,112.50; "March 2026" for
+"September 2025". Its trajectory read a scan file, saw the no-text-layer
+marker, counted the 34 scans, and summed without them. None of its 38 answers
+mentions a scan, an image, or a missing document.
+
+How the arms got there. Classic and DCI, given the ingested text, wrote a
+five-layout parser in about seventy cells: alternations over the four
+subtotal labels, three date formats, two line-item shapes, then cross-checked
+every parsed date against the filename and every credit note against its
+invoice total before computing. DocDB used SQL in 10 cells, the search ladder
+in 5 (41 embedding batches), the source-bound calculation helpers in 12, and
+hit `review_rounds_exhausted` on all five batches (tiers 0 high / 14 medium /
+24 low), as on the uniform corpus.
+
+Reading. On the same facts, presented heterogeneously:
+
+- **Ingest is worth seven questions.** The only difference between the DCI
+  arm (37/38) and the raw-files arm (30/38) is Docling's parse and the vision
+  transcription of 34 scans. The failure it prevents is the dangerous kind: a
+  precise number that silently omits a tenth of the sources, with no signal
+  that anything was unread. DocDB's health record would have reported those
+  scans as untranscribed and capped the answer tier; the shell agent had no
+  equivalent and did not invent one.
+- **Typed tables, the ladder and claim review are worth zero here**, at three
+  times the cost and four times the wall time of the REPL arms over the same
+  ingested text. Five layouts were not enough to defeat a model that writes
+  its own parser; the parser it wrote was validated against the corpus more
+  carefully than most humans would.
+- **The evidence layer still cannot certify an aggregate.** Same mechanism as
+  the uniform run: 32-operand cap, pairwise chaining abandoned, reviewer
+  returns `insufficient`, every correct answer published as not-to-be-trusted.
+
+What remains untested is a layout variety a model cannot parse from text alone
+in seventy cells: real scanned vendor invoices with stamps, handwriting and
+multi-page line tables, where Docling's structure recovery might matter rather
+than its text recovery. On generated documents, the value of the system is its
+ingest and its REPL; the relational layer and the review loop have not earned
+their cost on any corpus tested.
+
+Reproduce:
+
+```bash
+python -m rnsr.eval.datasets.matter_dense --out testMatter/matters/dense_corvid_meridian_hetero --seed 11 --heterogeneous
+export RNSR_MAX_ROOT_ITERS=24 RNSR_MAX_WALL_S=600 RNSR_MAX_SPEND_USD=2 RNSR_RUN_SPEND_CEILING_USD=40
+python -m rnsr.eval.arms_bench --matter testMatter/matters/dense_corvid_meridian_hetero \
+  --out runs/dense-hetero-arms --arms stuffing,classic,dci,dci_raw,docdb --judge-passes 2
+# report: runs/dense-hetero-arms/report.md ; summary.json alongside
+```
+
 ## Run status and cost
 
 | Matter | Status counts | Not-found answers | Provider requests | Spend | Rate-limit hits | Wall |

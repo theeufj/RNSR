@@ -14,6 +14,9 @@ produce (``documents/``, ``questions.csv``, ``golden.json``, ``map.json``,
        stuffing  whole corpus in one prompt per question
        classic   flat string in the REPL
        dci       one file per document with ls/grep/read in the REPL
+       dci_raw   as dci, but files are fast text extraction of the original
+                 documents (no layout model, no tables, no OCR): isolates the
+                 value of ingest from the value of typed tables
   3. scores every arm with ``rnsr regress`` against ``golden.json`` and
      ``map.json`` (``--judge-passes N`` repeats the judge to expose its
      variance; the first pass is the reported one);
@@ -44,8 +47,8 @@ from collections import Counter, defaultdict
 from pathlib import Path
 
 ARM_LABELS = {"stuffing": "Whole matter in context", "classic": "Classic (flat string in REPL)",
-              "dci": "Direct corpus interaction", "docdb": "DocDB"}
-ARM_ORDER = ("stuffing", "classic", "dci", "docdb")
+              "dci": "Direct corpus interaction", "dci_raw": "DCI over raw files (no ingest)", "docdb": "DocDB"}
+ARM_ORDER = ("stuffing", "classic", "dci", "dci_raw", "docdb")
 CAP_VARS = ("RNSR_MAX_ROOT_ITERS", "RNSR_MAX_WALL_S", "RNSR_MAX_SPEND_USD", "RNSR_RUN_SPEND_CEILING_USD",
             "RNSR_ROOT_MODEL", "RNSR_SUB_MODEL", "RNSR_PROVIDER")
 
@@ -93,10 +96,13 @@ def run_arm(arm: str, matter: Path, out: Path, batch_size: int, concurrency: int
                "--question-col", "ground_truth_question", "--output", str(arm_dir / "out"), "--work-dir", str(out / "work"),
                "--batch-size", str(batch_size), "--concurrency", str(concurrency), "--max-error-rate", "1"]
     else:
-        cmd = [sys.executable, "-u", "-m", "rnsr.eval.matter_arms", "--matter-dir", str(out), "--arm", arm,
+        cmd = [sys.executable, "-u", "-m", "rnsr.eval.matter_arms", "--matter-dir", str(out),
+               "--arm", "dci" if arm == "dci_raw" else arm,
                "--out", str(arm_dir), "--questions", str(matter / "questions.csv"), "--id-col", "field_id",
                "--batch-size", str(batch_size),
                "--concurrency", str(stuffing_concurrency if arm == "stuffing" else concurrency)]
+        if arm == "dci_raw":
+            cmd += ["--source", "raw", "--documents", str(matter / "documents")]
     rc = sh(cmd, out / f"{arm}.log")
     if rc != 0:
         raise SystemExit(f"arm {arm} failed (exit {rc}); see {out / f'{arm}.log'}")

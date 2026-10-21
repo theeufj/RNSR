@@ -26,7 +26,11 @@
   trajectory and evidence statistics, report.md/summary.json).
   `matter_dense --heterogeneous` writes the same facts with five invoice
   layouts across PDF, DOCX, EML and scanned PNG so a single parser cannot
-  cover the set.
+  cover the set. A `dci_raw` arm reads fast text extraction of the original
+  files (no layout model, no tables, no OCR) to separate the value of ingest
+  from the value of typed tables: on the heterogeneous matter it returns
+  seven confident wrong aggregates (34 scans unreadable, never flagged) where
+  the same agent over ingested text is 37/38 and DocDB 36/38.
 - Root prompts are sent to Anthropic as cache-friendly blocks: the system
   prompt and the completed transcript carry `cache_control` breakpoints, so a
   growing conversation re-reads its prefix instead of re-billing it every

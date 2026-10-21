@@ -303,6 +303,103 @@ done
 #   --map runs/ts6-arms/map.json --out <arm>/score   (re-key docdb answers_status.csv row -> qid first)
 ```
 
+## Four arms on a long, dense synthetic matter (2026-10-21)
+
+The experiment the two comparisons above could not reach: a corpus that is
+long rather than numerous, with aggregation questions over tables.
+`rnsr.eval.datasets.matter_dense` (seed 11 → `testMatter/matters/dense_corvid_meridian`)
+writes a 36-month, three-project professional-services engagement as 566
+documents: 375 multi-line tax invoices (consultant × role × hours × rate ×
+amount, Subtotal, GST, TOTAL DUE rows), 15 credit notes cancelling and
+reissuing invoices, 34 monthly remittance advices, 8 pro-forma quotes shaped
+like invoices, 5 dispute letters, a demand letter stating a stale outstanding
+figure, a SOW rate variation with two later invoices that wrongly keep the old
+rate, and 108 multi-page status reports whose "indicative" hours disagree with
+the invoices. Retained text 2.23M characters (~560–620k tokens); 3,772 chunks;
+510 tables extracted by Docling (all 375 invoice tables, typed `hours`, `rate`,
+`amount`), validation 100%. The Subtotal/GST/TOTAL rows were extracted as
+ordinary data rows. 38 questions with exact golds computed from the same facts
+(15 aggregation, 3 set logic, 3 join, 4 cross-doc, 6 lookup, 4 timeline, 1
+existence, 2 unanswerable); two golds were independently re-derived from the
+written PDFs before the run.
+
+Caps: 24 root iterations, 600 s, $2 per query (scaled for batch 8), run ceiling
+$40. Same models and scorer as above. Whole-matter arm at concurrency 1 (one
+~600k-token request per question, cached prefix).
+
+| Arm | Correct | Accuracy | Spend | Requests | Wall |
+|---|---|---|---|---|---|
+| Whole matter in context | 24 / 38 | 63.2% | $5.14 | 38 | 3.4 min |
+| Classic (flat string in REPL) | 37 / 38 | 97.4% | $0.63 | 60 | 1.4 min |
+| Direct corpus interaction | 37 / 38 | 97.4% | $0.59 | 63 | 1.4 min |
+| DocDB (claim review on) | 34 / 38 | 89.5% | $1.79 | 2,947 | 6.7 min |
+
+| Question type | Whole matter | Classic | DCI | DocDB |
+|---|---|---|---|---|
+| `aggregation` (15) | 4 | 15 | 15 | 11 |
+| `set_logic` (3) | 1 | 3 | 3 | 3 |
+| `join` (3) | 3 | 3 | 3 | 3 |
+| `cross_doc` (4) | 3 | 4 | 4 | 4 |
+| `value_lookup` (6) | 6 | 6 | 6 | 6 |
+| `timeline` (4) | 4 | 4 | 4 | 4 |
+| `existence` (1) | 1 | 1 | 1 | 1 |
+| `unanswerable` (2) | 2 | 1 | 1 | 2 |
+
+Misses. Whole-matter prompting failed 11 of 15 aggregations and 2 of 3 set-logic
+items: nine answers begin "I need to list all…" / "I can't produce a reliable
+total" and never reach a number, one gives a wrong total ($381,825.00 for the
+disputed invoices against $305,841.25), and one correct answer with a trailing
+explanation was rejected by the judge. Classic and DCI share one miss,
+`abs_delta`, where both answered "0" invoices for the nonexistent project and
+the gold expects a decline; "0" is defensible. DocDB's four misses are all
+correct values followed by an itemisation ("$1,068,801.25 (15 credit notes:
+CN-115 77,976.25, …)") that the judge rejected; substantively DocDB is 38/38.
+
+How the arms got there. Classic and DCI did not retrieve; they built the table
+themselves. The classic trajectory for the aggregation batch is fifteen cells:
+split the string on document headers, regex every invoice into number, date,
+project, line rows and TOTAL DUE, parse credit notes and remittances, reconcile
+remittance totals against invoice totals (all matched), then compute every
+aggregate in Python and quote a line from a source document per answer. DocDB
+used SQL over the invoice tables in 12 of 125 cells, `search()` in 41, and
+spent 45 provider batches embedding all 3,772 chunks for search rung 4 (that is
+where 2,900 of its 2,947 requests went). All five DocDB batches ended in
+`claim_review_halted`: the reviewer could not certify a sum over hundreds of
+invoices from quotations, the circuit breaker stopped the loop, and every
+answer was published as medium or low tier (0 high / 12 medium / 26 low).
+Source-bound calculations (`FINAL_CALC`) were not used.
+
+Reading. This is the first corpus on which the arms separate, and they
+separate on the axis the paper predicted: whole-corpus prompting cannot
+aggregate over 360 invoices at ~600k tokens (4/15), and every arm with a
+Python REPL can (15/15). But the REPL arms *without* tables matched the one
+*with* them, at a third of the cost and a fifth of the wall time, because the
+controller wrote its own parser over the raw text. That works here because the
+corpus is synthetic and every invoice shares one layout. On real matters where
+invoice layouts vary by vendor and period, layout-aware extraction at ingest is
+the step regex cannot replicate; that is the untested hypothesis on which
+DocDB's retrieval layer now rests. Two further findings are independent of the
+synthetic caveat: the search ladder's embedding pass is a fixed cost that
+bought nothing on a corpus the model could parse directly, and the claim-review
+contract has no way to certify an aggregate, so on exactly the workload where
+the answers were right and hard, the trust tiers said "do not trust".
+
+Reproduce:
+
+```bash
+python -m rnsr.eval.datasets.matter_dense --out testMatter/matters/dense_corvid_meridian --seed 11
+M=testMatter/matters/dense_corvid_meridian
+rnsr ingest $M/documents/* -o runs/dense-arms/work/corpora/corpus.db --report runs/dense-arms/ingest.json   # ~18 min
+export RNSR_MAX_ROOT_ITERS=24 RNSR_MAX_WALL_S=600 RNSR_MAX_SPEND_USD=2 RNSR_RUN_SPEND_CEILING_USD=40
+rnsr answer-csv --corpus $M/documents --questions $M/questions.csv --output runs/dense-arms/docdb/out \
+  --work-dir runs/dense-arms/work --batch-size 8 --concurrency 3 --max-error-rate 1
+for arm in stuffing classic dci; do
+  python -m rnsr.eval.matter_arms --matter-dir runs/dense-arms --arm $arm --out runs/dense-arms/$arm \
+    --questions $M/questions.csv --batch-size 8 --concurrency $([ $arm = stuffing ] && echo 1 || echo 3)
+done
+# score each arm with rnsr regress --golden $M/golden.json --map $M/map.json (re-key docdb status row -> field_id)
+```
+
 ## Run status and cost
 
 | Matter | Status counts | Not-found answers | Provider requests | Spend | Rate-limit hits | Wall |

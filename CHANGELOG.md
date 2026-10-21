@@ -15,6 +15,12 @@
   applicable") to the not-found phrase for value fields, which mis-scored
   explicit "No" answers against "No" golds in the October runs (corrected as
   scoring pass 4). `testMatter/ts6_arms_prep.py` builds arm-neutral inputs.
+- `rnsr.eval.datasets.matter_dense`: long, dense synthetic matter generator
+  (375 multi-line invoices, credit notes, remittances, rate variation, stale
+  demand figure, ~600k tokens) with 38 exact aggregation/set/join golds. On
+  it, whole-corpus prompting answers 4/15 aggregations; classic, DCI and
+  DocDB answer 15/15, the two REPL baselines by parsing the raw text; DocDB's
+  claim review halts on every batch because it cannot certify an aggregate.
 - Root prompts are sent to Anthropic as cache-friendly blocks: the system
   prompt and the completed transcript carry `cache_control` breakpoints, so a
   growing conversation re-reads its prefix instead of re-billing it every

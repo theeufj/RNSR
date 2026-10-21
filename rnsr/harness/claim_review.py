@@ -77,7 +77,11 @@ selection_executed_by is "parent", the recorded selection is the exact SQL the
 parent ran to choose the rows, so judge the predicate itself: if the SQL plainly
 selects the population the question asks about, the aggregate is supported; if it
 plainly selects a different or partial population, it is contradicted or
-insufficient. When it is "controller", the selection is only the controller's
+insufficient. A predicate that encodes a qualifier the question itself states
+(for example excluding rows whose invoice has a credit note against it when the
+question says to exclude cancelled invoices, or a date range that is the stated
+period) is the scope, not a proxy for it; do not mark such a certificate
+insufficient unless you can name a row it wrongly includes or omits. When it is "controller", the selection is only the controller's
 description and the sample is your main check. Do not demand a quotation for every
 row and do not reject a certificate for being large. Multiple
 quote locations may have different scopes; do not silently select a convenient

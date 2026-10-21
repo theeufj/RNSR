@@ -419,9 +419,12 @@ class SandboxedRepl:
                         if batch and isinstance(report, dict):
                             # Fields bound to a certificate are resolved by the parent;
                             # only their calculation id is taken from the child.
-                            calc_fields = {q: item.get('calculation_id') for q, item in report.items()
-                                           if isinstance(item, dict) and item.get('check') == 'source_bound_calculation'
-                                           and isinstance(item.get('calculation_id'), str)}
+                            calc_fields = {q: item for q, item in report.items()
+                                           if isinstance(item, dict) and (
+                                               (item.get('check') == 'source_bound_calculation'
+                                                and isinstance(item.get('calculation_id'), str))
+                                               or (item.get('check') == 'source_bound_calculations'
+                                                   and isinstance(item.get('template'), str)))}
                         quoted_value = ({q: v for q, v in value.items() if q not in calc_fields}
                                         if batch else value)
                         if abstention is not None:
@@ -431,9 +434,13 @@ class SandboxedRepl:
                                 quoted_value, submitted_quotes(report, batch=True), self._verifier, batch=True)
                                 if batch and quoted_value else {} if batch else validate_final(
                                     value, submitted_quotes(report), self._verifier))
-                            for q, calc_id in calc_fields.items():
-                                result = self._calculations.get(calc_id)
-                                actual, proof = self._calculations.resolve_final(calc_id, result['value'])
+                            for q, spec in calc_fields.items():
+                                if spec.get('check') == 'source_bound_calculation':
+                                    result = self._calculations.get(spec['calculation_id'])
+                                    actual, proof = self._calculations.resolve_final(spec['calculation_id'], result['value'])
+                                else:
+                                    actual, proof = self._calculations.resolve_finals(
+                                        spec['template'], spec.get('results'), decimals=spec.get('decimals'))
                                 value[q] = actual
                                 final["verification"][q] = proof
                             if batch:

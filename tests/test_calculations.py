@@ -334,3 +334,17 @@ FINAL_BATCH({'q1': 'whatever the model typed', 'q2': 'Revenue'},
         assert v['q2']['check'] == 'lexical_source_match' and v['q2']['passed']
         forged = await sandbox.exec_cell("FINAL_BATCH({'q1': '1'}, calcs={'q1': 'agg_forged'})")
         assert not forged.ok and 'unknown calculation/source id' in forged.error
+
+
+async def test_real_sandbox_final_batch_template_certificate(arithmetic_corpus):
+    async with SandboxedRepl() as sandbox:
+        await sandbox.start(mode='docdb', corpus_db=str(arithmetic_corpus))
+        cell = await sandbox.exec_cell("""
+agg = aggregate('mean', selection_sql="SELECT 't_report_001', rowid FROM t_report_001 WHERE rowid <= 3", column='amount')
+FINAL_BATCH({'q1': 'x'}, calcs={'q1': {'id': agg['id'], 'template': 'Mean amount ${value}', 'decimals': 2}})
+""")
+        assert cell.ok, cell.error
+        assert cell.final['value'] == {'q1': 'Mean amount $120.00'}
+        assert cell.final['verification']['q1']['check'] == 'source_bound_calculations'
+        bad = await sandbox.exec_cell("FINAL_BATCH({'q1': 'x'}, calcs={'q1': {'id': agg['id'], 'template': 'In FY2026 {value}'}})")
+        assert not bad.ok and 'numeric answer literals' in bad.error

@@ -164,7 +164,12 @@ every row from the frozen tables and binds the set by digest. Submit with \
 FINAL_CALC(agg['id']) for one answer, or in a batch with \
 FINAL_BATCH(answers, quotes=..., calcs={{qid: agg['id'], ...}}): the parent \
 resolves each calcs field itself and the field's answer becomes the \
-certified value (format other fields' quotes as usual). Aggregate ids are \
+certified value; to add words or rounding use calcs={{qid: {{'id': agg['id'], \
+'template': 'Total ex GST ${{value}}', 'decimals': 2}}}} or {{'results': \
+{{'a': id1, 'b': id2}}, 'template': '{{a}} of which {{b}} unpaid'}} (template \
+text may not contain digits). A certificate certifies a number; for a label \
+answer (which project, which month) answer in text with quotes, and give the \
+supporting totals via a template if useful. Aggregate ids are \
 valid operands for calculate (e.g. invoices minus credit notes minus \
 remittances). Prefer this to summing in Python and quoting a few rows: a \
 Python total is an unverified claim and a reviewer sees at most three quotes; \

@@ -133,22 +133,40 @@ def build_namespace(corpus_db: str, child, init_msg: dict) -> dict:
         raise FinalAnswer(value, is_var=True, verification=report)
 
     def FINAL_BATCH(answers, quotes=None, calcs=None):  # noqa: N802
-        """calcs: {qid: result_id} binds a field to a parent calculation or
-        aggregate certificate; the parent resolves it again and the field's
-        answer becomes the certified value. Other fields need quotes."""
+        """calcs binds fields to parent certificates; the parent resolves them
+        again and renders the field's answer itself. Per field either a result
+        id (answer = the certified value) or {'id': rid, 'template': 'text with
+        {value}', 'decimals': 2} / {'results': {name: rid, ...}, 'template':
+        ..., 'decimals': ...} (answer = template rendered by the parent; literal
+        text may not contain numerals). Other fields need quotes."""
         from rnsr.env.final_answer import FinalAnswer
         from rnsr.env.finalize import validate_final
 
+        def ok_spec(v):
+            if isinstance(v, str):
+                return True
+            if not isinstance(v, dict) or not isinstance(v.get('template'), str):
+                return False
+            results = v.get('results') if 'results' in v else {'value': v.get('id')}
+            return (isinstance(results, dict) and results
+                    and all(isinstance(k, str) and isinstance(r, str) for k, r in results.items()))
+
         if calcs is not None and (not isinstance(calcs, dict) or not isinstance(answers, dict)
-                                  or any(not isinstance(k, str) or not isinstance(v, str) for k, v in calcs.items())
+                                  or any(not isinstance(k, str) or not ok_spec(v) for k, v in calcs.items())
                                   or set(calcs) - set(answers)):
-            raise ValueError("FINAL_BATCH calcs must map question ids (present in answers) to result ids")
+            raise ValueError("FINAL_BATCH calcs must map question ids (present in answers) to a result id "
+                             "or {'id'|'results', 'template', 'decimals'}")
         try:
             quoted = {q: a for q, a in answers.items() if q not in (calcs or {})}
             reports = validate_final(quoted, {q: v for q, v in (quotes or {}).items() if q in quoted},
                                      verifier, batch=True) if quoted else {}
-            for qid, result_id in (calcs or {}).items():
-                reports[qid] = {'check': 'source_bound_calculation', 'calculation_id': result_id}
+            for qid, spec in (calcs or {}).items():
+                if isinstance(spec, str):
+                    reports[qid] = {'check': 'source_bound_calculation', 'calculation_id': spec}
+                else:
+                    results = spec.get('results') if 'results' in spec else {'value': spec.get('id')}
+                    reports[qid] = {'check': 'source_bound_calculations', 'template': spec['template'],
+                                    'results': results, 'decimals': spec.get('decimals')}
         except ValueError as exc:
             raise ValueError(f"FINAL_BATCH rejected: {exc}") from exc
         raise FinalAnswer(dict(answers), is_var=True, verification=reports)

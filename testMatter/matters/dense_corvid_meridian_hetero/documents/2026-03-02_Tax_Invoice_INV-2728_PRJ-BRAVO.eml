@@ -1,0 +1,23 @@
+From: accounts@corvidsystems.example
+To: payables@meridianlogistics.example
+Subject: Tax invoice INV-2728 - PRJ-BRAVO - March 2026
+Date: Mon, 02 Mar 2026 09:14:00 +1000
+Content-Type: text/plain; charset=utf-8
+
+Dear Accounts Payable,
+
+Tax invoice INV-2728 dated 2 March 2026 from Corvid Systems Pty Ltd to Meridian Logistics Pty Ltd.
+Project PRJ-BRAVO (Fleet Telematics Integration), service period March 2026, your purchase order PO-76775.
+Professional services under the MSA and SOW No. 1 were provided as follows:
+Yusuf Demir (Analyst): 27.5 hrs @ $165.00 = $4,537.50
+Sofia Reinholt (Consultant): 62.5 hrs @ $210.00 = $13,125.00
+Priya Natarajan (Senior Consultant): 37.5 hrs @ $310.00 = $11,625.00
+Beatriz Camargo (Data Engineer): 75.0 hrs @ $265.00 = $19,875.00
+Noah Fitzgerald (Data Engineer): 62.5 hrs @ $265.00 = $16,562.50
+Marcus Oyelaran (Consultant): 30.0 hrs @ $210.00 = $6,300.00
+Total excluding GST $72,025.00. GST $7,202.50. Total payable $79,227.50.
+Payment is due within 14 days of receipt. Please quote INV-2728 on your remittance.
+
+Regards,
+Accounts Receivable
+Corvid Systems Pty Ltd

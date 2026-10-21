@@ -1,0 +1,14 @@
+STEERING COMMITTEE — Meridian Logistics Pty Ltd / Corvid Systems Pty Ltd
+Date: 21 July 2023
+Attendees: Rowan Castellano, Diane Okafor, Declan Murray, Hannah Kowalczyk
+
+PRJ-ALPHA
+Effort in July 2023 concentrated on performance tuning; the telematics gateway remained stable throughout. Intermittent timeouts was identified in the nightly batch and the team accepted the risk. Hannah Kowalczyk led defect triage and reported that the archive store would be ready after change management. A recurring theme this month was a regression in the picking workflow, which affected environment refresh. The steering committee noted a licensing shortfall and asked for a written position. Operations reported a certificate expiry; after review the parties raised a change request.
+
+PRJ-BRAVO
+Effort in July 2023 concentrated on performance tuning; the message bus remained stable throughout. No further issues were recorded against the test harness once environment refresh completed. Sofia Reinholt and Yusuf Demir coordinated security hardening with the client's change management lead. No further issues were recorded against the message bus once reporting layer completed. A schema drift was identified in the WMS pilot site and the team asked for a written position. A recurring theme this month was a regression in the picking workflow, which affected reporting layer.
+
+PRJ-CHARLIE
+The period was dominated by defect triage and the knock-on effects for the telematics gateway. No further issues were recorded against the Snowflake tenant once cut-over planning completed. Imogen Blake led training delivery and reported that the nightly batch would be ready after device provisioning. Late sign-off from operations was identified in the SAP interface and the team escalated to the steering committee. Beatriz Camargo led vendor onboarding and reported that the nightly batch would be ready after security hardening. Firmware incompatibility was identified in the nightly batch and the team closed the action.
+
+ACTIONS: Environment refresh progressed against the plan, with the telematics gateway the main area of attention. Unplanned leave was identified in the archive store and the team reallocated effort from change management. Operations reported late sign-off from operations; after review the parties scheduled a workshop.

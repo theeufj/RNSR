@@ -21,6 +21,12 @@
   it, whole-corpus prompting answers 4/15 aggregations; classic, DCI and
   DocDB answer 15/15, the two REPL baselines by parsing the raw text; DocDB's
   claim review halts on every batch because it cannot certify an aggregate.
+- `rnsr.eval.arms_bench`: one-command four-arm comparison on any matter
+  directory (ingest, arms, scoring with optional repeated judge passes,
+  trajectory and evidence statistics, report.md/summary.json).
+  `matter_dense --heterogeneous` writes the same facts with five invoice
+  layouts across PDF, DOCX, EML and scanned PNG so a single parser cannot
+  cover the set.
 - Root prompts are sent to Anthropic as cache-friendly blocks: the system
   prompt and the completed transcript carry `cache_control` breakpoints, so a
   growing conversation re-reads its prefix instead of re-billing it every

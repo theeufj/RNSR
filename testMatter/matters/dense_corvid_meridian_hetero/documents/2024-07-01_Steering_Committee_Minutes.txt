@@ -1,0 +1,14 @@
+STEERING COMMITTEE — Meridian Logistics Pty Ltd / Corvid Systems Pty Ltd
+Date: 18 July 2024
+Attendees: Rowan Castellano, Diane Okafor, Declan Murray, Hannah Kowalczyk
+
+PRJ-ALPHA
+Effort in July 2024 concentrated on release packaging; the Snowflake tenant remained stable throughout. Intermittent timeouts was identified in the depot handhelds and the team requested a vendor fix. A recurring theme this month was a licensing shortfall, which affected interface build. Testing of the archive store surfaced a data quality finding; Marcus Oyelaran escalated to the steering committee. Operations reported duplicate records; after review the parties confirmed no contractual implication arises. A recurring theme this month was ambiguity in the acceptance criteria, which affected release packaging.
+
+PRJ-BRAVO
+User acceptance testing progressed against the plan, with the archive store the main area of attention. No further issues were recorded against the dashboard suite once reporting layer completed. Operations reported unplanned leave; after review the parties asked for a written position. The steering committee noted ambiguity in the acceptance criteria and closed the action. A data quality finding was identified in the nightly batch and the team closed the action. Operations reported a schema drift; after review the parties accepted the risk.
+
+PRJ-CHARLIE
+Reconciliation progressed against the plan, with the identity provider the main area of attention. Noah Fitzgerald led release packaging and reported that the telematics gateway would be ready after interface build. Marcus Oyelaran led interface build and reported that the nightly batch would be ready after cut-over planning. Operations reported a certificate expiry; after review the parties added two test cycles. Testing of the test harness surfaced a licensing shortfall; Sofia Reinholt closed the action. A recurring theme this month was duplicate records, which affected reconciliation.
+
+ACTIONS: Effort in July 2024 concentrated on device provisioning; the nightly batch remained stable throughout. Operations reported late sign-off from operations; after review the parties raised a change request. Operations reported intermittent timeouts; after review the parties accepted the risk.

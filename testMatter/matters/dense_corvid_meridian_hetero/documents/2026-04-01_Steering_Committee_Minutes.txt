@@ -1,0 +1,14 @@
+STEERING COMMITTEE — Meridian Logistics Pty Ltd / Corvid Systems Pty Ltd
+Date: 10 April 2026
+Attendees: Rowan Castellano, Diane Okafor, Declan Murray, Hannah Kowalczyk
+
+PRJ-ALPHA
+Training delivery progressed against the plan, with the message bus the main area of attention. The steering committee noted late sign-off from operations and confirmed no contractual implication arises. Late sign-off from operations was identified in the archive store and the team accepted the risk. Tom Abernethy and Beatriz Camargo coordinated security hardening with the client's defect triage lead. A recurring theme this month was a regression in the picking workflow, which affected defect triage. The steering committee noted a data quality finding and agreed to re-baseline the plan.
+
+PRJ-BRAVO
+The period was dominated by performance tuning and the knock-on effects for the dashboard suite. Operations reported intermittent timeouts; after review the parties closed the action. Yusuf Demir and Marcus Oyelaran coordinated change management with the client's cut-over planning lead. The steering committee noted a regression in the picking workflow and requested a vendor fix. Operations reported ambiguity in the acceptance criteria; after review the parties added two test cycles. Testing of the telematics gateway surfaced a regression in the picking workflow; Priya Natarajan accepted the risk.
+
+PRJ-CHARLIE
+The period was dominated by interface build and the knock-on effects for the SAP interface. Operations reported duplicate records; after review the parties reallocated effort from defect triage. Operations reported ambiguity in the acceptance criteria; after review the parties confirmed no contractual implication arises. Noah Fitzgerald and Arjun Mehta coordinated cut-over planning with the client's training delivery lead. Ambiguity in the acceptance criteria was identified in the SAP interface and the team deferred the item to the next release. A recurring theme this month was a licensing shortfall, which affected interface build.
+
+ACTIONS: Effort in April 2026 concentrated on release packaging; the message bus remained stable throughout. Testing of the Snowflake tenant surfaced a licensing shortfall; Sofia Reinholt deferred the item to the next release. A recurring theme this month was intermittent timeouts, which affected training delivery.

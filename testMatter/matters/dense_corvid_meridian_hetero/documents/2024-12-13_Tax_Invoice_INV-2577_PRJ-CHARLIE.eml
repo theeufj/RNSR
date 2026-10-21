@@ -1,0 +1,20 @@
+From: accounts@corvidsystems.example
+To: payables@meridianlogistics.example
+Subject: Tax invoice INV-2577 - PRJ-CHARLIE - December 2024
+Date: Fri, 13 Dec 2024 09:14:00 +1000
+Content-Type: text/plain; charset=utf-8
+
+Dear Accounts Payable,
+
+Tax invoice INV-2577 dated 13 December 2024 from Corvid Systems Pty Ltd to Meridian Logistics Pty Ltd.
+Project PRJ-CHARLIE (Data Platform Migration), service period December 2024, your purchase order PO-76118.
+Professional services under the MSA and SOW No. 1 were provided as follows:
+Declan Murray (Project Manager): 45.0 hrs @ $260.00 = $11,700.00
+Yusuf Demir (Analyst): 87.5 hrs @ $165.00 = $14,437.50
+Arjun Mehta (Data Engineer): 10.0 hrs @ $240.00 = $2,400.00
+Total excluding GST $28,537.50. GST $2,853.75. Total payable $31,391.25.
+Payment is due within 14 days of receipt. Please quote INV-2577 on your remittance.
+
+Regards,
+Accounts Receivable
+Corvid Systems Pty Ltd

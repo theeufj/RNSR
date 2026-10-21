@@ -1,0 +1,14 @@
+STEERING COMMITTEE — Meridian Logistics Pty Ltd / Corvid Systems Pty Ltd
+Date: 19 October 2025
+Attendees: Rowan Castellano, Diane Okafor, Declan Murray, Hannah Kowalczyk
+
+PRJ-ALPHA
+Effort in October 2025 concentrated on device provisioning; the dashboard suite remained stable throughout. No further issues were recorded against the test harness once training delivery completed. Operations reported a regression in the picking workflow; after review the parties accepted the risk. No further issues were recorded against the staging environment once training delivery completed. Operations reported duplicate records; after review the parties agreed to re-baseline the plan. A recurring theme this month was a schema drift, which affected data migration.
+
+PRJ-BRAVO
+During October 2025 the team focused on reconciliation across the Snowflake tenant. Sofia Reinholt led training delivery and reported that the test harness would be ready after data migration. Testing of the staging environment surfaced duplicate records; Declan Murray deferred the item to the next release. The steering committee noted a licensing shortfall and deferred the item to the next release. Hannah Kowalczyk and Imogen Blake coordinated release packaging with the client's defect triage lead. No further issues were recorded against the message bus once performance tuning completed.
+
+PRJ-CHARLIE
+The period was dominated by defect triage and the knock-on effects for the dashboard suite. No further issues were recorded against the nightly batch once device provisioning completed. Firmware incompatibility was identified in the test harness and the team accepted the risk. Operations reported a certificate expiry; after review the parties scheduled a workshop. Sofia Reinholt led change management and reported that the dashboard suite would be ready after reporting layer. A regression in the picking workflow was identified in the WMS pilot site and the team agreed to re-baseline the plan.
+
+ACTIONS: During October 2025 the team focused on device provisioning across the identity provider. A recurring theme this month was scope creep on reporting, which affected environment refresh. A recurring theme this month was scope creep on reporting, which affected release packaging.

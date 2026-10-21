@@ -361,13 +361,18 @@ split the string on document headers, regex every invoice into number, date,
 project, line rows and TOTAL DUE, parse credit notes and remittances, reconcile
 remittance totals against invoice totals (all matched), then compute every
 aggregate in Python and quote a line from a source document per answer. DocDB
-used SQL over the invoice tables in 12 of 125 cells, `search()` in 41, and
-spent 45 provider batches embedding all 3,772 chunks for search rung 4 (that is
-where 2,900 of its 2,947 requests went). All five DocDB batches ended in
-`claim_review_halted`: the reviewer could not certify a sum over hundreds of
-invoices from quotations, the circuit breaker stopped the loop, and every
-answer was published as medium or low tier (0 high / 12 medium / 26 low).
-Source-bound calculations (`FINAL_CALC`) were not used.
+used SQL over the invoice tables in 12 of 125 cells and called the search
+ladder in 3, which embedded all 3,772 chunks for rung 4 in 45 provider batches
+(2,900 of its 2,947 requests). In 12 cells across three batches it attempted
+the source-bound calculation path: `source_number` on invoice rows,
+`source_text_number` on spans in credit notes and the rate variation, and
+`calculate('sum', …)` chained pairwise because a derivation is capped at 32
+operands (`MAX_OPERANDS` in `env/calculations.py`) and the sums here run to
+41–360 invoices. It then abandoned the path ("fall back to quotes if tooling
+rejects") and submitted every final on lexical quote matching. The reviewer
+returned `insufficient` for the aggregates through six rounds on each of the
+five batches (`review_rounds_exhausted`), and every answer was published as
+medium or low tier (0 high / 12 medium / 26 low).
 
 Reading. This is the first corpus on which the arms separate, and they
 separate on the axis the paper predicted: whole-corpus prompting cannot
@@ -380,9 +385,11 @@ invoice layouts vary by vendor and period, layout-aware extraction at ingest is
 the step regex cannot replicate; that is the untested hypothesis on which
 DocDB's retrieval layer now rests. Two further findings are independent of the
 synthetic caveat: the search ladder's embedding pass is a fixed cost that
-bought nothing on a corpus the model could parse directly, and the claim-review
-contract has no way to certify an aggregate, so on exactly the workload where
-the answers were right and hard, the trust tiers said "do not trust".
+bought nothing on a corpus the model could parse directly, and the evidence layer
+cannot certify an aggregate over hundreds of sources: the calculation contract
+caps a derivation at 32 operands and the claim reviewer has no notion of a sum,
+so on exactly the workload where the answers were right and hard, the trust
+tiers said "do not trust".
 
 Reproduce:
 

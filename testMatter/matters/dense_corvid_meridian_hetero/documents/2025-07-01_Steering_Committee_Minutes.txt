@@ -1,0 +1,14 @@
+STEERING COMMITTEE — Meridian Logistics Pty Ltd / Corvid Systems Pty Ltd
+Date: 20 July 2025
+Attendees: Rowan Castellano, Diane Okafor, Declan Murray, Hannah Kowalczyk
+
+PRJ-ALPHA
+During July 2025 the team focused on training delivery across the message bus. A recurring theme this month was a licensing shortfall, which affected data migration. Yusuf Demir led change management and reported that the identity provider would be ready after reporting layer. Priya Natarajan and Noah Fitzgerald coordinated interface build with the client's training delivery lead. Testing of the staging environment surfaced a data quality finding; Imogen Blake added two test cycles. Noah Fitzgerald and Noah Fitzgerald coordinated reporting layer with the client's security hardening lead.
+
+PRJ-BRAVO
+Training delivery progressed against the plan, with the nightly batch the main area of attention. Testing of the staging environment surfaced late sign-off from operations; Hannah Kowalczyk accepted the risk. The steering committee noted ambiguity in the acceptance criteria and accepted the risk. No further issues were recorded against the nightly batch once training delivery completed. Operations reported a schema drift; after review the parties reallocated effort from defect triage. The steering committee noted a licensing shortfall and agreed to re-baseline the plan.
+
+PRJ-CHARLIE
+During July 2025 the team focused on reporting layer across the Snowflake tenant. Operations reported unplanned leave; after review the parties added two test cycles. Testing of the staging environment surfaced unplanned leave; Arjun Mehta requested a vendor fix. Operations reported a licensing shortfall; after review the parties raised a change request. No further issues were recorded against the dashboard suite once release packaging completed. Operations reported unplanned leave; after review the parties added two test cycles.
+
+ACTIONS: The period was dominated by reporting layer and the knock-on effects for the nightly batch. Beatriz Camargo and Arjun Mehta coordinated vendor onboarding with the client's performance tuning lead. The steering committee noted a regression in the picking workflow and closed the action.

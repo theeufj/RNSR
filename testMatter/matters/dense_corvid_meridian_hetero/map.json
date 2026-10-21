@@ -1,0 +1,232 @@
+{
+ "items": [
+  {
+   "kind": "standalone",
+   "field_id": "agg_alpha_fy25_exgst",
+   "question": "What was the total amount invoiced (ex GST) for project PRJ-ALPHA in FY2025 (1 July 2024 to 30 June 2025), excluding invoices that were cancelled by credit note?",
+   "needs_value": false
+  },
+  {
+   "kind": "standalone",
+   "field_id": "agg_bravo_count",
+   "question": "How many tax invoices were issued for project PRJ-BRAVO over the whole engagement, counting a replacement invoice but not the cancelled invoice it replaced?",
+   "needs_value": false
+  },
+  {
+   "kind": "standalone",
+   "field_id": "agg_charlie_fy26_incgst",
+   "question": "What was the total invoiced (inc GST) for project PRJ-CHARLIE in FY2026?",
+   "needs_value": false
+  },
+  {
+   "kind": "standalone",
+   "field_id": "agg_de_hours",
+   "question": "How many hours in total were invoiced for the Data Engineer role across all projects over the whole engagement (excluding cancelled invoices)?",
+   "needs_value": false
+  },
+  {
+   "kind": "standalone",
+   "field_id": "agg_gst_cal2025",
+   "question": "How much GST was charged on tax invoices dated in calendar year 2025 (excluding cancelled invoices)?",
+   "needs_value": false
+  },
+  {
+   "kind": "standalone",
+   "field_id": "agg_count_over_80k",
+   "question": "How many live tax invoices (not cancelled) have a total due including GST greater than $80,000?",
+   "needs_value": false
+  },
+  {
+   "kind": "standalone",
+   "field_id": "agg_priya_total",
+   "question": "What is the total amount (ex GST) invoiced for work by Priya Natarajan across the engagement, excluding cancelled invoices?",
+   "needs_value": false
+  },
+  {
+   "kind": "standalone",
+   "field_id": "agg_top_project",
+   "question": "Which project has the highest total invoiced amount (ex GST) over the engagement, excluding cancelled invoices?",
+   "needs_value": false
+  },
+  {
+   "kind": "standalone",
+   "field_id": "agg_top_month",
+   "question": "Which service period (month) had the highest total invoiced amount including GST, excluding cancelled invoices?",
+   "needs_value": false
+  },
+  {
+   "kind": "standalone",
+   "field_id": "agg_charlie_people",
+   "question": "How many distinct consultants billed time to project PRJ-CHARLIE over the engagement?",
+   "needs_value": false
+  },
+  {
+   "kind": "standalone",
+   "field_id": "agg_credit_notes_total",
+   "question": "What is the total value (inc GST) of all credit notes issued by the vendor?",
+   "needs_value": false
+  },
+  {
+   "kind": "standalone",
+   "field_id": "agg_credit_notes_count",
+   "question": "How many credit notes did the vendor issue?",
+   "needs_value": false
+  },
+  {
+   "kind": "standalone",
+   "field_id": "agg_remit_fy25",
+   "question": "What was the total amount remitted by the client under remittance advices dated in FY2025?",
+   "needs_value": false
+  },
+  {
+   "kind": "standalone",
+   "field_id": "agg_avg_fy26",
+   "question": "What was the average total due (inc GST) per live tax invoice dated in FY2026, to the nearest cent?",
+   "needs_value": false
+  },
+  {
+   "kind": "standalone",
+   "field_id": "agg_disputed_total",
+   "question": "What is the total value (inc GST) of the tax invoices the client formally disputed by letter?",
+   "needs_value": false
+  },
+  {
+   "kind": "standalone",
+   "field_id": "set_outstanding_asat",
+   "question": "What was the total amount outstanding (inc GST) on tax invoices as at 2 July 2026, after all credit notes and all remittance advices dated on or before that day?",
+   "needs_value": false
+  },
+  {
+   "kind": "standalone",
+   "field_id": "set_unpaid_fy25_count",
+   "question": "How many live tax invoices dated in FY2025 had not been paid under any remittance advice by the end of the engagement?",
+   "needs_value": false
+  },
+  {
+   "kind": "standalone",
+   "field_id": "set_reissued_count",
+   "question": "How many tax invoices are replacements for an earlier invoice that was cancelled by credit note?",
+   "needs_value": false
+  },
+  {
+   "kind": "standalone",
+   "field_id": "join_rate_error_count",
+   "question": "After the SOW rate variation took effect on 1 January 2025, how many tax invoices still billed the Senior Consultant role at the superseded hourly rate of $285?",
+   "needs_value": false
+  },
+  {
+   "kind": "standalone",
+   "field_id": "join_rate_error_invoices",
+   "question": "Which invoice numbers billed the Senior Consultant role at the superseded rate after the rate variation took effect?",
+   "needs_value": false
+  },
+  {
+   "kind": "standalone",
+   "field_id": "join_rate_error_shortfall",
+   "question": "By how much (ex GST) were those rate-error invoices under-billed in total, compared with the varied Senior Consultant rate?",
+   "needs_value": false
+  },
+  {
+   "kind": "standalone",
+   "field_id": "cross_de_rate_now",
+   "question": "What is the current hourly rate for a Data Engineer under Statement of Work No. 1?",
+   "needs_value": false
+  },
+  {
+   "kind": "standalone",
+   "field_id": "cross_payment_terms_now",
+   "question": "If the client receives a tax invoice from the vendor today, within how many days must it be paid?",
+   "needs_value": false
+  },
+  {
+   "kind": "standalone",
+   "field_id": "cross_indemnity_now",
+   "question": "What is the indemnity cap currently in effect under the MSA, taking into account all amendments?",
+   "needs_value": false
+  },
+  {
+   "kind": "standalone",
+   "field_id": "cross_indemnity_original",
+   "question": "What was the indemnity cap under the Master Services Agreement as originally executed?",
+   "needs_value": false
+  },
+  {
+   "kind": "standalone",
+   "field_id": "lookup_po",
+   "question": "What purchase order number is quoted on tax invoice INV-2527?",
+   "needs_value": false
+  },
+  {
+   "kind": "standalone",
+   "field_id": "lookup_signatory",
+   "question": "Who signed the Master Services Agreement for the Vendor?",
+   "needs_value": false
+  },
+  {
+   "kind": "standalone",
+   "field_id": "lookup_pm_bravo",
+   "question": "Who is the project manager for PRJ-BRAVO according to the monthly status reports?",
+   "needs_value": false
+  },
+  {
+   "kind": "standalone",
+   "field_id": "lookup_inv_total",
+   "question": "What is the total due including GST on tax invoice INV-2644?",
+   "needs_value": false
+  },
+  {
+   "kind": "standalone",
+   "field_id": "lookup_stale_demand",
+   "question": "What outstanding amount does the vendor's letter of demand state?",
+   "needs_value": false
+  },
+  {
+   "kind": "standalone",
+   "field_id": "time_cure_deadline",
+   "question": "By what date must the client remedy the breach identified in the vendor's notice of breach?",
+   "needs_value": false
+  },
+  {
+   "kind": "standalone",
+   "field_id": "time_last_remittance",
+   "question": "What is the date of the most recent remittance advice in the matter?",
+   "needs_value": false
+  },
+  {
+   "kind": "standalone",
+   "field_id": "time_first_charlie",
+   "question": "What is the date of the earliest live tax invoice for project PRJ-CHARLIE?",
+   "needs_value": false
+  },
+  {
+   "kind": "standalone",
+   "field_id": "time_amend2",
+   "question": "On what date was Amendment No. 2 to the MSA made?",
+   "needs_value": false
+  },
+  {
+   "kind": "standalone",
+   "field_id": "abs_guarantee",
+   "question": "Is there a personal guarantee from Peter Halloway anywhere in the matter file?",
+   "needs_value": false
+  },
+  {
+   "kind": "standalone",
+   "field_id": "abs_arbitration",
+   "question": "Do the parties agree to arbitration of disputes under the MSA?",
+   "needs_value": false
+  },
+  {
+   "kind": "standalone",
+   "field_id": "abs_delta",
+   "question": "How many tax invoices were issued for project PRJ-DELTA?",
+   "needs_value": false
+  },
+  {
+   "kind": "standalone",
+   "field_id": "abs_quote_invoice",
+   "question": "What tax invoice was issued for pro forma quote Q-2400?",
+   "needs_value": false
+  }
+ ]
+}

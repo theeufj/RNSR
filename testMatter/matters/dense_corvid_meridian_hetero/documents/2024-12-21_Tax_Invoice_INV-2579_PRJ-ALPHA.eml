@@ -1,0 +1,24 @@
+From: accounts@corvidsystems.example
+To: payables@meridianlogistics.example
+Subject: Tax invoice INV-2579 - PRJ-ALPHA - December 2024
+Date: Sat, 21 Dec 2024 09:14:00 +1000
+Content-Type: text/plain; charset=utf-8
+
+Dear Accounts Payable,
+
+Tax invoice INV-2579 dated 21 December 2024 from Corvid Systems Pty Ltd to Meridian Logistics Pty Ltd.
+Project PRJ-ALPHA (Warehouse Management System Replacement), service period December 2024, your purchase order PO-76591.
+Professional services under the MSA and SOW No. 1 were provided as follows:
+Priya Natarajan (Senior Consultant): 17.5 hrs @ $285.00 = $4,987.50
+Declan Murray (Project Manager): 22.5 hrs @ $260.00 = $5,850.00
+Ling Zhao (Consultant): 42.5 hrs @ $210.00 = $8,925.00
+Arjun Mehta (Data Engineer): 50.0 hrs @ $240.00 = $12,000.00
+Tom Abernethy (Senior Consultant): 52.5 hrs @ $285.00 = $14,962.50
+Sofia Reinholt (Consultant): 77.5 hrs @ $210.00 = $16,275.00
+Noah Fitzgerald (Data Engineer): 67.5 hrs @ $240.00 = $16,200.00
+Total excluding GST $79,200.00. GST $7,920.00. Total payable $87,120.00.
+Payment is due within 14 days of receipt. Please quote INV-2579 on your remittance.
+
+Regards,
+Accounts Receivable
+Corvid Systems Pty Ltd

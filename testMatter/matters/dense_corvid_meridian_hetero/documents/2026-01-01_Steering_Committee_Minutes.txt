@@ -1,0 +1,14 @@
+STEERING COMMITTEE — Meridian Logistics Pty Ltd / Corvid Systems Pty Ltd
+Date: 7 January 2026
+Attendees: Rowan Castellano, Diane Okafor, Declan Murray, Hannah Kowalczyk
+
+PRJ-ALPHA
+The period was dominated by device provisioning and the knock-on effects for the telematics gateway. Tom Abernethy and Beatriz Camargo coordinated interface build with the client's cut-over planning lead. Testing of the test harness surfaced a data quality finding; Imogen Blake deferred the item to the next release. Firmware incompatibility was identified in the identity provider and the team scheduled a workshop. Beatriz Camargo led training delivery and reported that the SAP interface would be ready after reporting layer. Imogen Blake and Noah Fitzgerald coordinated environment refresh with the client's device provisioning lead.
+
+PRJ-BRAVO
+The period was dominated by data migration and the knock-on effects for the SAP interface. Ling Zhao led data migration and reported that the test harness would be ready after performance tuning. Intermittent timeouts was identified in the WMS pilot site and the team closed the action. Operations reported late sign-off from operations; after review the parties agreed to re-baseline the plan. Ling Zhao and Beatriz Camargo coordinated release packaging with the client's environment refresh lead. Sofia Reinholt and Noah Fitzgerald coordinated release packaging with the client's vendor onboarding lead.
+
+PRJ-CHARLIE
+Effort in January 2026 concentrated on reconciliation; the test harness remained stable throughout. The steering committee noted a licensing shortfall and raised a change request. Marcus Oyelaran led interface build and reported that the telematics gateway would be ready after reporting layer. The steering committee noted ambiguity in the acceptance criteria and raised a change request. No further issues were recorded against the WMS pilot site once device provisioning completed. Firmware incompatibility was identified in the message bus and the team confirmed no contractual implication arises.
+
+ACTIONS: During January 2026 the team focused on change management across the Snowflake tenant. Testing of the message bus surfaced duplicate records; Beatriz Camargo added two test cycles. Late sign-off from operations was identified in the test harness and the team closed the action.

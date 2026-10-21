@@ -19,6 +19,11 @@ Question classes (``question_type`` in answer_key.json):
   existence     a yes/no the documents settle explicitly
   unanswerable  things the matter does not contain
 
+With --heterogeneous the same facts are written with varying invoice layouts
+and formats (period-dependent PDF templates, narrative PDFs and emails, Word
+ledgers, scanned PNGs), so the golds are identical to the uniform corpus but a
+single regular expression cannot parse the invoice set.
+
 Layout (same as testMatter/matters/<name>/ plus scorer inputs):
   documents/            the corpus
   qa.json               [{id, question, answer, unanswerable}]
@@ -315,7 +320,143 @@ def _invoice_pdf(out: Path, f: Facts, inv: dict) -> str:
     return name
 
 
-def _write_corpus(out: Path, f: Facts, report_chars: int) -> dict[str, list[str]]:
+# --------------------------------------------------------------------------- heterogeneous invoices
+#
+# Real vendor paperwork does not share one layout: billing systems change,
+# some invoices arrive as Word files or in the body of an email, some as
+# scans. --heterogeneous assigns each invoice a template and a format so a
+# single regular expression cannot parse the set, while the facts (and
+# therefore the golds) are identical to the uniform corpus.
+
+def _layout_for(rng: random.Random, f: Facts, inv: dict) -> tuple[str, str]:
+    """(template, format) for one invoice. Template by billing period; some
+    invoices are narrative, emailed, or scanned regardless of period."""
+    r = rng.random()
+    if r < 0.08:
+        return "grid", "png"           # scanned copy of a standard invoice
+    if r < 0.20:
+        return "narrative", "eml" if rng.random() < 0.5 else "pdf"
+    months = (inv["date"].year - f.start.year) * 12 + inv["date"].month - f.start.month
+    if months < 12:
+        return "grid", "pdf"
+    if months < 24:
+        return "reordered", "pdf"
+    return "ledger", "docx"
+
+
+def _invoice_lines_text(inv: dict, f: Facts) -> list[str]:
+    return [f"{ln['person']} ({ln['role']}): {ln['hours']:.1f} hrs @ ${ln['rate']:,.2f} = ${ln['amount']:,.2f}"
+            for ln in inv["lines"]]
+
+
+def _write_invoice_hetero(out: Path, f: Facts, inv: dict, rng: random.Random) -> str:
+    template, kind = _layout_for(rng, f, inv)
+    stem = f"{inv['date']:%Y-%m-%d}_Tax_Invoice_{inv['no']}_{inv['project']}"
+    sub, gst, tot = f.subtotal(inv), f.gst(inv), f.total(inv)
+    terms = f.payment_terms_1 if inv["date"] >= f.a1_date else f.payment_terms_0
+    replaces = f"This invoice replaces {inv['replaces']}, which was cancelled by credit note." if inv["replaces"] else ""
+
+    if template == "grid" and kind == "pdf":
+        return _invoice_pdf(out, f, inv)
+
+    if template == "grid" and kind == "png":
+        # Scanned copy: rendered as an image, no text layer.
+        from PIL import Image, ImageDraw, ImageFont
+        font = ImageFont.truetype("/System/Library/Fonts/Supplemental/Arial.ttf", 22)
+        bold = ImageFont.truetype("/System/Library/Fonts/Supplemental/Arial Bold.ttf", 26)
+        img = Image.new("L", (1240, 1754), 250)
+        d = ImageDraw.Draw(img)
+        y = 70
+        d.text((90, y), f"TAX INVOICE {inv['no']}", font=bold, fill=20)
+        y += 50
+        for line in [f"Date: {fmt_dmy(inv['date'])}", f"From: {f.vendor} (ABN 51 824 753 556)", f"To: {f.client}",
+                     f"Project: {inv['project']} - {PROJECTS[inv['project']]}", f"Purchase order: {inv['po']}",
+                     f"Service period: {inv['period']}"] + ([replaces] if replaces else []):
+            d.text((90, y), line, font=font, fill=30)
+            y += 32
+        y += 20
+        cols = [90, 400, 640, 760, 940]
+        for x, h in zip(cols, ["Consultant", "Role", "Hours", "Rate", "Amount"], strict=True):
+            d.text((x, y), h, font=bold, fill=20)
+        y += 36
+        d.line((90, y, 1150, y), fill=60, width=2)
+        y += 10
+        for ln in inv["lines"]:
+            for x, v in zip(cols, [ln["person"], ln["role"], f"{ln['hours']:.1f}", f"{ln['rate']:,.2f}", f"{ln['amount']:,.2f}"], strict=True):
+                d.text((x, y), v, font=font, fill=30)
+            y += 32
+        y += 10
+        d.line((90, y, 1150, y), fill=60, width=2)
+        y += 14
+        for label, v in [("Subtotal (ex GST)", sub), ("GST (10%)", gst), ("TOTAL DUE (inc GST)", tot)]:
+            d.text((640, y), label, font=bold if "TOTAL" in label else font, fill=20)
+            d.text((940, y), f"{v:,.2f}", font=bold if "TOTAL" in label else font, fill=20)
+            y += 34
+        y += 30
+        d.text((90, y), f"Payment terms: net {terms} days from receipt.", font=font, fill=30)
+        img = img.rotate(rng.uniform(-0.6, 0.6), fillcolor=250, resample=Image.BICUBIC)
+        img.save(out / f"{stem}_scan.png")
+        return f"{stem}_scan.png"
+
+    if template == "narrative":
+        body = [f"Tax invoice {inv['no']} dated {fmt(inv['date'])} from {f.vendor} to {f.client}.",
+                f"Project {inv['project']} ({PROJECTS[inv['project']]}), service period {inv['period']}, your purchase order {inv['po']}.",
+                "Professional services under the MSA and SOW No. 1 were provided as follows:"] + \
+               _invoice_lines_text(inv, f) + \
+               [f"Total excluding GST ${sub:,.2f}. GST ${gst:,.2f}. Total payable ${tot:,.2f}.",
+                f"Payment is due within {terms} days of receipt. Please quote {inv['no']} on your remittance."] + \
+               ([replaces] if replaces else [])
+        if kind == "eml":
+            msg = ["From: accounts@corvidsystems.example", "To: payables@meridianlogistics.example",
+                   f"Subject: Tax invoice {inv['no']} - {inv['project']} - {inv['period']}",
+                   f"Date: {inv['date']:%a, %d %b %Y} 09:14:00 +1000", "Content-Type: text/plain; charset=utf-8", "",
+                   "Dear Accounts Payable,", "", *body, "", "Regards,", "Accounts Receivable", f.vendor]
+            (out / f"{stem}.eml").write_text("\n".join(msg), encoding="utf-8")
+            return f"{stem}.eml"
+        _pdf(out / f"{stem}.pdf", f"Tax Invoice {inv['no']}", body)
+        return f"{stem}.pdf"
+
+    if template == "reordered":
+        header = [["Invoice No.", inv["no"]], ["Invoice date", fmt_dmy(inv["date"])], ["Customer", f.client],
+                  ["Customer PO", inv["po"]], ["Project code", inv["project"]], ["Billing period", inv["period"]]]
+        lines = [["Description", "Qty (hrs)", "Unit price", "Line total"]]
+        for ln in inv["lines"]:
+            lines.append([f"{ln['role']} - {ln['person']}", f"{ln['hours']:.2f}", f"{ln['rate']:.2f}", f"{ln['amount']:.2f}"])
+        totals = [["Net amount", f"{sub:.2f}"], ["GST 10%", f"{gst:.2f}"], ["Amount payable", f"{tot:.2f}"]]
+        blocks = [f"{f.vendor} — ABN 51 824 753 556", "Services rendered under the Master Services Agreement.",
+                  f"Terms: {terms} days."] + ([replaces] if replaces else [])
+        _pdf(out / f"{stem}.pdf", "INVOICE", blocks, [header, lines, totals], ["", "Charges", "Summary"])
+        return f"{stem}.pdf"
+
+    # ledger template as a Word document
+    import docx
+
+    doc = docx.Document()
+    doc.add_heading(f"Tax Invoice — {inv['no']}", level=1)
+    for line in [f"Issued {fmt(inv['date'])} by {f.vendor} to {f.client}.", f"PO {inv['po']} · {inv['project']} · {inv['period']}",
+                 f"Terms: payment within {terms} days."] + ([replaces] if replaces else []):
+        doc.add_paragraph(line)
+    table = doc.add_table(rows=1, cols=6)
+    table.style = "Table Grid"
+    for c, h in zip(table.rows[0].cells, ["Item", "Staff", "Grade", "Units", "Rate", "Ext."], strict=True):
+        c.text = h
+    for k, ln in enumerate(inv["lines"], 1):
+        cells = table.add_row().cells
+        for c, v in zip(cells, [str(k), ln["person"], ln["role"], f"{ln['hours']:.1f}", f"{ln['rate']:,.2f}", f"{ln['amount']:,.2f}"], strict=True):
+            c.text = v
+    for label, v in [("Net", sub), ("GST", gst), ("Balance due", tot)]:
+        cells = table.add_row().cells
+        cells[4].text = label
+        cells[5].text = f"{v:,.2f}"
+    doc.save(out / f"{stem}.docx")
+    return f"{stem}.docx"
+
+
+def fmt_dmy(d: date) -> str:
+    return d.strftime("%d/%m/%Y")
+
+
+def _write_corpus(out: Path, f: Facts, report_chars: int, heterogeneous: bool = False) -> dict[str, list[str]]:
     """Write all documents; return {doc_kind: [file names]} for source keys."""
     rng = random.Random(f.seed + 101)
     prose = Prose(rng, f)
@@ -369,8 +510,9 @@ def _write_corpus(out: Path, f: Facts, report_chars: int) -> dict[str, list[str]
         add("guarantee", n)
 
     # Invoices, credit notes, quotes, remittances
+    layout_rng = random.Random(f.seed + 202)
     for inv in f.invoices:
-        add("invoice", _invoice_pdf(out, f, inv))
+        add("invoice", _write_invoice_hetero(out, f, inv, layout_rng) if heterogeneous else _invoice_pdf(out, f, inv))
     for cn in f.credit_notes:
         n = f"{cn['date']:%Y-%m-%d}_Credit_Note_{cn['no']}_against_{cn['against']}.pdf"
         _pdf(out / n, f"CREDIT NOTE {cn['no']}", [
@@ -609,13 +751,14 @@ FIELD_CONTEXT = ("Benchmark question over one commercial matter's document corpu
                  "wrong; a confident value is wrong.")
 
 
-def generate(out_dir: Path, seed: int, n_months: int, invoices_per_month: int, report_chars: int) -> dict:
+def generate(out_dir: Path, seed: int, n_months: int, invoices_per_month: int, report_chars: int,
+             heterogeneous: bool = False) -> dict:
     out = Path(out_dir)
     docs_dir = out / "documents"
     docs_dir.mkdir(parents=True, exist_ok=True)
     f = Facts(seed, n_months=n_months, invoices_per_month=invoices_per_month)
     if not any(docs_dir.glob("*Master_Services_Agreement.pdf")):
-        docs = _write_corpus(docs_dir, f, report_chars)
+        docs = _write_corpus(docs_dir, f, report_chars, heterogeneous)
         (out / "doc_index.json").write_text(json.dumps(docs, indent=1))
     else:
         docs = json.loads((out / "doc_index.json").read_text())
@@ -635,7 +778,9 @@ def generate(out_dir: Path, seed: int, n_months: int, invoices_per_month: int, r
     (out / "map.json").write_text(json.dumps({"items": [
         {"kind": "standalone", "field_id": q["id"], "question": q["question"], "needs_value": False} for q in qs]}, indent=1))
     n_files = sum(len(v) for v in docs.values())
-    return {"documents": n_files, "invoices": len(f.invoices), "live_invoices": len(f.live()),
+    from collections import Counter
+    return {"documents": n_files, "heterogeneous": heterogeneous,
+            "invoice_formats": dict(Counter(Path(n).suffix for n in docs["invoice"])), "invoices": len(f.invoices), "live_invoices": len(f.live()),
             "credit_notes": len(f.credit_notes), "remittances": len(f.remittances), "questions": len(qs),
             "by_type": {t: sum(1 for q in qs if q["question_type"] == t) for t in sorted({q["question_type"] for q in qs})}}
 
@@ -647,8 +792,11 @@ def main(argv=None) -> None:
     ap.add_argument("--months", type=int, default=36)
     ap.add_argument("--invoices-per-month", type=int, default=10)
     ap.add_argument("--report-chars", type=int, default=16_000, help="prose per monthly status report")
+    ap.add_argument("--heterogeneous", action="store_true",
+                    help="vary invoice layout and format (PDF grid/reordered/narrative, DOCX, EML, scanned PNG)")
     args = ap.parse_args(argv)
-    print(json.dumps(generate(args.out, args.seed, args.months, args.invoices_per_month, args.report_chars), indent=1))
+    print(json.dumps(generate(args.out, args.seed, args.months, args.invoices_per_month, args.report_chars,
+                              heterogeneous=args.heterogeneous), indent=1))
 
 
 if __name__ == "__main__":

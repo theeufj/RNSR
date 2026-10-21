@@ -1,0 +1,14 @@
+STEERING COMMITTEE — Meridian Logistics Pty Ltd / Corvid Systems Pty Ltd
+Date: 6 January 2025
+Attendees: Rowan Castellano, Diane Okafor, Declan Murray, Hannah Kowalczyk
+
+PRJ-ALPHA
+Effort in January 2025 concentrated on vendor onboarding; the message bus remained stable throughout. Priya Natarajan led release packaging and reported that the dashboard suite would be ready after user acceptance testing. No further issues were recorded against the depot handhelds once training delivery completed. Sofia Reinholt and Imogen Blake coordinated cut-over planning with the client's release packaging lead. No further issues were recorded against the WMS pilot site once interface build completed. The steering committee noted ambiguity in the acceptance criteria and requested a vendor fix.
+
+PRJ-BRAVO
+The period was dominated by interface build and the knock-on effects for the staging environment. Beatriz Camargo led defect triage and reported that the test harness would be ready after interface build. A licensing shortfall was identified in the WMS pilot site and the team confirmed no contractual implication arises. Declan Murray led user acceptance testing and reported that the message bus would be ready after data migration. Operations reported a certificate expiry; after review the parties added two test cycles. Testing of the Snowflake tenant surfaced scope creep on reporting; Priya Natarajan requested a vendor fix.
+
+PRJ-CHARLIE
+The period was dominated by reconciliation and the knock-on effects for the archive store. The steering committee noted a schema drift and accepted the risk. Marcus Oyelaran led user acceptance testing and reported that the Snowflake tenant would be ready after defect triage. Hannah Kowalczyk and Tom Abernethy coordinated device provisioning with the client's training delivery lead. No further issues were recorded against the WMS pilot site once reporting layer completed. Arjun Mehta and Imogen Blake coordinated interface build with the client's performance tuning lead.
+
+ACTIONS: Effort in January 2025 concentrated on release packaging; the message bus remained stable throughout. A data quality finding was identified in the archive store and the team closed the action. Hannah Kowalczyk and Beatriz Camargo coordinated cut-over planning with the client's reporting layer lead.

@@ -1,0 +1,23 @@
+From: accounts@corvidsystems.example
+To: payables@meridianlogistics.example
+Subject: Tax invoice INV-2587 - PRJ-BRAVO - January 2025
+Date: Sat, 25 Jan 2025 09:14:00 +1000
+Content-Type: text/plain; charset=utf-8
+
+Dear Accounts Payable,
+
+Tax invoice INV-2587 dated 25 January 2025 from Corvid Systems Pty Ltd to Meridian Logistics Pty Ltd.
+Project PRJ-BRAVO (Fleet Telematics Integration), service period January 2025, your purchase order PO-78700.
+Professional services under the MSA and SOW No. 1 were provided as follows:
+Noah Fitzgerald (Data Engineer): 47.5 hrs @ $265.00 = $12,587.50
+Priya Natarajan (Senior Consultant): 42.5 hrs @ $310.00 = $13,175.00
+Sofia Reinholt (Consultant): 77.5 hrs @ $210.00 = $16,275.00
+Tom Abernethy (Senior Consultant): 20.0 hrs @ $310.00 = $6,200.00
+Yusuf Demir (Analyst): 37.5 hrs @ $165.00 = $6,187.50
+Marcus Oyelaran (Consultant): 75.0 hrs @ $210.00 = $15,750.00
+Total excluding GST $70,175.00. GST $7,017.50. Total payable $77,192.50.
+Payment is due within 14 days of receipt. Please quote INV-2587 on your remittance.
+
+Regards,
+Accounts Receivable
+Corvid Systems Pty Ltd

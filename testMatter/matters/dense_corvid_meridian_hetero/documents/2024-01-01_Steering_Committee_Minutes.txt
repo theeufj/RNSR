@@ -1,0 +1,14 @@
+STEERING COMMITTEE — Meridian Logistics Pty Ltd / Corvid Systems Pty Ltd
+Date: 19 January 2024
+Attendees: Rowan Castellano, Diane Okafor, Declan Murray, Hannah Kowalczyk
+
+PRJ-ALPHA
+Device provisioning progressed against the plan, with the nightly batch the main area of attention. Testing of the staging environment surfaced a regression in the picking workflow; Arjun Mehta reallocated effort from vendor onboarding. Arjun Mehta led change management and reported that the WMS pilot site would be ready after performance tuning. Operations reported a certificate expiry; after review the parties escalated to the steering committee. Operations reported a licensing shortfall; after review the parties raised a change request. Testing of the test harness surfaced a schema drift; Hannah Kowalczyk confirmed no contractual implication arises.
+
+PRJ-BRAVO
+Reporting layer progressed against the plan, with the WMS pilot site the main area of attention. A recurring theme this month was a licensing shortfall, which affected user acceptance testing. A recurring theme this month was a data quality finding, which affected cut-over planning. Priya Natarajan and Ling Zhao coordinated cut-over planning with the client's training delivery lead. Duplicate records was identified in the identity provider and the team added two test cycles. A recurring theme this month was ambiguity in the acceptance criteria, which affected reporting layer.
+
+PRJ-CHARLIE
+Effort in January 2024 concentrated on user acceptance testing; the depot handhelds remained stable throughout. No further issues were recorded against the nightly batch once performance tuning completed. Hannah Kowalczyk led cut-over planning and reported that the telematics gateway would be ready after training delivery. Operations reported late sign-off from operations; after review the parties agreed to re-baseline the plan. Priya Natarajan led change management and reported that the staging environment would be ready after environment refresh. Declan Murray led data migration and reported that the dashboard suite would be ready after change management.
+
+ACTIONS: The period was dominated by user acceptance testing and the knock-on effects for the identity provider. Ambiguity in the acceptance criteria was identified in the telematics gateway and the team asked for a written position. Testing of the identity provider surfaced firmware incompatibility; Noah Fitzgerald deferred the item to the next release.

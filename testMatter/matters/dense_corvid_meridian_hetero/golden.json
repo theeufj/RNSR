@@ -1,0 +1,270 @@
+{
+ "items": [
+  {
+   "id": "agg_alpha_fy25_exgst",
+   "question": "What was the total amount invoiced (ex GST) for project PRJ-ALPHA in FY2025 (1 July 2024 to 30 June 2025), excluding invoices that were cancelled by credit note?",
+   "golden": "$2,354,562.50",
+   "note": "",
+   "field_context": "Benchmark question over one commercial matter's document corpus (hundreds of tax invoices, credit notes, remittances, reports). The reference is an exact gold computed from the documents. Money must match to the cent and counts exactly; a candidate that states the reference value and adds correct supporting detail (document names, components of the sum) is equivalent. A different number is not equivalent. For unanswerable items the candidate must decline or state the premise is wrong; a confident value is wrong. Question type: aggregation."
+  },
+  {
+   "id": "agg_bravo_count",
+   "question": "How many tax invoices were issued for project PRJ-BRAVO over the whole engagement, counting a replacement invoice but not the cancelled invoice it replaced?",
+   "golden": "131",
+   "note": "",
+   "field_context": "Benchmark question over one commercial matter's document corpus (hundreds of tax invoices, credit notes, remittances, reports). The reference is an exact gold computed from the documents. Money must match to the cent and counts exactly; a candidate that states the reference value and adds correct supporting detail (document names, components of the sum) is equivalent. A different number is not equivalent. For unanswerable items the candidate must decline or state the premise is wrong; a confident value is wrong. Question type: aggregation."
+  },
+  {
+   "id": "agg_charlie_fy26_incgst",
+   "question": "What was the total invoiced (inc GST) for project PRJ-CHARLIE in FY2026?",
+   "golden": "$2,567,248.75",
+   "note": "",
+   "field_context": "Benchmark question over one commercial matter's document corpus (hundreds of tax invoices, credit notes, remittances, reports). The reference is an exact gold computed from the documents. Money must match to the cent and counts exactly; a candidate that states the reference value and adds correct supporting detail (document names, components of the sum) is equivalent. A different number is not equivalent. For unanswerable items the candidate must decline or state the premise is wrong; a confident value is wrong. Question type: aggregation."
+  },
+  {
+   "id": "agg_de_hours",
+   "question": "How many hours in total were invoiced for the Data Engineer role across all projects over the whole engagement (excluding cancelled invoices)?",
+   "golden": "22,720.0 hours",
+   "note": "",
+   "field_context": "Benchmark question over one commercial matter's document corpus (hundreds of tax invoices, credit notes, remittances, reports). The reference is an exact gold computed from the documents. Money must match to the cent and counts exactly; a candidate that states the reference value and adds correct supporting detail (document names, components of the sum) is equivalent. A different number is not equivalent. For unanswerable items the candidate must decline or state the premise is wrong; a confident value is wrong. Question type: aggregation."
+  },
+  {
+   "id": "agg_gst_cal2025",
+   "question": "How much GST was charged on tax invoices dated in calendar year 2025 (excluding cancelled invoices)?",
+   "golden": "$733,073.75",
+   "note": "",
+   "field_context": "Benchmark question over one commercial matter's document corpus (hundreds of tax invoices, credit notes, remittances, reports). The reference is an exact gold computed from the documents. Money must match to the cent and counts exactly; a candidate that states the reference value and adds correct supporting detail (document names, components of the sum) is equivalent. A different number is not equivalent. For unanswerable items the candidate must decline or state the premise is wrong; a confident value is wrong. Question type: aggregation."
+  },
+  {
+   "id": "agg_count_over_80k",
+   "question": "How many live tax invoices (not cancelled) have a total due including GST greater than $80,000?",
+   "golden": "89",
+   "note": "",
+   "field_context": "Benchmark question over one commercial matter's document corpus (hundreds of tax invoices, credit notes, remittances, reports). The reference is an exact gold computed from the documents. Money must match to the cent and counts exactly; a candidate that states the reference value and adds correct supporting detail (document names, components of the sum) is equivalent. A different number is not equivalent. For unanswerable items the candidate must decline or state the premise is wrong; a confident value is wrong. Question type: aggregation."
+  },
+  {
+   "id": "agg_priya_total",
+   "question": "What is the total amount (ex GST) invoiced for work by Priya Natarajan across the engagement, excluding cancelled invoices?",
+   "golden": "$2,101,112.50",
+   "note": "",
+   "field_context": "Benchmark question over one commercial matter's document corpus (hundreds of tax invoices, credit notes, remittances, reports). The reference is an exact gold computed from the documents. Money must match to the cent and counts exactly; a candidate that states the reference value and adds correct supporting detail (document names, components of the sum) is equivalent. A different number is not equivalent. For unanswerable items the candidate must decline or state the premise is wrong; a confident value is wrong. Question type: aggregation."
+  },
+  {
+   "id": "agg_top_project",
+   "question": "Which project has the highest total invoiced amount (ex GST) over the engagement, excluding cancelled invoices?",
+   "golden": "PRJ-BRAVO — Fleet Telematics Integration",
+   "note": "totals: PRJ-ALPHA $6,734,737.50, PRJ-BRAVO $7,910,850.00, PRJ-CHARLIE $6,276,300.00",
+   "field_context": "Benchmark question over one commercial matter's document corpus (hundreds of tax invoices, credit notes, remittances, reports). The reference is an exact gold computed from the documents. Money must match to the cent and counts exactly; a candidate that states the reference value and adds correct supporting detail (document names, components of the sum) is equivalent. A different number is not equivalent. For unanswerable items the candidate must decline or state the premise is wrong; a confident value is wrong. Question type: aggregation."
+  },
+  {
+   "id": "agg_top_month",
+   "question": "Which service period (month) had the highest total invoiced amount including GST, excluding cancelled invoices?",
+   "golden": "September 2025",
+   "note": "$764,500.00",
+   "field_context": "Benchmark question over one commercial matter's document corpus (hundreds of tax invoices, credit notes, remittances, reports). The reference is an exact gold computed from the documents. Money must match to the cent and counts exactly; a candidate that states the reference value and adds correct supporting detail (document names, components of the sum) is equivalent. A different number is not equivalent. For unanswerable items the candidate must decline or state the premise is wrong; a confident value is wrong. Question type: aggregation."
+  },
+  {
+   "id": "agg_charlie_people",
+   "question": "How many distinct consultants billed time to project PRJ-CHARLIE over the engagement?",
+   "golden": "12",
+   "note": "",
+   "field_context": "Benchmark question over one commercial matter's document corpus (hundreds of tax invoices, credit notes, remittances, reports). The reference is an exact gold computed from the documents. Money must match to the cent and counts exactly; a candidate that states the reference value and adds correct supporting detail (document names, components of the sum) is equivalent. A different number is not equivalent. For unanswerable items the candidate must decline or state the premise is wrong; a confident value is wrong. Question type: aggregation."
+  },
+  {
+   "id": "agg_credit_notes_total",
+   "question": "What is the total value (inc GST) of all credit notes issued by the vendor?",
+   "golden": "$1,068,801.25",
+   "note": "",
+   "field_context": "Benchmark question over one commercial matter's document corpus (hundreds of tax invoices, credit notes, remittances, reports). The reference is an exact gold computed from the documents. Money must match to the cent and counts exactly; a candidate that states the reference value and adds correct supporting detail (document names, components of the sum) is equivalent. A different number is not equivalent. For unanswerable items the candidate must decline or state the premise is wrong; a confident value is wrong. Question type: aggregation."
+  },
+  {
+   "id": "agg_credit_notes_count",
+   "question": "How many credit notes did the vendor issue?",
+   "golden": "15",
+   "note": "",
+   "field_context": "Benchmark question over one commercial matter's document corpus (hundreds of tax invoices, credit notes, remittances, reports). The reference is an exact gold computed from the documents. Money must match to the cent and counts exactly; a candidate that states the reference value and adds correct supporting detail (document names, components of the sum) is equivalent. A different number is not equivalent. For unanswerable items the candidate must decline or state the premise is wrong; a confident value is wrong. Question type: aggregation."
+  },
+  {
+   "id": "agg_remit_fy25",
+   "question": "What was the total amount remitted by the client under remittance advices dated in FY2025?",
+   "golden": "$7,488,291.25",
+   "note": "",
+   "field_context": "Benchmark question over one commercial matter's document corpus (hundreds of tax invoices, credit notes, remittances, reports). The reference is an exact gold computed from the documents. Money must match to the cent and counts exactly; a candidate that states the reference value and adds correct supporting detail (document names, components of the sum) is equivalent. A different number is not equivalent. For unanswerable items the candidate must decline or state the premise is wrong; a confident value is wrong. Question type: aggregation."
+  },
+  {
+   "id": "agg_avg_fy26",
+   "question": "What was the average total due (inc GST) per live tax invoice dated in FY2026, to the nearest cent?",
+   "golden": "$65,581.08",
+   "note": "",
+   "field_context": "Benchmark question over one commercial matter's document corpus (hundreds of tax invoices, credit notes, remittances, reports). The reference is an exact gold computed from the documents. Money must match to the cent and counts exactly; a candidate that states the reference value and adds correct supporting detail (document names, components of the sum) is equivalent. A different number is not equivalent. For unanswerable items the candidate must decline or state the premise is wrong; a confident value is wrong. Question type: aggregation."
+  },
+  {
+   "id": "agg_disputed_total",
+   "question": "What is the total value (inc GST) of the tax invoices the client formally disputed by letter?",
+   "golden": "$305,841.25",
+   "note": "",
+   "field_context": "Benchmark question over one commercial matter's document corpus (hundreds of tax invoices, credit notes, remittances, reports). The reference is an exact gold computed from the documents. Money must match to the cent and counts exactly; a candidate that states the reference value and adds correct supporting detail (document names, components of the sum) is equivalent. A different number is not equivalent. For unanswerable items the candidate must decline or state the premise is wrong; a confident value is wrong. Question type: aggregation."
+  },
+  {
+   "id": "set_outstanding_asat",
+   "question": "What was the total amount outstanding (inc GST) on tax invoices as at 2 July 2026, after all credit notes and all remittance advices dated on or before that day?",
+   "golden": "$1,375,921.25",
+   "note": "the letter of demand states an earlier, stale figure",
+   "field_context": "Benchmark question over one commercial matter's document corpus (hundreds of tax invoices, credit notes, remittances, reports). The reference is an exact gold computed from the documents. Money must match to the cent and counts exactly; a candidate that states the reference value and adds correct supporting detail (document names, components of the sum) is equivalent. A different number is not equivalent. For unanswerable items the candidate must decline or state the premise is wrong; a confident value is wrong. Question type: set_logic."
+  },
+  {
+   "id": "set_unpaid_fy25_count",
+   "question": "How many live tax invoices dated in FY2025 had not been paid under any remittance advice by the end of the engagement?",
+   "golden": "1",
+   "note": "",
+   "field_context": "Benchmark question over one commercial matter's document corpus (hundreds of tax invoices, credit notes, remittances, reports). The reference is an exact gold computed from the documents. Money must match to the cent and counts exactly; a candidate that states the reference value and adds correct supporting detail (document names, components of the sum) is equivalent. A different number is not equivalent. For unanswerable items the candidate must decline or state the premise is wrong; a confident value is wrong. Question type: set_logic."
+  },
+  {
+   "id": "set_reissued_count",
+   "question": "How many tax invoices are replacements for an earlier invoice that was cancelled by credit note?",
+   "golden": "15",
+   "note": "",
+   "field_context": "Benchmark question over one commercial matter's document corpus (hundreds of tax invoices, credit notes, remittances, reports). The reference is an exact gold computed from the documents. Money must match to the cent and counts exactly; a candidate that states the reference value and adds correct supporting detail (document names, components of the sum) is equivalent. A different number is not equivalent. For unanswerable items the candidate must decline or state the premise is wrong; a confident value is wrong. Question type: set_logic."
+  },
+  {
+   "id": "join_rate_error_count",
+   "question": "After the SOW rate variation took effect on 1 January 2025, how many tax invoices still billed the Senior Consultant role at the superseded hourly rate of $285?",
+   "golden": "2",
+   "note": "",
+   "field_context": "Benchmark question over one commercial matter's document corpus (hundreds of tax invoices, credit notes, remittances, reports). The reference is an exact gold computed from the documents. Money must match to the cent and counts exactly; a candidate that states the reference value and adds correct supporting detail (document names, components of the sum) is equivalent. A different number is not equivalent. For unanswerable items the candidate must decline or state the premise is wrong; a confident value is wrong. Question type: join."
+  },
+  {
+   "id": "join_rate_error_invoices",
+   "question": "Which invoice numbers billed the Senior Consultant role at the superseded rate after the rate variation took effect?",
+   "golden": "INV-2624, INV-2760",
+   "note": "",
+   "field_context": "Benchmark question over one commercial matter's document corpus (hundreds of tax invoices, credit notes, remittances, reports). The reference is an exact gold computed from the documents. Money must match to the cent and counts exactly; a candidate that states the reference value and adds correct supporting detail (document names, components of the sum) is equivalent. A different number is not equivalent. For unanswerable items the candidate must decline or state the premise is wrong; a confident value is wrong. Question type: join."
+  },
+  {
+   "id": "join_rate_error_shortfall",
+   "question": "By how much (ex GST) were those rate-error invoices under-billed in total, compared with the varied Senior Consultant rate?",
+   "golden": "$3,750.00",
+   "note": "",
+   "field_context": "Benchmark question over one commercial matter's document corpus (hundreds of tax invoices, credit notes, remittances, reports). The reference is an exact gold computed from the documents. Money must match to the cent and counts exactly; a candidate that states the reference value and adds correct supporting detail (document names, components of the sum) is equivalent. A different number is not equivalent. For unanswerable items the candidate must decline or state the premise is wrong; a confident value is wrong. Question type: join."
+  },
+  {
+   "id": "cross_de_rate_now",
+   "question": "What is the current hourly rate for a Data Engineer under Statement of Work No. 1?",
+   "golden": "$265",
+   "note": "",
+   "field_context": "Benchmark question over one commercial matter's document corpus (hundreds of tax invoices, credit notes, remittances, reports). The reference is an exact gold computed from the documents. Money must match to the cent and counts exactly; a candidate that states the reference value and adds correct supporting detail (document names, components of the sum) is equivalent. A different number is not equivalent. For unanswerable items the candidate must decline or state the premise is wrong; a confident value is wrong. Question type: cross_doc."
+  },
+  {
+   "id": "cross_payment_terms_now",
+   "question": "If the client receives a tax invoice from the vendor today, within how many days must it be paid?",
+   "golden": "14 days",
+   "note": "",
+   "field_context": "Benchmark question over one commercial matter's document corpus (hundreds of tax invoices, credit notes, remittances, reports). The reference is an exact gold computed from the documents. Money must match to the cent and counts exactly; a candidate that states the reference value and adds correct supporting detail (document names, components of the sum) is equivalent. A different number is not equivalent. For unanswerable items the candidate must decline or state the premise is wrong; a confident value is wrong. Question type: cross_doc."
+  },
+  {
+   "id": "cross_indemnity_now",
+   "question": "What is the indemnity cap currently in effect under the MSA, taking into account all amendments?",
+   "golden": "$3,700,000",
+   "note": "",
+   "field_context": "Benchmark question over one commercial matter's document corpus (hundreds of tax invoices, credit notes, remittances, reports). The reference is an exact gold computed from the documents. Money must match to the cent and counts exactly; a candidate that states the reference value and adds correct supporting detail (document names, components of the sum) is equivalent. A different number is not equivalent. For unanswerable items the candidate must decline or state the premise is wrong; a confident value is wrong. Question type: cross_doc."
+  },
+  {
+   "id": "cross_indemnity_original",
+   "question": "What was the indemnity cap under the Master Services Agreement as originally executed?",
+   "golden": "$3,000,000",
+   "note": "",
+   "field_context": "Benchmark question over one commercial matter's document corpus (hundreds of tax invoices, credit notes, remittances, reports). The reference is an exact gold computed from the documents. Money must match to the cent and counts exactly; a candidate that states the reference value and adds correct supporting detail (document names, components of the sum) is equivalent. A different number is not equivalent. For unanswerable items the candidate must decline or state the premise is wrong; a confident value is wrong. Question type: cross_doc."
+  },
+  {
+   "id": "lookup_po",
+   "question": "What purchase order number is quoted on tax invoice INV-2527?",
+   "golden": "PO-70317",
+   "note": "",
+   "field_context": "Benchmark question over one commercial matter's document corpus (hundreds of tax invoices, credit notes, remittances, reports). The reference is an exact gold computed from the documents. Money must match to the cent and counts exactly; a candidate that states the reference value and adds correct supporting detail (document names, components of the sum) is equivalent. A different number is not equivalent. For unanswerable items the candidate must decline or state the premise is wrong; a confident value is wrong. Question type: value_lookup."
+  },
+  {
+   "id": "lookup_signatory",
+   "question": "Who signed the Master Services Agreement for the Vendor?",
+   "golden": "Diane Okafor",
+   "note": "",
+   "field_context": "Benchmark question over one commercial matter's document corpus (hundreds of tax invoices, credit notes, remittances, reports). The reference is an exact gold computed from the documents. Money must match to the cent and counts exactly; a candidate that states the reference value and adds correct supporting detail (document names, components of the sum) is equivalent. A different number is not equivalent. For unanswerable items the candidate must decline or state the premise is wrong; a confident value is wrong. Question type: value_lookup."
+  },
+  {
+   "id": "lookup_pm_bravo",
+   "question": "Who is the project manager for PRJ-BRAVO according to the monthly status reports?",
+   "golden": "Hannah Kowalczyk",
+   "note": "",
+   "field_context": "Benchmark question over one commercial matter's document corpus (hundreds of tax invoices, credit notes, remittances, reports). The reference is an exact gold computed from the documents. Money must match to the cent and counts exactly; a candidate that states the reference value and adds correct supporting detail (document names, components of the sum) is equivalent. A different number is not equivalent. For unanswerable items the candidate must decline or state the premise is wrong; a confident value is wrong. Question type: value_lookup."
+  },
+  {
+   "id": "lookup_inv_total",
+   "question": "What is the total due including GST on tax invoice INV-2644?",
+   "golden": "$33,756.25",
+   "note": "",
+   "field_context": "Benchmark question over one commercial matter's document corpus (hundreds of tax invoices, credit notes, remittances, reports). The reference is an exact gold computed from the documents. Money must match to the cent and counts exactly; a candidate that states the reference value and adds correct supporting detail (document names, components of the sum) is equivalent. A different number is not equivalent. For unanswerable items the candidate must decline or state the premise is wrong; a confident value is wrong. Question type: value_lookup."
+  },
+  {
+   "id": "lookup_stale_demand",
+   "question": "What outstanding amount does the vendor's letter of demand state?",
+   "golden": "$1,434,688.75",
+   "note": "",
+   "field_context": "Benchmark question over one commercial matter's document corpus (hundreds of tax invoices, credit notes, remittances, reports). The reference is an exact gold computed from the documents. Money must match to the cent and counts exactly; a candidate that states the reference value and adds correct supporting detail (document names, components of the sum) is equivalent. A different number is not equivalent. For unanswerable items the candidate must decline or state the premise is wrong; a confident value is wrong. Question type: value_lookup."
+  },
+  {
+   "id": "time_cure_deadline",
+   "question": "By what date must the client remedy the breach identified in the vendor's notice of breach?",
+   "golden": "26 May 2026",
+   "note": "",
+   "field_context": "Benchmark question over one commercial matter's document corpus (hundreds of tax invoices, credit notes, remittances, reports). The reference is an exact gold computed from the documents. Money must match to the cent and counts exactly; a candidate that states the reference value and adds correct supporting detail (document names, components of the sum) is equivalent. A different number is not equivalent. For unanswerable items the candidate must decline or state the premise is wrong; a confident value is wrong. Question type: timeline."
+  },
+  {
+   "id": "time_last_remittance",
+   "question": "What is the date of the most recent remittance advice in the matter?",
+   "golden": "21 June 2026",
+   "note": "",
+   "field_context": "Benchmark question over one commercial matter's document corpus (hundreds of tax invoices, credit notes, remittances, reports). The reference is an exact gold computed from the documents. Money must match to the cent and counts exactly; a candidate that states the reference value and adds correct supporting detail (document names, components of the sum) is equivalent. A different number is not equivalent. For unanswerable items the candidate must decline or state the premise is wrong; a confident value is wrong. Question type: timeline."
+  },
+  {
+   "id": "time_first_charlie",
+   "question": "What is the date of the earliest live tax invoice for project PRJ-CHARLIE?",
+   "golden": "16 July 2023",
+   "note": "",
+   "field_context": "Benchmark question over one commercial matter's document corpus (hundreds of tax invoices, credit notes, remittances, reports). The reference is an exact gold computed from the documents. Money must match to the cent and counts exactly; a candidate that states the reference value and adds correct supporting detail (document names, components of the sum) is equivalent. A different number is not equivalent. For unanswerable items the candidate must decline or state the premise is wrong; a confident value is wrong. Question type: timeline."
+  },
+  {
+   "id": "time_amend2",
+   "question": "On what date was Amendment No. 2 to the MSA made?",
+   "golden": "15 March 2025",
+   "note": "",
+   "field_context": "Benchmark question over one commercial matter's document corpus (hundreds of tax invoices, credit notes, remittances, reports). The reference is an exact gold computed from the documents. Money must match to the cent and counts exactly; a candidate that states the reference value and adds correct supporting detail (document names, components of the sum) is equivalent. A different number is not equivalent. For unanswerable items the candidate must decline or state the premise is wrong; a confident value is wrong. Question type: timeline."
+  },
+  {
+   "id": "abs_guarantee",
+   "question": "Is there a personal guarantee from Peter Halloway anywhere in the matter file?",
+   "golden": "Yes",
+   "note": "",
+   "field_context": "Benchmark question over one commercial matter's document corpus (hundreds of tax invoices, credit notes, remittances, reports). The reference is an exact gold computed from the documents. Money must match to the cent and counts exactly; a candidate that states the reference value and adds correct supporting detail (document names, components of the sum) is equivalent. A different number is not equivalent. For unanswerable items the candidate must decline or state the premise is wrong; a confident value is wrong. Question type: value_lookup."
+  },
+  {
+   "id": "abs_arbitration",
+   "question": "Do the parties agree to arbitration of disputes under the MSA?",
+   "golden": "No",
+   "note": "",
+   "field_context": "Benchmark question over one commercial matter's document corpus (hundreds of tax invoices, credit notes, remittances, reports). The reference is an exact gold computed from the documents. Money must match to the cent and counts exactly; a candidate that states the reference value and adds correct supporting detail (document names, components of the sum) is equivalent. A different number is not equivalent. For unanswerable items the candidate must decline or state the premise is wrong; a confident value is wrong. Question type: existence."
+  },
+  {
+   "id": "abs_delta",
+   "question": "How many tax invoices were issued for project PRJ-DELTA?",
+   "golden": "",
+   "note": "None — there is no project PRJ-DELTA in the matter",
+   "field_context": "Benchmark question over one commercial matter's document corpus (hundreds of tax invoices, credit notes, remittances, reports). The reference is an exact gold computed from the documents. Money must match to the cent and counts exactly; a candidate that states the reference value and adds correct supporting detail (document names, components of the sum) is equivalent. A different number is not equivalent. For unanswerable items the candidate must decline or state the premise is wrong; a confident value is wrong. Question type: unanswerable."
+  },
+  {
+   "id": "abs_quote_invoice",
+   "question": "What tax invoice was issued for pro forma quote Q-2400?",
+   "golden": "",
+   "note": "None — pro forma quotes are not tax invoices and no invoice references that quote",
+   "field_context": "Benchmark question over one commercial matter's document corpus (hundreds of tax invoices, credit notes, remittances, reports). The reference is an exact gold computed from the documents. Money must match to the cent and counts exactly; a candidate that states the reference value and adds correct supporting detail (document names, components of the sum) is equivalent. A different number is not equivalent. For unanswerable items the candidate must decline or state the premise is wrong; a confident value is wrong. Question type: unanswerable."
+  }
+ ]
+}

@@ -1,0 +1,14 @@
+STEERING COMMITTEE — Meridian Logistics Pty Ltd / Corvid Systems Pty Ltd
+Date: 19 April 2025
+Attendees: Rowan Castellano, Diane Okafor, Declan Murray, Hannah Kowalczyk
+
+PRJ-ALPHA
+Effort in April 2025 concentrated on user acceptance testing; the message bus remained stable throughout. A regression in the picking workflow was identified in the test harness and the team raised a change request. Operations reported duplicate records; after review the parties agreed to re-baseline the plan. Hannah Kowalczyk and Marcus Oyelaran coordinated cut-over planning with the client's release packaging lead. The steering committee noted firmware incompatibility and reallocated effort from training delivery. The steering committee noted intermittent timeouts and confirmed no contractual implication arises.
+
+PRJ-BRAVO
+Security hardening progressed against the plan, with the Snowflake tenant the main area of attention. Yusuf Demir and Marcus Oyelaran coordinated device provisioning with the client's interface build lead. Priya Natarajan led change management and reported that the SAP interface would be ready after interface build. A recurring theme this month was firmware incompatibility, which affected training delivery. Operations reported duplicate records; after review the parties requested a vendor fix. Testing of the nightly batch surfaced unplanned leave; Beatriz Camargo confirmed no contractual implication arises.
+
+PRJ-CHARLIE
+During April 2025 the team focused on performance tuning across the test harness. No further issues were recorded against the archive store once security hardening completed. Operations reported a licensing shortfall; after review the parties confirmed no contractual implication arises. Hannah Kowalczyk led release packaging and reported that the message bus would be ready after defect triage. Operations reported a schema drift; after review the parties scheduled a workshop. Ling Zhao led release packaging and reported that the archive store would be ready after vendor onboarding.
+
+ACTIONS: Effort in April 2025 concentrated on interface build; the test harness remained stable throughout. Operations reported late sign-off from operations; after review the parties requested a vendor fix. Sofia Reinholt led data migration and reported that the WMS pilot site would be ready after performance tuning.

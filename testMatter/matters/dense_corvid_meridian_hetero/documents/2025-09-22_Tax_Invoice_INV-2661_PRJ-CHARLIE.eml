@@ -1,0 +1,23 @@
+From: accounts@corvidsystems.example
+To: payables@meridianlogistics.example
+Subject: Tax invoice INV-2661 - PRJ-CHARLIE - September 2025
+Date: Mon, 22 Sep 2025 09:14:00 +1000
+Content-Type: text/plain; charset=utf-8
+
+Dear Accounts Payable,
+
+Tax invoice INV-2661 dated 22 September 2025 from Corvid Systems Pty Ltd to Meridian Logistics Pty Ltd.
+Project PRJ-CHARLIE (Data Platform Migration), service period September 2025, your purchase order PO-77377.
+Professional services under the MSA and SOW No. 1 were provided as follows:
+Ling Zhao (Consultant): 15.0 hrs @ $210.00 = $3,150.00
+Tom Abernethy (Senior Consultant): 27.5 hrs @ $310.00 = $8,525.00
+Priya Natarajan (Senior Consultant): 45.0 hrs @ $310.00 = $13,950.00
+Yusuf Demir (Analyst): 55.0 hrs @ $165.00 = $9,075.00
+Declan Murray (Project Manager): 37.5 hrs @ $260.00 = $9,750.00
+Sofia Reinholt (Consultant): 40.0 hrs @ $210.00 = $8,400.00
+Total excluding GST $52,850.00. GST $5,285.00. Total payable $58,135.00.
+Payment is due within 14 days of receipt. Please quote INV-2661 on your remittance.
+
+Regards,
+Accounts Receivable
+Corvid Systems Pty Ltd

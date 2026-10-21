@@ -281,7 +281,8 @@ async def test_core_input_limit_never_reviews_silently_truncated_claims(part, li
         assert result["fields"][0]["verdict"] is None
 
 
-async def test_oversized_batch_and_prompt_are_bounded_and_report_omissions():
+async def test_oversized_batch_and_prompt_are_bounded_and_report_omissions(monkeypatch):
+    monkeypatch.setattr(claim_review, "MAX_PROMPT_CHARS", 32_000)   # twelve 4k-char fields must overflow
     questions = [(str(i), "q" * claim_review.MAX_QUESTION_CHARS)
                  for i in range(claim_review.MAX_FIELDS + 2)]
     submitted = {"value": {q: "42" for q, _ in questions},

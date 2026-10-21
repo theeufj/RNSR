@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Paper rewritten (second version, `docs/paper/rnsr-docdb-2026-10.html`):
+  a layer-by-layer evaluation of ingestion, REPL, typed relations and the
+  evidence layer across five arms and four generated corpora; aggregate
+  certificate and reviewer contract; Tables 1–5; v1 notes retained in
+  `docs/paper/revision-2026-10.md`.
 - Baseline arms for the matter benchmark (`rnsr.eval.matter_arms`): whole
   matter in context, classic flat-string REPL, and a direct-corpus-interaction
   `dci` sandbox mode (one text file per document with `ls`/`grep`/`read`

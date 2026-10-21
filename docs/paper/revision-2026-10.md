@@ -1,5 +1,10 @@
 # Paper revision notes — "RNSR DocDB and Programmable Context Management for Language Models"
 
+> Superseded on 22 October 2026 by a full rewrite, `rnsr-docdb-2026-10.html`
+> (second version: layer-by-layer evaluation, aggregate certificate, reviewer
+> contract). These notes record the 21 October incremental revisions to the
+> 30 September manuscript and are kept for the audit trail.
+
 Prepared 21 October 2026 against the 30 September 2026 manuscript (PDF produced
 from LibreOffice Writer). The manuscript pins itself to commit `d622678`. The
 working tree now carries ~1,800 lines of changes and a 20 October benchmark on

@@ -298,3 +298,39 @@ async def test_rpc_rejects_supplied_source_value(arithmetic_corpus):
         with pytest.raises(ValueError, match='values cannot be supplied'):
             await sandbox._calculation({'op':'calculation','action':'source',
                                        'table':'t_report_001','rowid':1,'column':'amount','value':999})
+
+
+def test_aggregate_selection_sql_is_executed_by_the_parent(registry):
+    agg = registry.aggregate('sum', selection_sql="SELECT 't_report_001', rowid FROM t_report_001 WHERE rowid <= 2",
+                             column='amount')
+    assert agg['value'] == '350.0' and agg['n_rows'] == 2
+    assert agg['selection_executed_by'] == 'parent' and 'rowid <= 2' in agg['selection']
+    three = registry.aggregate('count', selection_sql="SELECT 't_report_001' AS t, rowid, 'amount' FROM t_report_001")
+    assert three['value'] == '6'
+    with pytest.raises(ValueError, match='single SELECT'):
+        registry.aggregate('sum', selection_sql="DELETE FROM t_report_001; SELECT 1", column='amount')
+    with pytest.raises(ValueError, match='column='):
+        registry.aggregate('sum', selection_sql="SELECT 't_report_001', rowid FROM t_report_001")
+    with pytest.raises(ValueError, match='not both'):
+        registry.aggregate('sum', [('t_report_001', 1, 'amount')], selection_sql="SELECT 1, 2, 'amount'")
+    with pytest.raises(ValueError, match='nonempty'):
+        registry.aggregate('sum', selection_sql="SELECT 't_report_001', rowid FROM t_report_001 WHERE rowid > 99",
+                           column='amount')
+
+
+async def test_real_sandbox_final_batch_with_certificates(arithmetic_corpus):
+    async with SandboxedRepl() as sandbox:
+        await sandbox.start(mode='docdb', corpus_db=str(arithmetic_corpus))
+        cell = await sandbox.exec_cell("""
+agg = aggregate('sum', selection_sql="SELECT 't_report_001', rowid FROM t_report_001 WHERE rowid <= 3", column='amount')
+FINAL_BATCH({'q1': 'whatever the model typed', 'q2': 'Revenue'},
+            quotes={'q2': ['Revenue | 100']}, calcs={'q1': agg['id']})
+""")
+        assert cell.ok, cell.error
+        # The certified field's answer is the parent's value, not the model's text.
+        assert cell.final['value'] == {'q1': '360.0', 'q2': 'Revenue'}
+        v = cell.final['verification']
+        assert v['q1']['check'] == 'source_bound_calculation' and v['q1']['calculation']['n_rows'] == 3
+        assert v['q2']['check'] == 'lexical_source_match' and v['q2']['passed']
+        forged = await sandbox.exec_cell("FINAL_BATCH({'q1': '1'}, calcs={'q1': 'agg_forged'})")
+        assert not forged.ok and 'unknown calculation/source id' in forged.error

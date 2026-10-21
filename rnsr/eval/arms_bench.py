@@ -316,8 +316,14 @@ def verdicts(path: Path) -> dict[str, dict]:
 def build_report(matter: Path, out: Path, arms: list[str], judge_passes: int, caps: dict) -> dict:
     key = {q["id"]: q for q in json.loads((matter / "answer_key.json").read_text())}
     V = {a: verdicts(out / a / "score" / "comparison.csv") for a in arms}
-    passes = {a: [sum(1 for r in verdicts(out / a / ("score" if i == 0 else f"score_pass{i + 1}") / "comparison.csv").values()
-                      if r["verdict"] == "OK") for i in range(judge_passes)] for a in arms}
+    passes = {}
+    for a in arms:
+        counts = []
+        for i in range(judge_passes):
+            path = out / a / ("score" if i == 0 else f"score_pass{i + 1}") / "comparison.csv"
+            if path.exists():       # arms run before --judge-passes may lack later passes
+                counts.append(sum(1 for r in verdicts(path).values() if r["verdict"] == "OK"))
+        passes[a] = counts
     n = len(key)
     totals = {a: {"correct": passes[a][0], "total": n, "judge_passes": passes[a],
                   "judge_range": [min(passes[a]), max(passes[a])], **run_numbers(a, out),
@@ -349,7 +355,7 @@ def build_report(matter: Path, out: Path, arms: list[str], judge_passes: int, ca
     L += ["| Arm | Correct | Accuracy | Judge range | Spend | Requests | Wall |", "|---|---|---|---|---|---|---|"]
     for a in arms:
         t = totals[a]
-        rng = f"{t['judge_range'][0]}–{t['judge_range'][1]}" if judge_passes > 1 else "–"
+        rng = f"{t['judge_range'][0]}–{t['judge_range'][1]}" if len(t['judge_passes']) > 1 else "–"
         L.append(f"| {ARM_LABELS[a]} | {t['correct']} / {n} | {t['correct'] / n:.1%} | {rng} | ${t.get('spend_usd', 0):.2f} | "
                  f"{t.get('requests', 0)} | {t.get('wall_s', 0) / 60:.1f} min |")
     L += ["", "| Question type | " + " | ".join(ARM_LABELS[a] for a in arms) + " |", "|---|" + "---|" * len(arms)]

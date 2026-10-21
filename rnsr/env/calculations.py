@@ -320,23 +320,49 @@ class CalculationRegistry:
                 for c, r in zip(current, record['rows'], strict=True)):
             raise ValueError("aggregate source rows changed since the certificate was issued")
 
-    def aggregate(self, operation: str, rows: list, *, selection: str | None = None) -> dict:
+    def _select_rows(self, selection_sql: str, column: str | None) -> list[dict]:
+        """Run the controller's selection SQL on the parent's read-only snapshot
+        and return (table, rowid, column) triples. The predicate becomes part
+        of the certificate: the reviewer judges the SQL, not a paraphrase."""
+        if not isinstance(selection_sql, str) or len(selection_sql) > 8000:
+            raise ValueError("selection_sql must be a string of at most 8000 characters")
+        head = selection_sql.lstrip().lower()
+        if not (head.startswith("select") or head.startswith("with")) or ";" in selection_sql:
+            raise ValueError("selection_sql must be a single SELECT statement")
+        rows = []
+        cur = self.conn.execute(selection_sql)
+        width = len(cur.description or ())
+        if width not in (2, 3) or (width == 2 and not column):
+            raise ValueError("selection_sql must return (table_name, rowid) with column=..., or (table_name, rowid, column)")
+        for rec in cur:
+            self._check_deadline()
+            rows.append({'table': rec[0], 'rowid': rec[1], 'column': rec[2] if width == 3 else column})
+        return rows
+
+    def aggregate(self, operation: str, rows: list | None = None, *, selection: str | None = None,
+                  selection_sql: str | None = None, column: str | None = None) -> dict:
         """One certificate for an operation over an exact set of source rows.
 
         Every row is re-read from the frozen tables with its canonical span, so
         the certificate binds (operation, rows, values) and can be revalidated
-        at FINAL time. ``selection`` is the controller's own description of how
-        the rows were chosen (typically the SQL); it is recorded verbatim as
-        model-described provenance and is not verified here.
+        at FINAL time. Rows come either from ``rows`` (triples chosen by the
+        controller; ``selection`` is its own description, recorded verbatim and
+        not verified) or from ``selection_sql``, which the parent executes on
+        its read-only snapshot so that the predicate itself is certified.
         """
         self._check_deadline()
         self._check_generation()
         if not isinstance(operation, str) or operation not in AGGREGATE_OPERATIONS:
             raise ValueError("aggregate operation must be sum, count, mean, min or max")
+        if selection_sql is not None:
+            if rows:
+                raise ValueError("pass either rows or selection_sql, not both")
+            rows = self._select_rows(selection_sql, column)
+            selection = selection_sql
         if not isinstance(rows, list) or not rows:
-            raise ValueError("aggregate requires a nonempty list of rows")
-        if selection is not None and (not isinstance(selection, str) or len(selection) > 4000):
-            raise ValueError("selection must be a string of at most 4000 characters")
+            raise ValueError("aggregate requires a nonempty list of rows (or a selection_sql that matches rows)")
+        if selection is not None and (not isinstance(selection, str) or len(selection) > 8000):
+            raise ValueError("selection must be a string of at most 8000 characters")
         seen = set()
         facts = []
         for row in rows:
@@ -365,10 +391,14 @@ class CalculationRegistry:
             'min': _render(min(values)), 'max': _render(max(values)),
             'rows_sample': [{k: f[k] for k in ('table', 'rowid', 'column', 'value')}
                             for f in facts[:8]],
-            'selection': selection, 'operand_ids': [], 'source_ids': [],
+            'selection': selection,
+            'selection_executed_by': 'parent' if selection_sql is not None else 'controller',
+            'operand_ids': [], 'source_ids': [],
             'precision': PRECISION, 'rounding': 'ROUND_HALF_EVEN', 'unit': None, 'period': None,
             'metadata_check': ('rows re-read from frozen tables and bound by digest; '
-                               'selection is model-described and not verified')}, 'agg_')
+                               + ('selection SQL executed by the parent on its read-only snapshot'
+                                  if selection_sql is not None else
+                                  'selection is model-described and not verified'))}, 'agg_')
 
     def get(self, record_id: str) -> dict:
         record = self._lookup(record_id)

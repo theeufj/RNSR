@@ -350,7 +350,7 @@ class SandboxedRepl:
             'financial': (self._calculations.calculate_financial, {'metric', 'inputs', 'convention'}),
             'render': (self._calculations.resolve_finals, {'template', 'results', 'decimals'}),
             'compute': (self._calculations.calculate, {'operation', 'operand_ids'}),
-            'aggregate': (self._calculations.aggregate, {'operation', 'rows', 'selection'}),
+            'aggregate': (self._calculations.aggregate, {'operation', 'rows', 'selection', 'selection_sql', 'column'}),
             'get': (self._calculations.get, {'record_id'}),
             'metric': (self._calculations.calculate_metric, set()),
         }
@@ -415,8 +415,29 @@ class SandboxedRepl:
                     else:
                         batch = isinstance(value, dict)
                         abstention = self._calculations.validate_legacy_final(value)
-                        final["verification"] = abstention if abstention is not None else validate_final(
-                            value, submitted_quotes(report, batch=batch), self._verifier, batch=batch)
+                        calc_fields = {}
+                        if batch and isinstance(report, dict):
+                            # Fields bound to a certificate are resolved by the parent;
+                            # only their calculation id is taken from the child.
+                            calc_fields = {q: item.get('calculation_id') for q, item in report.items()
+                                           if isinstance(item, dict) and item.get('check') == 'source_bound_calculation'
+                                           and isinstance(item.get('calculation_id'), str)}
+                        quoted_value = ({q: v for q, v in value.items() if q not in calc_fields}
+                                        if batch else value)
+                        if abstention is not None:
+                            final["verification"] = abstention
+                        else:
+                            final["verification"] = (validate_final(
+                                quoted_value, submitted_quotes(report, batch=True), self._verifier, batch=True)
+                                if batch and quoted_value else {} if batch else validate_final(
+                                    value, submitted_quotes(report), self._verifier))
+                            for q, calc_id in calc_fields.items():
+                                result = self._calculations.get(calc_id)
+                                actual, proof = self._calculations.resolve_final(calc_id, result['value'])
+                                value[q] = actual
+                                final["verification"][q] = proof
+                            if batch:
+                                final["value"] = value
                     from rnsr.env.evidence import bind_table_evidence
 
                     final["verification"] = bind_table_evidence(

@@ -149,19 +149,28 @@ claims require this parent calculation evidence, even when the arithmetic \
 looks simple. FINAL/FINAL_VAR are for directly supported textual answers; \
 they do not certify a calculation's source-to-result derivation.
 - Aggregates over many rows (totals, counts, averages across invoices, \
-transactions, line items): aggregate(operation, rows, selection=sql) issues ONE \
-parent certificate over an exact set of source rows, with no cap on how many. \
-operation is sum, count, mean, min or max; rows are (table, rowid, column) \
-triples selected from the source tables' own rowids, e.g. rows=[(t, r, 'amount') \
-for t in tables for (r,) in db.execute(f'SELECT rowid FROM {{t}} WHERE \
-consultant IS NOT NULL')]; pass the SQL or a description as selection so the \
-reviewer can judge scope. The parent re-reads every row from the frozen \
-tables, binds the set by digest, and FINAL_CALC(agg['id']) resolves it. \
-Aggregate ids are valid operands for calculate (e.g. invoices minus credit \
-notes minus remittances). Prefer this to summing in Python and quoting a few \
-rows: a Python total is an unverified claim; an aggregate certificate is \
-checkable evidence. Exclude total/subtotal rows from the selection yourself; \
-the certificate binds exactly the rows you pass.
+transactions, line items): aggregate(operation, selection_sql=..., column=...) \
+issues ONE parent certificate over an exact set of source rows, with no cap \
+on how many. operation is sum, count, mean, min or max. selection_sql is a \
+SELECT returning (table_name, rowid) (then give column=) or (table_name, \
+rowid, column); the PARENT executes it on its read-only snapshot, so the \
+predicate itself is part of the certificate and the reviewer judges the SQL, \
+not your description. Build it over the source tables' own rowids, e.g. a \
+UNION ALL over the relevant tables, or a query on `cells`/`manifest_tables` \
+joined back to table rowids. Alternatively pass rows=[(table, rowid, column), \
+...] you selected yourself with selection='why'; that is weaker evidence \
+because the reviewer must take your word for the scope. The parent re-reads \
+every row from the frozen tables and binds the set by digest. Submit with \
+FINAL_CALC(agg['id']) for one answer, or in a batch with \
+FINAL_BATCH(answers, quotes=..., calcs={{qid: agg['id'], ...}}): the parent \
+resolves each calcs field itself and the field's answer becomes the \
+certified value (format other fields' quotes as usual). Aggregate ids are \
+valid operands for calculate (e.g. invoices minus credit notes minus \
+remittances). Prefer this to summing in Python and quoting a few rows: a \
+Python total is an unverified claim and a reviewer sees at most three quotes; \
+a certificate is checkable evidence for any number of rows. Exclude \
+total/subtotal rows in your predicate; the certificate binds exactly the rows \
+it matches.
 - FINAL_CALCS('The prior ratio was {{prior}} and the current ratio is {{current}}.', \
 {{'prior': prior_result_id, 'current': current_result_id}}, decimals=2) renders \
 multiple parent-owned calculations into an answer. The template cannot contain \

@@ -132,12 +132,23 @@ def build_namespace(corpus_db: str, child, init_msg: dict) -> dict:
         report = validate_final(value, quotes, verifier)
         raise FinalAnswer(value, is_var=True, verification=report)
 
-    def FINAL_BATCH(answers, quotes=None):  # noqa: N802
+    def FINAL_BATCH(answers, quotes=None, calcs=None):  # noqa: N802
+        """calcs: {qid: result_id} binds a field to a parent calculation or
+        aggregate certificate; the parent resolves it again and the field's
+        answer becomes the certified value. Other fields need quotes."""
         from rnsr.env.final_answer import FinalAnswer
         from rnsr.env.finalize import validate_final
 
+        if calcs is not None and (not isinstance(calcs, dict) or not isinstance(answers, dict)
+                                  or any(not isinstance(k, str) or not isinstance(v, str) for k, v in calcs.items())
+                                  or set(calcs) - set(answers)):
+            raise ValueError("FINAL_BATCH calcs must map question ids (present in answers) to result ids")
         try:
-            reports = validate_final(answers, quotes, verifier, batch=True)
+            quoted = {q: a for q, a in answers.items() if q not in (calcs or {})}
+            reports = validate_final(quoted, {q: v for q, v in (quotes or {}).items() if q in quoted},
+                                     verifier, batch=True) if quoted else {}
+            for qid, result_id in (calcs or {}).items():
+                reports[qid] = {'check': 'source_bound_calculation', 'calculation_id': result_id}
         except ValueError as exc:
             raise ValueError(f"FINAL_BATCH rejected: {exc}") from exc
         raise FinalAnswer(dict(answers), is_var=True, verification=reports)
@@ -153,14 +164,15 @@ def build_namespace(corpus_db: str, child, init_msg: dict) -> dict:
         return child.rpc({'op': 'calculation', 'action': 'compute',
                           'operation': operation, 'operand_ids': operand_ids})['result']
 
-    def aggregate(operation, rows, *, selection=None):
+    def aggregate(operation, rows=None, *, selection=None, selection_sql=None, column=None):
         """One parent certificate for sum/count/mean/min/max over an exact set of
-        source rows ({table, rowid, column} or (table, rowid, column)); no operand
-        cap. selection: your own description of how the rows were chosen (e.g. the
-        SQL), recorded verbatim for the reviewer."""
+        source rows; no operand cap. Either pass rows ((table, rowid, column)
+        triples; selection = your description) or selection_sql, a SELECT
+        returning (table_name, rowid[, column]) that the PARENT executes, so the
+        predicate itself is certified."""
         return child.rpc({'op': 'calculation', 'action': 'aggregate', 'operation': operation,
-                          'rows': [list(r) if isinstance(r, tuple) else r for r in rows],
-                          'selection': selection})['result']
+                          'rows': None if rows is None else [list(r) if isinstance(r, tuple) else r for r in rows],
+                          'selection': selection, 'selection_sql': selection_sql, 'column': column})['result']
 
     def source_text_number(doc_id, char_start, char_end, *, unit_span=None, period_span=None):
         return child.rpc({'op': 'calculation', 'action': 'source_text', 'doc_id': doc_id,

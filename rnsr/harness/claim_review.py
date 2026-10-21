@@ -72,9 +72,14 @@ record of kind "aggregate" is such evidence: it binds one operation to an exact 
 of n_rows source rows that the parent re-read from frozen tables (tables, documents,
 columns, min/max and a rows_sample are shown; the set is fixed by rows_digest).
 Review whether that selection matches the question's scope (right column, right
-tables, totals/subtotals excluded, right period or project), using the recorded
-selection text as the controller's description of how rows were chosen; do not
-demand a quotation for every row and do not reject it for being large. Multiple
+tables, totals/subtotals excluded, right period or project). When
+selection_executed_by is "parent", the recorded selection is the exact SQL the
+parent ran to choose the rows, so judge the predicate itself: if the SQL plainly
+selects the population the question asks about, the aggregate is supported; if it
+plainly selects a different or partial population, it is contradicted or
+insufficient. When it is "controller", the selection is only the controller's
+description and the sample is your main check. Do not demand a quotation for every
+row and do not reject a certificate for being large. Multiple
 quote locations may have different scopes; do not silently select a convenient
 one. Evidence is bounded and may omit relevant qualifications or cross-references.
 For a requested financial calculation, computed numeric claims require a supplied
@@ -228,7 +233,7 @@ def _proof(report: object, field_id: str) -> list[dict]:
                 # aggregate certificate: the exact row set is bound by digest; the
                 # reviewer sees its size, scope and a sample, not every row
                 "n_rows", "rows_digest", "tables", "documents", "columns", "min", "max",
-                "rows_sample", "selection"}
+                "rows_sample", "selection", "selection_executed_by"}
         source_keys = {"doc_id", "table", "rowid", "column", "page", "char_start",
                        "char_end", "table_title", "heading_paths", "source_span_id",
                        "generation_sha256", "kind"}

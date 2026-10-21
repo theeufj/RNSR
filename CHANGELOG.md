@@ -31,6 +31,13 @@
   from the value of typed tables: on the heterogeneous matter it returns
   seven confident wrong aggregates (34 scans unreadable, never flagged) where
   the same agent over ingested text is 37/38 and DocDB 36/38.
+- Aggregate certificate (`aggregate()`), certificates in `FINAL_BATCH`
+  (`calcs=`), parent-executed `selection_sql`, template/decimals rendering;
+  calc limits are settings, unlimited by default. On the dense matters DocDB
+  is the only arm with replayable derivations (8–13 of 21 computed answers,
+  37–59% key-source coverage) at parity accuracy (36–37/38); the claim
+  reviewer accepts ~40% of certificates and every batch still halts, so
+  trust tiers stay low. See `docs/benchmarks/matters-2026-10.md`.
 - Root prompts are sent to Anthropic as cache-friendly blocks: the system
   prompt and the completed transcript carry `cache_control` breakpoints, so a
   growing conversation re-reads its prefix instead of re-billing it every

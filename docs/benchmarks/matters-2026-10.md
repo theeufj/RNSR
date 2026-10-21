@@ -507,6 +507,88 @@ python -m rnsr.eval.arms_bench --matter testMatter/matters/dense_corvid_meridian
 # report: runs/dense-hetero-arms/report.md ; summary.json alongside
 ```
 
+## Aggregate certificate: DocDB reruns on the dense matters (2026-10-21/22)
+
+The dense runs above showed the evidence layer could not certify an
+aggregate: a derivation was capped at 32 operands, batched finals could not
+carry a calculation at all, and the reviewer had no notion of a sum. Three
+changes were made and DocDB was rerun after each, with every other arm held
+fixed (`arms_bench --rerun docdb`, two judge passes):
+
+1. **Certificate.** `aggregate(operation, rows | selection_sql, column)`
+   issues one parent record binding sum/count/mean/min/max to an exact set of
+   source rows, each re-read from the frozen tables with its canonical span,
+   fixed by digest and revalidated at `FINAL`. The operand/source/record caps
+   became settings, unlimited by default.
+2. **Reachability.** `FINAL_BATCH(..., calcs={qid: id})` lets a batched
+   answer carry certificates (the parent resolves each field itself), and
+   `selection_sql` makes the parent execute the selection so the reviewer
+   judges the predicate rather than the controller's description.
+3. **Rendering and review.** `calcs` entries take a template and decimals so a
+   certified number can carry words and rounding; the reviewer is told that a
+   parent-executed predicate encoding the question's own qualifier is the
+   scope, not a proxy.
+
+| Matter | Rerun | Correct | Substantive | Replayable derivation | Coverage | Tiers H/M/L | Review halts | Embed batches | Spend | Wall |
+|---|---|---|---|---|---|---|---|---|---|---|
+| uniform | before | 34 / 38 | 38 / 38 | 0 / 21 | 0% | 0 / 12 / 26 | 5 / 5 | 45 | $1.79 | 6.7 min |
+| uniform | 1 certificate | 36 / 38 | 38 / 38 | 2 / 21 | 5% | 2 / 14 / 22 | 6 | 106 | $2.47 | 11.9 min |
+| uniform | 2 + batch, SQL | 33 / 38 | 36 / 38 | 15 / 21 | 63% | 1 / 18 / 19 | 7 | 74 | $3.39 | 15.8 min |
+| uniform | 3 + template, rule | 36 / 38 | 38 / 38 | 8 / 21 | 37% | 0 / 18 / 20 | 5 | 0 | $2.23 | 6.9 min |
+| hetero | before | 36 / 38 | 38 / 38 | 0 / 21 | 0% | 0 / 14 / 24 | 5 / 5 | 41 | $2.06 | 7.1 min |
+| hetero | 2 + batch, SQL | 37 / 38 | 38 / 38 | 12 / 21 | 52% | 3 / 13 / 22 | 7 | 193 | $2.86 | 18.2 min |
+| hetero | 3 + template, rule | 37 / 38 | 37 / 38 | 13 / 21 | 59% | 0 / 12 / 26 | 5 | 165 | $2.59 | 18.3 min |
+
+For comparison the REPL baselines on the same matters are 37/38 at $0.58–0.70
+and 1.4–1.8 minutes, with no verified citation, no derivation and no tier.
+Rerun 3 on the heterogeneous matter was first scored during a provider
+outage (eight judge `APITimeoutError`s read as misses); it was rescored
+cleanly the next morning, both passes 37/38.
+
+What the certificates did. Where issued, they were right: the controller wrote
+parent-executed SQL over `cells` joined back to table rowids and the bound
+values match the golds to the cent (41 rows → $2,354,562.50; 131 PRJ-BRAVO
+invoices; 22,720.0 Data Engineer hours; 89 invoices over $80k; 15
+replacements). Rerun 2 on the uniform matter lost three questions to answer
+form, not arithmetic: a certified total replaced a "which project" answer with
+`7910850.0`, and a mean was rendered at fifty decimals; the template contract
+in rerun 3 fixes both. Two certified selections were wrong (remittances in
+FY2025 computed from invoices rather than remittance letters; GST summed from
+the wrong rows on the heterogeneous matter), which is the population-identity
+failure of the paper's §4 in its arithmetic form; one of the two was caught by
+the reviewer on scope.
+
+What they did not do. The reviewer accepted roughly four certificates in ten
+(uniform rerun 3: 24 supported, 35 insufficient, 2 contradicted on
+certificate-backed fields; heterogeneous: 12 supported, 16 insufficient),
+typically objecting that a parent-executed predicate such as "exclude invoices
+with a credit note against them" is a proxy for the question's "cancelled"
+even after being instructed otherwise, and every batch still ended in
+`review_rounds_exhausted`. Trust tiers therefore stayed low (0–3 high of 38)
+although substantively every answer was right. How often the controller
+reaches for a certificate also varies between runs with the same prompt (8 vs
+15 of 21 computed questions), and the search ladder's embedding pass remains a
+fixed cost that bought nothing (0–193 provider batches by run, 10,554 requests
+on the last heterogeneous rerun).
+
+Reading. The certificate makes DocDB the only arm whose computed answers are
+replayable from frozen source rows, and at parity accuracy (37/38) with
+verified citations on every answer; that is the auditability property no REPL
+baseline produces. It costs three to four times as much and ten times the wall
+time, almost all of it in a review loop that will not accept the certificates
+and a search ladder the workload does not need. The layer to redesign next is
+the reviewer, which should treat a parent-executed certificate as settled on
+inputs and operation and confine itself to whether the predicate names the
+question's population, and the ladder, which should not embed a corpus the
+controller has already queried relationally. The relational layer itself has
+now done something the text REPLs cannot; whether that is worth the cost is a
+product question about how much a replayable derivation is worth to the reader
+of the answer.
+
+Reproduce: as for the dense matters, then
+`python -m rnsr.eval.arms_bench --matter <matter> --out <out> --arms ... --rerun docdb --judge-passes 2`.
+Archived previous DocDB outputs are under `<out>/_prev/`.
+
 ## Run status and cost
 
 | Matter | Status counts | Not-found answers | Provider requests | Spend | Rate-limit hits | Wall |

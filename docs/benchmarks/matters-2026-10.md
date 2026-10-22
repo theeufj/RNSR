@@ -627,6 +627,79 @@ Reproduce: as for the dense matters, then
 `python -m rnsr.eval.arms_bench --matter <matter> --out <out> --arms ... --rerun docdb --judge-passes 2`.
 Archived previous DocDB outputs are under `<out>/_prev/`.
 
+## Bounded review loop: heterogeneous matter reruns 6–10 (2026-10-22)
+
+After the public-benchmark runs ([public-2026-10.md](public-2026-10.md)) the
+review loop was changed in four ways (certificate skip, three-round cap,
+certificate nudge, label-once classification) and two defects found in these
+reruns were fixed as they appeared. The DocDB arm was rerun five times on the
+heterogeneous matter with every other arm held at its recorded result; three
+judge passes.
+
+| Rerun | Change in effect | Correct | Spend | Wall | Root calls | Reviews / halts | Tiers H/M/L | Replayable (computed) | Nudges |
+|---|---|---|---|---|---|---|---|---|---|
+| 5 (recorded above) | scope-only reviewer, ladder gate | 38 / 38 | $2.67 | 7.1 min | 168 | 65 / 5 | 0 / 16 / 22 | 12 / 21 | – |
+| 6 | + certificate skip, 3-round cap, nudge | 38 / 38 | $1.90 | 5.8 min | 131 | 39 / 5 | 0 / 17 / 21 | 15 / 21 | 5 |
+| 7 | + `count` over any original column | 38 / 38 | $2.03 | 5.4 min | 122 | 40 / 5 | 0 / 15 / 23 | 16 / 21 | 5 |
+| 8 | + operand sources summarised in proofs | 37 / 38 | $1.63 | 5.4 min | 119 | 34 / 5 | 0 / 19 / 19 | 12 / 21 | 4 |
+| 9 | + id lists trimmed | 38 / 38 | $1.79 | 5.8 min | 123 | 38 / 5 | 0 / 16 / 22 | 15 / 21 | 4 |
+| 10 | + intermediates summarised, quote lists sampled | 38 / 38 | $2.02 | 5.6 min | 116 | 32 / 5 | 0 / 16 / 22 | 14 / 21 | 3 |
+
+What moved. Root calls fell by a third (168 → 116–131) and spend by a quarter
+to a third ($2.67 → $1.63–2.03), with wall time from 7.1 to 5.4–5.8 minutes;
+that is the three-round cap, which ends every contested batch after review,
+adjudication and one resubmission instead of six rounds. Accuracy held at
+37–38/38 (the one miss, `agg_top_month` in rerun 8, is a run-to-run
+difference in the controller's month grouping, judged consistently across
+three passes). Replayable derivations are 12–16 of 21 computed questions
+against 8–15 before; the nudge fired three to five times per run (once per
+batch, naming every uncertified computed field in it, 98 field-nudges over
+the five runs) and the controller answered by certifying 70 of them and
+re-quoting the other 28.
+
+What the reruns found. Rerun 6's trajectories show the controller trying four
+times to certify an invoice count through `aggregate()` and being refused
+every time: once because `documents` is not a registered table, once because
+`cells` is not, twice because a count was required to run over a *numeric*
+column. A count is over rows and any original column identifies one, so the
+registry now accepts text columns for `count` (rerun 7). The same
+trajectories show why the reviewer could not judge most computed fields at
+all: with operands uncapped, a derivation over 454 source cells projected to
+317,000 characters and was dropped as `prompt_limit` (37 fields in rerun 6;
+`review_failed` on 9 more), so the field never received a verdict and
+finished low. Proofs are now bounded for the reviewer, in three steps that
+each removed a dominant term: operand sources beyond twelve are summarised
+(count, documents, tables, value range and sum) with the first twelve in
+full; `source_ids`/`operand_ids` lists of hundreds of ids on each calculation
+record are trimmed to a count and a sample; intermediate calculations are
+summarised by operation with only the root calculations in full, and a
+certified field with more than 32 quotes has them sampled rather than
+refused. The largest field fell from 317k to 36k characters and
+`prompt_limit` from 37 to 14.
+
+What did not move, and why it matters. Low-tier answers are 19–23 of 38 in
+every run including rerun 5, all of them correct. Bounding the proof changed
+*how* the reviewer withholds, not *whether*: `insufficient` verdicts rose from
+44 to 53 as fields that had been dropped for size were read and then refused.
+The reviewer's objection is scope. Every computed field here is parent-verified
+arithmetic over operands the controller chose, and the reviewer cannot confirm
+from twelve sample rows and a summary that 454 operands are the right 454. The
+instrument that answers that objection is the parent-executed `selection_sql`
+certificate, and the controller used it once in five runs, because 46 of the
+360 live invoices on this matter have no extracted table (narrative and email
+templates) and a selection over registered tables cannot reach them. The
+certificate skip therefore fired once (rerun 8). Letting `aggregate()` take
+text-span rows alongside table cells, so that a parent-executed selection can
+cover a corpus whose numbers are partly in prose, is the structural fix; it is
+not done here. Until it is, the trust tier on this matter measures the
+reviewer's reach, not the answer's reliability, and the paper says so.
+
+Reproduce: `python -m rnsr.eval.arms_bench --matter
+testMatter/matters/dense_corvid_meridian_hetero --out runs/dense-hetero-arms
+--arms stuffing,classic,dci,dci_raw,docdb --rerun docdb --judge-passes 3`;
+the per-rerun reports are `runs/dense-hetero-arms/report-rerun{6,7,8,9}-*.md`
+and `report.md` (rerun 10).
+
 ## Run status and cost
 
 | Matter | Status counts | Not-found answers | Provider requests | Spend | Rate-limit hits | Wall |

@@ -2,6 +2,7 @@
 
 import json
 from dataclasses import replace
+from decimal import Decimal
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
@@ -263,3 +264,49 @@ def test_offline_audit_marks_unresolved_positives_and_preserves_input(tmp_path):
                (tmp_path / "audit/scoring_audit.jsonl").read_text().splitlines()]
     assert records[4]["requires_adjudication"]
     assert "predicted" not in records[0] and "gold" not in records[0]
+
+
+def test_leading_value_normaliser_matches_presentation_not_substance():
+    from rnsr.eval.metrics import leading_value, normalised_match
+
+    assert leading_value("$8,738 million") == (Decimal("8.738E+9"), "money")
+    assert leading_value("-1.42%")[1] == "pct"
+    assert leading_value("The margin was 7.9%") is None        # buried numbers are not the answer
+    # presentation differences agree
+    assert normalised_match("77.78%", "77.78")
+    assert normalised_match("0.0142", "1.42%")
+    assert normalised_match("approximately $2.1 billion", "$2,100")
+    assert normalised_match("45 days", "45")
+    assert normalised_match("2.5x", "2.5")
+    assert normalised_match("1,615.9", "$1,615.90")
+    # substance differences stay misses, including rounding at the gold's precision
+    assert not normalised_match("-5.2%", "5.2%")
+    assert not normalised_match("12", "15")
+    assert not normalised_match("5.4", "5.00")
+    assert not normalised_match("$381.6 million", "$382.00")
+    assert not normalised_match("-1.42%", "-0.02")
+    assert not normalised_match("Yes, three", "3")
+    assert not normalised_match(None, "3")
+
+
+def test_rejudge_sample_and_agreement(tmp_path):
+
+
+    from rnsr.eval.rejudge import agreement, write_sample
+
+    rd = tmp_path / "fb-docdb"
+    rd.mkdir()
+    rows = [{"qid": f"q{i}", "predicted": str(i), "gold": "x", "correct": i % 2 == 0,
+             "scored_by": "judge" if i < 6 else "string", "judge_votes": [True, False, i % 2 == 0]}
+            for i in range(8)]
+    (rd / "results.rejudged.jsonl").write_text("".join(json.dumps(r) + "\n" for r in rows))
+    out = tmp_path / "sample.jsonl"
+    assert write_sample([rd], 4, 11, out, {"q1": "Q?"}) == 4
+    sample = [json.loads(line) for line in out.read_text().splitlines()]
+    assert all(r["human_correct"] is None and r["judge_votes"] for r in sample)
+    assert all(int(r["qid"][1:]) < 6 for r in sample)            # judge-decided rows only
+    for r in sample:
+        r["human_correct"] = True
+    out.write_text("".join(json.dumps(r) + "\n" for r in sample))
+    report = agreement(out)
+    assert report["marked"] == 4 and report["agree"] + report["judge_no_human_yes"] == 4

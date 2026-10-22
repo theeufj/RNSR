@@ -140,8 +140,30 @@ def test_annotation_numeric_column_is_not_a_source(registry, arithmetic_corpus):
     from rnsr.db import schema
     with sqlite3.connect(arithmetic_corpus) as conn:
         schema.add_annotation_column(conn, 't_report_001', 'invented')
-    with pytest.raises(ValueError, match='original numeric column'):
+    with pytest.raises(ValueError, match='original column'):
         registry.source_number('t_report_001', 1, 'invented')
+    # Nor for counting: an annotation column is a model's label, not a row of the source.
+    with pytest.raises(ValueError, match='original column'):
+        registry.aggregate('count', [('t_report_001', 1, 'invented')])
+
+
+def test_count_aggregate_accepts_any_original_column(registry, arithmetic_corpus):
+    """A count is over rows: a text column identifies them. Seen live: a
+    controller trying to count invoices through aggregate() was refused four
+    ways and fell back to hand arithmetic."""
+    rows = [('t_report_001', r, 'item') for r in (1, 2, 3)]
+    agg = registry.aggregate('count', rows)
+    assert agg['value'] == '3' and agg['n_rows'] == 3 and agg['columns'] == ['item']
+    assert [r['value'] for r in agg['rows']] == ['Revenue', 'Costs', 'Interest']
+    assert agg['min'] is None and agg['max'] is None
+    assert registry.get(agg['id'])['value'] == '3'          # revalidates with the text digest
+    parent = registry.aggregate('count', selection_sql="SELECT 't_report_001', rowid, 'item' FROM t_report_001 WHERE amount > 50")
+    assert parent['value'] == '2' and parent['selection_executed_by'] == 'parent'
+    value, report = registry.resolve_final(parent['id'], '2')
+    assert value == '2' and report['passed'] is True
+    for op in ('sum', 'mean', 'min', 'max'):
+        with pytest.raises(ValueError, match='numeric'):
+            registry.aggregate(op, rows)
 
 
 def test_generation_changes_invalidate_existing_results(registry, arithmetic_corpus):

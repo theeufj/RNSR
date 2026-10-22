@@ -225,6 +225,53 @@ def scale_budgets(s: Settings, n_questions: int) -> Settings:
 
 
 
+_FIRST_NUMBER = re.compile(r"(?<![\w.])(?P<cur>[$€£]\s*)?(?P<neg>[-(])?(?P<num>\d(?:[\d,]*\d)?(?:\.\d+)?)(?P<pct>\s*%)?")
+_DERIVATION_CHECKS = {"source_bound_calculation", "source_bound_calculations", "classification_aggregate"}
+
+
+def _headline_number(answer: str) -> str | None:
+    """Digits of the first quantity in an answer's opening sentence, skipping
+    bare years ("FY2016", "in 2022") and zero (an absence claim)."""
+    head = re.split(r"(?<=[.;:])\s+(?=[A-Z])", answer.strip(), maxsplit=1)[0][:240]
+    plain = None
+    for m in _FIRST_NUMBER.finditer(head):
+        num = m.group("num")
+        strong = bool(m.group("cur") or m.group("pct") or "." in num or "," in num)
+        if not strong and re.fullmatch(r"(19|20)\d\d", num):
+            continue                      # a year, not a quantity
+        digits = num.replace(",", "")
+        if not digits.strip("0."):
+            return None                   # "0: no such line item" is an absence claim, not arithmetic
+        if strong:
+            return digits                 # currency, percent or decimal: the quantity
+        plain = plain or digits           # a bare integer ("June 30", "3 segments"): only if nothing stronger
+    return plain
+
+
+def derived_without_certificate(final: dict, qids: list[str] | None) -> list[str]:
+    """Fields whose headline quantity appears in no verified quotation and
+    carries no parent certificate: a computed value resting on the model's
+    word. A number quoted verbatim from a cell is a lookup and is not
+    flagged; neither is a field with no verification report at all."""
+    value, ver = final.get("value"), final.get("verification") or {}
+    items = [(q, (value or {}).get(q), ver.get(q) if isinstance(ver, dict) else None) for q in qids] \
+        if qids else [(None, value, ver)]
+    flagged = []
+    for qid, answer, report in items:
+        if not isinstance(answer, str) or not isinstance(report, dict):
+            continue
+        if report.get("check") in _DERIVATION_CHECKS:
+            continue
+        digits = _headline_number(answer)
+        if digits is None:
+            continue
+        quotes = " ".join(q.get("quote", "") for q in report.get("quotes") or [] if isinstance(q, dict))
+        if digits in re.sub(r"[^\d.]", "", quotes):
+            continue                      # the number is quoted from the source
+        flagged.append(qid or "answer")
+    return flagged
+
+
 def _field_supported(record: dict) -> bool:
     return record.get("status") == "reviewed" and record.get("verdict") == "supported"
 
@@ -410,6 +457,7 @@ class RootRunner:
         review_rounds = 0      # rejected claim reviews so far
         review_stalls = 0      # rejections where every open field was already adjudicated, unchanged
         negative_audit = "none"
+        certificate_nudged = False
         health_grade = ((env.manifest or {}).get("health") or {}).get("grade")
         claim_gate = ReviewGate()
         review_questions = batch_questions or [(query_id, question)]
@@ -585,6 +633,24 @@ class RootRunner:
                             "unchanged if you believe it is complete)."
                         )))
                         continue
+                    if (s.require_certificate_for_derived and env.mode == "docdb"
+                            and not certificate_nudged):
+                        derived = derived_without_certificate(cell.final, batch_qids)
+                        if derived:
+                            certificate_nudged = True
+                            pushbacks += 1
+                            trajectory.event("certificate_nudge", fields=derived)
+                            metrics().incr("certificate_nudges")
+                            fname = "FINAL_BATCH" if batch_qids else "FINAL"
+                            turns.append((code, observation + "\n" + (
+                                f"[harness] {fname} not accepted yet. These answers state a quantity "
+                                f"that appears in no verified quotation and carries no parent certificate: "
+                                f"{', '.join(derived)}. A computed value needs a derivation an auditor can "
+                                "replay: bind it with aggregate(...)/source_number(...)+calculate(...) and "
+                                f"submit via FINAL_CALC or {fname}(..., calcs={{...}}); if the value is read "
+                                "directly from one source cell, quote that cell verbatim instead. Resubmit once."
+                            )))
+                            continue
                     if s.claim_review_enabled and env.mode == "docdb":
                         review = await claim_gate.check(
                             cell.final, review_questions, batch=bool(batch_questions),

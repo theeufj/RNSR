@@ -56,19 +56,30 @@ class Settings:
     # all already-adjudicated, unchanged claims, or after
     # `claim_review_max_rounds` rejected reviews in total. 0 disables a cap.
     claim_review_max_stalls: int = 1
-    claim_review_max_rounds: int = 6
+    # Review, independent adjudication, then one more resubmission before the
+    # contested field is returned flagged low: the minimum the stall detector
+    # needs. Was 6; the extra rounds bought full-context root calls, not verdicts.
+    claim_review_max_rounds: int = 3
     # Source-bound calculation limits per sandbox session; 0 = unlimited. An
     # aggregate certificate binds any number of rows in one record, so sums
     # over hundreds of invoices do not need an operand cap.
     calc_max_records: int = 0
     calc_max_operands: int = 0
     calc_max_sources: int = 0
-    # How the claim reviewer treats a parent-executed aggregate certificate.
-    # "scope_only": inputs and operation are settled by the parent; the
-    # reviewer may only contradict by naming a predicate clause or row outside
-    # the question's population, and an "insufficient" verdict counts as
-    # undisputed scope. "full": the legacy behaviour (reviewer may withhold).
-    claim_review_certificate_policy: str = "scope_only"
+    # How the claim reviewer treats a parent-verified certificate.
+    # "skip": an aggregate whose selection SQL the parent executed is supported
+    # without a model review (the predicate and rows are the evidence); a
+    # certified classification count still gets one scope-only round, because
+    # the vocabulary matching the question is something a reader must check.
+    # "scope_only": every certificate gets the bounded scope round (the
+    # reviewer may only contradict by naming a clause, row or missing category).
+    # "full": legacy, the reviewer may withhold.
+    claim_review_certificate_policy: str = "skip"
+    # A numeric final that appears in no verified quotation and carries no
+    # certificate is sent back once with instructions to bind it (or quote
+    # the cell it was read from). Measured: replayable derivations on
+    # FinanceBench numerics were 12/20 with the controller choosing freely.
+    require_certificate_for_derived: bool = True
     # Auto-escalating search() skips the embedding rung when the corpus has
     # more chunks than this (0 = never skip); search(query, rung=4) still works.
     # Embedding every chunk of a large corpus cost thousands of provider
@@ -171,8 +182,8 @@ class Settings:
                      "health_min_validation_rate", "health_max_parse_failed_rate"):
             if getattr(self, name) > 1:
                 raise ValueError(f"{name} must be between 0 and 1")
-        if self.claim_review_certificate_policy not in ("scope_only", "full"):
-            raise ValueError("claim_review_certificate_policy must be 'scope_only' or 'full'")
+        if self.claim_review_certificate_policy not in ("skip", "scope_only", "full"):
+            raise ValueError("claim_review_certificate_policy must be 'skip', 'scope_only' or 'full'")
 
     @classmethod
     def production(cls, **overrides) -> Settings:

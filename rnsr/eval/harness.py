@@ -25,6 +25,7 @@ from rnsr.eval.metrics import (
     SCORER_VERSION,
     EvalResult,
     judge_answer,
+    normalised_match,
     score_answer,
     summarize,
 )
@@ -305,6 +306,8 @@ async def run_eval(
             with (run_dir / "errors.log").open("a", encoding="utf-8") as errors:
                 errors.write(f"{item.qid}: {type(e).__name__}: {e}\n")
         correct, scored_by = score_answer(predicted, item.gold), "string"
+        if not correct and predicted is not None and normalised_match(predicted, item.gold):
+            correct, scored_by = True, "normalised"
         if judge and not correct and predicted is not None:
             verdict = await judge_answer(runner.sub_client, runner.sub_model,
                                          item.question, predicted, item.gold)

@@ -162,7 +162,10 @@ class CalculationRegistry:
         self._check_deadline()
         return result
 
-    def _read_cell(self, table, rowid, column) -> dict:
+    def _read_cell(self, table, rowid, column, *, numeric: bool = True) -> dict:
+        """One frozen cell with its canonical span. ``numeric=False`` admits an
+        original text column (for counting rows, where the value is not an
+        operand); annotation columns are never a source."""
         self._check_deadline()
         if (not isinstance(table, str) or not isinstance(column, str)
                 or isinstance(rowid, bool) or not isinstance(rowid, int) or rowid < 1):
@@ -174,14 +177,19 @@ class CalculationRegistry:
             raise ValueError("calculation sources require a registered table")
         schema = decode_table_schema(meta[2])
         col = next((c for c in schema.columns if c.name == column), None)
-        if col is None or col.annotation or col.type not in {'INTEGER', 'REAL', 'NUMERIC'}:
+        if col is None or col.annotation:
+            raise ValueError("calculation source must be an original column")
+        if numeric and col.type not in {'INTEGER', 'REAL', 'NUMERIC'}:
             raise ValueError("calculation source must be an original numeric column")
         cur = self.conn.execute(f'SELECT * FROM {quote_ident(table)} WHERE rowid=?', (rowid,))
         row = cur.fetchone()
         if row is None:
             raise ValueError("calculation source row does not exist")
         values = dict(zip((c[0] for c in cur.description), row, strict=True))
-        number = _decimal(values[column])
+        if numeric or col.type in {'INTEGER', 'REAL', 'NUMERIC'}:
+            rendered = _render(_decimal(values[column]))
+        else:
+            rendered = None if values[column] is None else str(values[column])
         context = self._context(table=table, rowid=rowid)
         if context['row_location'] != 'exact':
             raise ValueError("calculation source needs one exact canonical row location")
@@ -191,7 +199,7 @@ class CalculationRegistry:
         quote = self._span(meta[0], start, end)['text']
         generation = self._generation_by_id[meta[0]]
         self._check_deadline()
-        return {'value': _render(number), 'raw_value': values.get(col.raw_col or column),
+        return {'value': rendered, 'raw_value': values.get(col.raw_col or column),
                 'source': {'doc_id': meta[0], 'table': table, 'rowid': rowid,
                            'column': column, 'page': context['page'],
                            'char_start': start, 'char_end': end,
@@ -312,12 +320,12 @@ class CalculationRegistry:
 
     # --- aggregate certificate ----------------------------------------------
 
-    def _row_fact(self, row) -> dict:
+    def _row_fact(self, row, *, numeric: bool = True) -> dict:
         if isinstance(row, (list, tuple)) and len(row) == 3:
             row = {'table': row[0], 'rowid': row[1], 'column': row[2]}
         if not isinstance(row, dict) or set(row) != {'table', 'rowid', 'column'}:
             raise ValueError("aggregate rows are {table, rowid, column} triples")
-        cell = self._read_cell(row['table'], row['rowid'], row['column'])
+        cell = self._read_cell(row['table'], row['rowid'], row['column'], numeric=numeric)
         src = cell['source']
         return {'table': src['table'], 'rowid': src['rowid'], 'column': src['column'],
                 'doc_id': src['doc_id'], 'page': src['page'],
@@ -330,7 +338,9 @@ class CalculationRegistry:
         return _digest([(r['table'], r['rowid'], r['column'], r['value']) for r in rows])
 
     def _validate_rows(self, record: dict) -> None:
-        current = [self._row_fact({'table': r['table'], 'rowid': r['rowid'], 'column': r['column']})
+        numeric = record.get('operation') != 'count'
+        current = [self._row_fact({'table': r['table'], 'rowid': r['rowid'], 'column': r['column']},
+                                  numeric=numeric)
                    for r in record['rows']]
         if self._rows_digest(current) != record['rows_digest'] or any(
                 c['quote'] != r['quote'] or c['source_span_id'] != r['source_span_id']
@@ -382,22 +392,34 @@ class CalculationRegistry:
             raise ValueError("selection must be a string of at most 8000 characters")
         seen = set()
         facts = []
+        # A count is over rows, not values: any original column identifies the
+        # row (an invoice number, a consultant name), so a table without a
+        # numeric column can still be counted. The other operations need numbers.
+        counting = operation == 'count'
         for row in rows:
-            fact = self._row_fact(row)
+            fact = self._row_fact(row, numeric=not counting)
             key = (fact['table'], fact['rowid'], fact['column'])
             if key in seen:
                 raise ValueError(f"aggregate row repeated: {key}")
             seen.add(key)
             facts.append(fact)
-        values = [_decimal(f['value']) for f in facts]
+        numeric_values = []
+        for f in facts:
+            try:
+                numeric_values.append(_decimal(f['value']))
+            except (ValueError, TypeError, ArithmeticError):
+                if not counting:
+                    raise
         with localcontext() as ctx:
             ctx.prec = PRECISION
             ctx.rounding = ROUND_HALF_EVEN
+            values = numeric_values
             value = {'sum': lambda: sum(values, Decimal(0)),
-                     'count': lambda: Decimal(len(values)),
+                     'count': lambda: Decimal(len(facts)),
                      'mean': lambda: sum(values, Decimal(0)) / len(values),
                      'min': lambda: min(values), 'max': lambda: max(values)}[operation]()
             rendered = _render(value)
+        extremes = (_render(min(values)), _render(max(values))) if values and len(values) == len(facts) else (None, None)
         tables = sorted({f['table'] for f in facts})
         documents = sorted({f['doc_id'] for f in facts})
         columns = sorted({f['column'] for f in facts})
@@ -405,7 +427,7 @@ class CalculationRegistry:
             'kind': 'aggregate', 'value': rendered, 'operation': operation,
             'n_rows': len(facts), 'rows': facts, 'rows_digest': self._rows_digest(facts),
             'tables': tables, 'documents': documents, 'columns': columns,
-            'min': _render(min(values)), 'max': _render(max(values)),
+            'min': extremes[0], 'max': extremes[1],
             'rows_sample': [{k: f[k] for k in ('table', 'rowid', 'column', 'value')}
                             for f in facts[:8]],
             'selection': selection,

@@ -9,10 +9,12 @@ skipped/failed reviews have no verdict. A cached verdict is never a query cap.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import hashlib
 import json
 import re
 import time
+from decimal import Decimal, InvalidOperation
 
 from rnsr.answer_semantics import NOT_FOUND, normalize_label
 from rnsr.errors import BudgetExhausted, PermanentProviderError
@@ -30,6 +32,7 @@ MAX_CONTEXT_CHARS = 2000
 MAX_PROMPT_CHARS = 60_000
 MAX_SELECTION_CHARS = 1_500     # projected certificate SQL; the full text stays in the record
 MAX_ROWS_SAMPLE = 5
+MAX_SOURCE_RECORDS = 12   # operand sources shown in full; beyond that, a summary and a sample
 MAX_RESPONSE_CHARS = 48_000
 MAX_REASON_CHARS = 600
 MAX_REVIEW_S = 30.0
@@ -167,10 +170,17 @@ def _evidence(report: object, field_id: str) -> tuple[list[dict], bool]:
         return [], False
     evidence = []
     quotes = report.get("quotes") or []
-    quote_limit = 32 if report.get("check") in _CALCULATION_CHECKS | {"classification_aggregate"} else 3
-    if not isinstance(quotes, list) or len(quotes) > quote_limit:
+    certified = report.get("check") in _CALCULATION_CHECKS | {"classification_aggregate"}
+    quote_limit = 32 if certified else 3
+    if not isinstance(quotes, list):
         raise ValueError("evidence_limit")
     truncated = False
+    if len(quotes) > quote_limit:
+        # A certified field's quotes are a sample of parent-verified rows, not
+        # the proof; a quotation-only field with too many is not reviewable.
+        if not certified:
+            raise ValueError("evidence_limit")
+        quotes, truncated = quotes[:quote_limit], True
     for qi, quote in enumerate(quotes):
         if not isinstance(quote, dict) or quote.get("matched") is not True:
             continue
@@ -284,6 +294,7 @@ def _proof(report: object, field_id: str) -> list[dict]:
                 item["metric_contract"] = {k: v for k, v in record["metric_contract"].items()
                                            if k in contract_keys | {"source_ids"}}
             projected.append(item)
+        projected = _bound_sources(projected)
         proof = {"evidence_id": f"{field_id}p0", "kind": check,
                  "answer": report.get("answer"), "records": projected,
                  "calculation_id": report.get("calculation_id")}
@@ -307,25 +318,101 @@ def _proof(report: object, field_id: str) -> list[dict]:
     return []
 
 
+def _bound_sources(records: list[dict]) -> list[dict]:
+    """Keep a calculation proof readable when operands are uncapped. With
+    hundreds of parent-verified source cells (seen live: 454 records, 317k
+    characters) the field was dropped as ``prompt_limit`` and never judged.
+    Calculation records stay in full; sources beyond MAX_SOURCE_RECORDS are
+    replaced by one summary (count, documents, tables, value range and sum)
+    plus the first few in full. The parent has already re-read every source;
+    the reviewer judges scope, not transcription."""
+    sources = [r for r in records if r.get("kind") == "source"]
+    calcs = [r for r in records if r.get("kind") == "calculation"]
+    if len(sources) <= MAX_SOURCE_RECORDS and len(calcs) <= MAX_SOURCE_RECORDS:
+        return records
+    # Intermediate calculations (per-invoice products, running subtotals) are
+    # parent arithmetic too; keep the roots, which no other record consumes,
+    # and summarise the rest by operation.
+    consumed = {oid for r in calcs for oid in (r.get("operand_ids") or [])}
+    roots = [r for r in calcs if r.get("id") not in consumed] or calcs[:1]
+    intermediates = [r for r in calcs if r not in roots]
+    calc_summary = None
+    if len(calcs) > MAX_SOURCE_RECORDS:
+        ops = {}
+        for r in intermediates:
+            ops[r.get("operation")] = ops.get(r.get("operation"), 0) + 1
+        calc_summary = {"kind": "calculation_summary", "n_intermediate": len(intermediates),
+                        "operations": ops, "roots_shown": len(roots),
+                        "note": "intermediate parent calculations feeding the roots; omitted for length"}
+        records = [r for r in records if r.get("kind") != "calculation" or r in roots]
+        if intermediates:
+            records = roots + [calc_summary] + [r for r in records if r.get("kind") != "calculation"]
+    if len(sources) <= MAX_SOURCE_RECORDS:
+        return records
+    values = []
+    for r in sources:
+        with contextlib.suppress(InvalidOperation, ValueError, TypeError):
+            values.append(Decimal(str(r.get("value"))))
+    src = [r.get("source") or {} for r in sources]
+    documents = sorted({s.get("doc_id") for s in src if s.get("doc_id")})
+    tables = sorted({s.get("table") for s in src if s.get("table")})
+    summary = {"kind": "source_summary", "n_sources": len(sources),
+               "n_documents": len(documents), "documents": documents[:MAX_SOURCE_RECORDS],
+               "n_tables": len(tables), "tables": tables[:MAX_SOURCE_RECORDS],
+               "columns": sorted({s.get("column") for s in src if s.get("column")}),
+               "values_min": str(min(values)) if values else None,
+               "values_max": str(max(values)) if values else None,
+               "values_sum": str(sum(values)) if values else None,
+               "shown_in_full": MAX_SOURCE_RECORDS,
+               "note": "every source was re-read by the parent from frozen cells or text spans; "
+                       "only the first few are listed"}
+    kept = iter(sources[:MAX_SOURCE_RECORDS])
+    out, placed = [], False
+    for r in records:
+        if r.get("kind") != "source":
+            r = dict(r)
+            for key in ("source_ids", "operand_ids"):   # 424 ids × 5 records was most of the prompt
+                ids = r.get(key)
+                if isinstance(ids, list) and len(ids) > MAX_SOURCE_RECORDS:
+                    r[f"n_{key}"] = len(ids)
+                    r[key] = ids[:5]
+            out.append(r)
+        elif not placed:
+            out.append(summary)
+            out.extend(kept)
+            placed = True
+    return out
+
+
 def _parent_certificate(evidence: list[dict]) -> dict | None:
-    """The first parent-executed aggregate certificate among a field's proofs."""
+    """The first parent-verified certificate among a field's proofs: an
+    aggregate whose selection the parent executed, or a certified
+    classification count over saved labels."""
     for item in evidence:
-        if item.get("kind") not in _CALCULATION_CHECKS:
-            continue
-        for record in item.get("records") or []:
-            if isinstance(record, dict) and record.get("kind") == "aggregate" \
-                    and record.get("selection_executed_by") == "parent":
-                return {"evidence_id": item["evidence_id"], "operation": record.get("operation"),
-                        "n_rows": record.get("n_rows"), "selection": record.get("selection")}
+        if item.get("kind") in _CALCULATION_CHECKS:
+            for record in item.get("records") or []:
+                if isinstance(record, dict) and record.get("kind") == "aggregate" \
+                        and record.get("selection_executed_by") == "parent":
+                    return {"kind": "aggregate", "evidence_id": item["evidence_id"],
+                            "operation": record.get("operation"),
+                            "n_rows": record.get("n_rows"), "selection": record.get("selection")}
+        elif item.get("kind") == "classification_aggregate":
+            cls = item.get("classification") or {}
+            if cls.get("certified") is True:
+                return {"kind": "classification", "evidence_id": item["evidence_id"],
+                        "operation": cls.get("operation"),
+                        "n_rows": cls.get("total"), "selection": cls.get("where")}
     return None
 
 
 CERTIFICATE_SCOPE_NOTE = (
-    "This field carries a parent-executed aggregate certificate: the parent ran the recorded "
-    "selection SQL on frozen source tables, re-read every selected row, and computed the operation; "
-    "inputs and arithmetic are settled and are not under review. Decide only whether the SQL "
-    "selects the population the question asks about. Answer 'supported', or 'contradicted' naming "
-    "the predicate clause, table or row that puts the selection outside the question's scope. "
+    "This field carries a parent-verified certificate: the parent ran the recorded selection on "
+    "frozen source tables, re-read every selected row, and computed the operation (for a "
+    "classification count, it recounted the saved labels over the recorded WHERE scope); inputs and "
+    "arithmetic are settled and are not under review. Decide only whether the selection is the "
+    "population the question asks about and, for a classification, whether allowed_labels contains "
+    "every category the question requires. Answer 'supported', or 'contradicted' naming the predicate "
+    "clause, table, row or missing category that puts the certificate outside the question's scope. "
     "'insufficient' is not available for this field: a certificate whose scope you cannot fault is "
     "supported.")
 
@@ -583,11 +670,20 @@ async def review_final(
         candidate = {"field_id": fid, "question": question, "answer": answer_text,
                      "evidence": evidence, "evidence_truncated": truncated,
                      "requirements": requirements}
-        certificate = _parent_certificate(evidence) if certificate_policy == "scope_only" else None
+        certificate = _parent_certificate(evidence) if certificate_policy in ("scope_only", "skip") else None
         if certificate:
+            record["certificate"] = {k: certificate[k] for k in ("kind", "evidence_id", "operation", "n_rows")}
+            if certificate_policy == "skip" and certificate["kind"] == "aggregate":
+                # Inputs, operation and the parent-executed predicate are in the
+                # record for a human to read; a model review adds a round trip
+                # and, on every corpus measured, no information. A classification
+                # count still gets the scope round: its vocabulary must match.
+                record.update(status="reviewed", verdict="supported",
+                              reason_code="certificate_parent_verified",
+                              evidence_ids=[certificate["evidence_id"]])
+                continue
             candidate["review_mode"] = "certificate_scope"
             candidate["certificate_note"] = CERTIFICATE_SCOPE_NOTE
-            record["certificate"] = {k: certificate[k] for k in ("evidence_id", "operation", "n_rows")}
         objection = (prior_objections or {}).get(_digest(qid))
         if objection is not None:
             old_id = objection.get("field_id", fid)

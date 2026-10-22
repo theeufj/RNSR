@@ -42,8 +42,19 @@ adjudication already rejected, with no new evidence, or exceeds
 `claim_review_max_rounds` rejected reviews — ends the query with the final
 marked `partial` instead of burning the remaining budget. Each contested
 field is `unverified` (low); fields the reviewer supported keep `supported`
-and are capped at medium by the pushback that preceded them. Setting both
-caps to 0 restores the unbounded loop.
+and are capped at medium by the pushback that preceded them. The default is
+three rounds (review, independent adjudication, one resubmission). Setting
+both caps to 0 restores the unbounded loop.
+
+Fields whose proof is an aggregate certificate with a parent-executed
+selection are `supported` without a model review under the default
+`claim_review_certificate_policy=skip` (`reason_code
+certificate_parent_verified`): the selection SQL, the row set digest and
+the operation are the evidence, and a reader checks scope from the record.
+A certified classification count still receives one scope-only round, in
+which the reviewer may only `contradict` by naming a clause, row or missing
+category. `scope_only` applies that round to every certificate; `full` is
+the legacy behaviour.
 
 Otherwise **medium** if any of:
 

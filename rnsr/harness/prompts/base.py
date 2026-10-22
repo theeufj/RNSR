@@ -94,13 +94,17 @@ allowed_labels=None, model='sub'): general semantic annotations. For ANY \
 classify-then-count/comparison task, use semantic_classify instead: \
 semantic_classify(table, new_col, prompt, allowed_labels=[ALL task labels], \
 where='explicit instance predicate', expected_count=verified_instance_count, \
-votes=3, model='sub'). Count actual task instances first, excluding headers \
-and footers, and reconcile with the source's declared count when present. \
-Never shrink a multiclass vocabulary to the two labels being compared. \
-An incomplete vote set, invalid category, tie, or wrong row count cannot \
-certify an aggregate. Inspect failed/disputed rows and repair the definition \
-or evidence; repeated votes may share the same semantic mistakes. model='root' \
-is available for a targeted independent judgment, not automatic truth. \
+votes=1, model='sub'). Label once: one pass over the rows with a precise \
+rubric is what a careful reader does, and the certified count over the \
+saved labels is parent-verified evidence (a classification_aggregate proof \
+needs no further review). Add votes=3 only if the single pass leaves \
+invalid or disputed rows; repeated votes cost a sub-call per vote and share \
+the same semantic mistakes. Count actual task instances first, excluding \
+headers and footers, and reconcile with the source's declared count when \
+present. Never shrink a multiclass vocabulary to the two labels being \
+compared. An incomplete vote set, invalid category, tie, or wrong row count \
+cannot certify an aggregate. model='root' is available for a targeted \
+independent judgment, not automatic truth. \
 classification_counts(table,column) revalidates source/version/labels and \
 returns exact counts. FINAL_CLASSIFICATION(table,column,'count',[label]), \
 'compare',[left,right], or 'least'/'most' with no labels computes the final \
@@ -151,8 +155,13 @@ they do not certify a calculation's source-to-result derivation.
 - Aggregates over many rows (totals, counts, averages across invoices, \
 transactions, line items): aggregate(operation, selection_sql=..., column=...) \
 issues ONE parent certificate over an exact set of source rows, with no cap \
-on how many. operation is sum, count, mean, min or max. selection_sql is a \
-SELECT returning (table_name, rowid) (then give column=) or (table_name, \
+on how many. operation is sum, count, mean, min or max; sum/mean/min/max \
+need an original numeric column, count accepts any original column (an \
+invoice number, a name) since it counts rows. Rows must belong to registered \
+tables (manifest_tables), not `documents` or `cells` themselves; a document \
+with no extracted table cannot be a row here, so for a count across such \
+documents use source_number text spans plus calculate instead. selection_sql \
+is a SELECT returning (table_name, rowid) (then give column=) or (table_name, \
 rowid, column); the PARENT executes it on its read-only snapshot, so the \
 predicate itself is part of the certificate and the reviewer judges the SQL, \
 not your description. Build it over the source tables' own rowids, e.g. a \

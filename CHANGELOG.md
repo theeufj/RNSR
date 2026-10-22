@@ -2,6 +2,42 @@
 
 ## Unreleased
 
+- Review loop bounded and certificate-aware. `claim_review_certificate_policy`
+  defaults to `skip`: a field whose proof is an aggregate certificate with a
+  parent-executed selection is supported without a model review
+  (`reason_code=certificate_parent_verified`); a certified classification
+  count gets one scope-only round in which the reviewer may contradict only
+  by naming a clause, row or missing category. `claim_review_max_rounds`
+  defaults to 3 (review, adjudication, one resubmission; was 6); contested
+  fields then surface as low tier instead of spending the root budget.
+  `require_certificate_for_derived` (default on): a final whose headline
+  quantity appears in no verified quotation and carries no certificate is
+  sent back once with instructions to bind it or quote the cell it came
+  from (`certificate_nudge` trajectory event; zero and bare years exempt).
+- `aggregate('count', ...)` accepts any original column of a registered
+  table (a count is over rows; an invoice number identifies one); the other
+  operations still need a numeric column. Seen live: a controller trying to
+  certify an invoice count was refused four ways and fell back to hand
+  arithmetic. The rubric now says which relations can be rows.
+- Claim review keeps large calculation proofs reviewable: beyond 12 operand
+  sources the proof carries one summary (count, documents, tables, value
+  range and sum) plus the first 12 in full, and id lists on calculation
+  records are trimmed to a count and a sample. Previously an uncapped
+  derivation (454 records, 317k characters) was dropped as `prompt_limit`
+  and the field could never be judged.
+- Classification rubric labels once (`semantic_classify(votes=1)`) and
+  certifies the count over the saved labels; three votes only on disputed
+  rows. OOLONG DocDB: $16.77 -> $2.90, 6,915 -> 895 sub-calls, 11 -> 0
+  halts, 34 -> 36/50.
+- Scoring: deterministic presentation normaliser
+  (`rnsr.eval.metrics.normalised_match`, `scored_by="normalised"`) between
+  the strict scorer and the judge: percent/ratio, currency, scale words and
+  unit suffixes agree at the gold's stated precision; rounding
+  disagreements stay misses. `rnsr.eval.rejudge` defaults to three passes,
+  reports `normalised` and `judge_split`, and `--sample N` writes a seeded
+  adjudication sample of judge-decided rows (`--adjudicated FILE` reports
+  judge-vs-human agreement). `public_arms_report` shows sub-calls, nudges
+  and normalised-scored counts.
 - Public benchmarks under the five-arm protocol (`docs/benchmarks/public-2026-10.md`):
   FinanceBench 40-question seeded subset over 18 real filings, CUAD-long (10)
   and OOLONG (50), with `rnsr eval` systems `stuffing`, `dci`, `dci-raw`, a

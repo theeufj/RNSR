@@ -8,7 +8,7 @@ import json
 import math
 import re
 from dataclasses import asdict, dataclass
-from decimal import Decimal, InvalidOperation
+from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 
 from rnsr.answer_semantics import is_negative, needs_review
 
@@ -100,6 +100,87 @@ def as_number(text: str) -> float | None:
         return float(m.group()) if m else None
     except ValueError:
         return None
+
+
+_LEAD = re.compile(
+    r"^\s*(?:(?:approximately|about|roughly|around|circa|~)\s+)?"
+    r"(?P<cur>[$€£]|usd|eur|gbp)?\s*(?P<neg>[-(])?\s*"
+    r"(?P<num>\d[\d,]*(?:\.\d+)?)\)?\s*(?P<pct>%|percent|pct|percentage points?)?"
+    r"\s*(?P<scale>thousand|million|billion|trillion|[kmbt]n?|mm)?x?(?![\w])", re.I)
+_SCALE = {"thousand": 3, "k": 3, "million": 6, "m": 6, "mm": 6, "mn": 6,
+          "billion": 9, "b": 9, "bn": 9, "trillion": 12, "t": 12, "tn": 12}
+NORMALISER_VERSION = "1-leading-value"
+
+
+def leading_value(text: object) -> tuple[Decimal, str] | None:
+    """The value an answer *leads with*, as (magnitude, unit-class).
+
+    The unit class is "pct" for percentages, "money" for currency, "" for a
+    bare number; a scale word multiplies ("$8.7 billion" → 8.7e9). Only a
+    leading value counts: a number buried in later explanation is not the
+    answer. Returns None when the text does not open with a number."""
+    if text is None:
+        return None
+    m = _LEAD.match(str(text).strip())
+    if not m or not m.group("num"):
+        return None
+    try:
+        value = Decimal(m.group("num").replace(",", ""))
+    except InvalidOperation:
+        return None
+    if m.group("neg"):
+        value = -value
+    scale = (m.group("scale") or "").lower()
+    if scale in _SCALE:
+        value = value.scaleb(_SCALE[scale])
+    unit = "pct" if m.group("pct") else ("money" if m.group("cur") else "")
+    return value, unit
+
+
+def _decimals(num_text: str) -> int:
+    """Stated precision, trailing zeros included: "5.00" claims two places.
+    Treating them as a habit would let 5.4 match 5.00."""
+    return len(num_text.split(".")[1]) if "." in num_text else 0
+
+
+def normalised_match(predicted: object, gold: str) -> bool:
+    """Deterministic agreement between two values that differ only in
+    presentation: ``77.78`` against ``77.78%``, ``0.0142`` against
+    ``1.42%``, ``$2,100`` against ``$2.1 billion``, ``45`` against ``45
+    days``. Rounds to the *gold's* stated precision, so a gold of 2 d.p.
+    accepts a prediction within half a unit of its last place. It does not
+    repair rounding disagreements: ``$382.00`` for $381.6 million and
+    ``$8.70`` for $8,738 million differ at the gold's own precision and stay
+    misses, as does ``-0.02`` for -1.42%. Those are gold-presentation
+    disputes for a human adjudicator, not for a scorer. Sign and magnitude after scaling must agree; a bare
+    prediction may match a money gold (the currency is in the question), a
+    percent may match a ratio gold at the same precision, and a gold stated
+    in billions accepts the same quantity in millions."""
+    pv, gv = leading_value(predicted), leading_value(gold)
+    if pv is None or gv is None:
+        return False
+    (p, pu), (g, gu) = pv, gv
+    gm = _LEAD.match(str(gold).strip())
+    places = _decimals(gm.group("num")) if gm else 0
+    # gold magnitude stated bare but in a scale implied by the question
+    # ("$8.70" meaning billions): accept a prediction equal to gold × 10^3k.
+    candidates = [p]
+    if pu != "pct" and gu != "pct" and p != 0 and g != 0:
+        for k in (3, 6, 9, 12):
+            candidates += [p.scaleb(-k), p.scaleb(k)]
+    if pu == "pct" and gu != "pct":
+        candidates.append(p.scaleb(-2))
+    if gu == "pct" and pu != "pct":
+        candidates.append(p.scaleb(2))
+    quant = Decimal(1).scaleb(-places)
+    for c in candidates:
+        try:
+            if c.quantize(quant, rounding=ROUND_HALF_UP) == g.quantize(quant, rounding=ROUND_HALF_UP) \
+                    and (c > 0) == (g > 0):
+                return True
+        except InvalidOperation:
+            continue
+    return False
 
 
 def score_answer(predicted: object, gold: str, *, numeric_rel_tol: float = 0.0) -> bool:

@@ -40,7 +40,7 @@ def load_results(path: Path) -> dict[str, dict]:
 def trajectory_signals(tdir: Path, qids: set[str]) -> dict:
     """Per-qid parent report facts plus run-level counters from solo trajectories."""
     out = {"facts": {}, "root_calls": 0, "embed_batches": 0, "review_halts": 0, "claim_reviews": 0,
-           "cells": 0, "cells_sql": 0, "cells_calc": 0}
+           "certificate_nudges": 0, "cells": 0, "cells_sql": 0, "cells_calc": 0}
     if not tdir.exists():
         return out
     for f in tdir.glob("*.jsonl"):
@@ -63,6 +63,8 @@ def trajectory_signals(tdir: Path, qids: set[str]) -> dict:
                     out["review_halts"] += 1
                 elif k == "claim_review":
                     out["claim_reviews"] += 1
+                elif k == "certificate_nudge":
+                    out["certificate_nudges"] += 1
                 elif k == "final":
                     last_final = r.get("verification")
                 if "code" in r:
@@ -88,6 +90,7 @@ def build(run_dir: Path, benchmark: str, systems: list[str], *, rejudged: bool =
                      "latency_p50_s": round(sorted(r.get("latency_s", 0) for r in rows)[len(rows) // 2], 1) if rows else None,
                      "status": dict(Counter(r.get("status") for r in rows)),
                      "judge_scored": sum(1 for r in rows if r.get("scored_by") == "judge" and r["correct"]),
+                     "normalised_scored": sum(1 for r in rows if r.get("scored_by") == "normalised" and r["correct"]),
                      "tiers": dict(Counter(r.get("tier") or "none" for r in rows))}
         for c in classes:
             cr = [r for r in rows if r["task_class"] == c]
@@ -107,30 +110,31 @@ def build(run_dir: Path, benchmark: str, systems: list[str], *, rejudged: bool =
         facts = sig["facts"]
         audit[s] = {"verified_citation": sum(1 for q in common if facts.get(q, {}).get("verified_quotes") or facts.get(q, {}).get("check") in DERIVATION_CHECKS),
                     "replayable_numeric": sum(1 for q in numeric if facts.get(q, {}).get("check") in DERIVATION_CHECKS),
-                    "numeric": len(numeric), **{k: v for k, v in sig.items() if k != "facts"}}
+                    "numeric": len(numeric), "sub_calls": sum(int(results[s][q].get("sub_calls") or 0) for q in common),
+                    **{k: v for k, v in sig.items() if k != "facts"}}
     # ---- markdown
     L = [f"# {benchmark}: cross-system comparison", "",
          f"Run dir `{run_dir}`. {n} questions answered by every system." + (" Scores are re-judged offline (majority of judge passes)." if rejudged else ""), "",
-         "| System | Correct | Accuracy | Judge-scored | Spend | Latency p50 | Status |", "|---|---|---|---|---|---|---|"]
+         "| System | Correct | Accuracy | Normalised / Judge-scored | Spend | Latency p50 | Status |", "|---|---|---|---|---|---|---|"]
     for s in systems:
         t = totals[s]
-        L.append(f"| {LABELS.get(s, s)} | {t['correct']} / {n} | {t['correct'] / n:.1%} | {t['judge_scored']} | ${t['spend_usd']:.2f} | "
+        L.append(f"| {LABELS.get(s, s)} | {t['correct']} / {n} | {t['correct'] / n:.1%} | {t['normalised_scored']} / {t['judge_scored']} | ${t['spend_usd']:.2f} | "
                  f"{t['latency_p50_s']} s | {t['status']} |" if n else f"| {LABELS.get(s, s)} | – |")
     L += ["", "| Task class | " + " | ".join(LABELS.get(s, s) for s in systems) + " |", "|---|" + "---|" * len(systems)]
     for c in classes:
         L.append(f"| `{c}` ({by_class[c][systems[0]][1]}) | " + " | ".join(f"{by_class[c][s][0]} / {by_class[c][s][1]}" for s in systems) + " |")
     L += ["", "## Auditability and how each arm worked", "",
-          "| System | Verified citation | Replayable derivation (numeric) | Tiers | Root calls | Cells | SQL | calc | Embed batches | Reviews | Halts |",
-          "|---|---|---|---|---|---|---|---|---|---|---|"]
+          "| System | Verified citation | Replayable derivation (numeric) | Tiers | Root calls | Sub calls | Cells | SQL | calc | Embed batches | Reviews | Halts | Nudges |",
+          "|---|---|---|---|---|---|---|---|---|---|---|---|---|"]
     for s in systems:
         if s not in audit:
-            L.append(f"| {LABELS.get(s, s)} | 0 / {n} | 0 / {sum(1 for q in common if results[s][q]['task_class'] == 'numeric')} | – | 0 | 0 | 0 | 0 | 0 | 0 | 0 |")
+            L.append(f"| {LABELS.get(s, s)} | 0 / {n} | 0 / {sum(1 for q in common if results[s][q]['task_class'] == 'numeric')} | – | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |")
             continue
         a = audit[s]
         tiers = totals[s]["tiers"]
         L.append(f"| {LABELS.get(s, s)} | {a['verified_citation']} / {n} | {a['replayable_numeric']} / {a['numeric']} | "
-                 f"{tiers.get('high', 0)}/{tiers.get('medium', 0)}/{tiers.get('low', 0)} | {a['root_calls']} | {a['cells']} | {a['cells_sql']} | "
-                 f"{a['cells_calc']} | {a['embed_batches']} | {a['claim_reviews']} | {a['review_halts']} |")
+                 f"{tiers.get('high', 0)}/{tiers.get('medium', 0)}/{tiers.get('low', 0)} | {a['root_calls']} | {a['sub_calls']} | {a['cells']} | {a['cells_sql']} | "
+                 f"{a['cells_calc']} | {a['embed_batches']} | {a['claim_reviews']} | {a['review_halts']} | {a['certificate_nudges']} |")
     L += ["", "## Misses (X = scored wrong)", "", "| qid | class | gold | " + " | ".join(systems) + " |", "|---|---|---|" + "---|" * len(systems)]
     for m in misses:
         L.append(f"| `{m['qid']}` | {m['class']} | {str(m['gold'])[:40]} | " + " | ".join("X" if m["answers"][s]["miss"] else "" for s in systems) + " |")

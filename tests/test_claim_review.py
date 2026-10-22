@@ -440,7 +440,8 @@ async def test_real_wrong_year_source_is_not_accepted_and_source_is_unchanged(tm
     root = MockLLM(default="```python\nFINAL('42', quotes=['Revenue was 42.'])\n```")
     sub = MockLLM(default="COMPLETE").rule(r'"fields"', json.dumps({
         "reviews": [reply("insufficient", reason="Evidence is from fiscal 2020, not 2024.")]}))
-    r = runner(sub, claim_review_enabled=True, max_root_iters=2)
+    # Legacy round cap: the loop keeps pushing back until the root budget ends.
+    r = runner(sub, claim_review_enabled=True, max_root_iters=2, claim_review_max_rounds=6)
     r.root_client = root
     result = await r.run("What was revenue in 2024?", EnvSpec(
         mode="docdb", corpus_db=str(corpus), manifest=manifest), run_dir=tmp_path / "runs")
@@ -757,8 +758,9 @@ def classification_draft(annotation_id=1, version="first", **changes):
 
 async def test_identical_labels_with_new_publication_id_reuse_rejected_review():
     gate = claim_review.ReviewGate()
-    sub = client(reply("insufficient", refs=["f0p0"], reason="The rubric omits requested categories."))
-    adjudicator = client(reply("insufficient", refs=["f0p0"], reason="The requested vocabulary is incomplete."))
+    # A certified count is scope-reviewed: a named missing category is a contradiction.
+    sub = client(reply("contradicted", refs=["f0p0"], reason="The rubric omits requested categories."))
+    adjudicator = client(reply("contradicted", refs=["f0p0"], reason="The requested vocabulary is incomplete."))
     original = classification_draft()
     before = copy.deepcopy(original)
     first = await gate_check(gate, original, sub=sub, adjudicator=adjudicator)
@@ -999,7 +1001,7 @@ async def test_partial_batch_keeps_supported_fields_and_marks_only_the_stalled_o
 
 def test_review_breaker_settings_parse_from_env(monkeypatch, tmp_path):
     monkeypatch.chdir(tmp_path)
-    assert Settings().claim_review_max_stalls == 1 and Settings().claim_review_max_rounds == 6
+    assert Settings().claim_review_max_stalls == 1 and Settings().claim_review_max_rounds == 3
     monkeypatch.setenv("RNSR_CLAIM_REVIEW_MAX_STALLS", "0")
     monkeypatch.setenv("RNSR_CLAIM_REVIEW_MAX_ROUNDS", "9")
     s = Settings.from_env()
@@ -1039,3 +1041,122 @@ def test_parent_certificate_detection():
     assert _parent_certificate(ev) is None
     ev[1]["records"][0]["selection_executed_by"] = "parent"
     assert _parent_certificate(ev)["evidence_id"] == "f0p0"
+
+
+def test_parent_certificate_detects_certified_classification_count():
+    from rnsr.harness.claim_review import _parent_certificate
+
+    ev = [{"evidence_id": "f0p0", "kind": "classification_aggregate",
+           "classification": {"certified": False, "operation": "count", "total": 50}}]
+    assert _parent_certificate(ev) is None
+    ev[0]["classification"]["certified"] = True
+    cert = _parent_certificate(ev)
+    assert cert["evidence_id"] == "f0p0" and cert["n_rows"] == 50 and cert["kind"] == "classification"
+
+
+async def test_skip_policy_supports_certified_field_without_a_model_call():
+    from rnsr.harness.claim_review import review_final
+
+    report = {"passed": True, "check": "source_bound_calculation", "answer": "15",
+              "calculation_id": "agg1",
+              "records": [{"id": "agg1", "kind": "aggregate", "operation": "count", "n_rows": 15,
+                           "selection_executed_by": "parent", "selection": "SELECT rowid FROM t",
+                           "value": "15", "tables": ["t"], "quote": "x"}]}
+    sub = MockLLM(default=json.dumps({"reviews": [reply("contradicted", "f0", reason="no")]}))
+    out = await review_final({"value": "15", "verification": report}, [("q", "How many invoices?")],
+                             batch=False, client=sub, model="sub", ledger=BudgetLedger(),
+                             certificate_policy="skip")
+    field = out["fields"][0]
+    assert field["status"] == "reviewed" and field["verdict"] == "supported"
+    assert field["reason_code"] == "certificate_parent_verified" and field["evidence_ids"] == ["f0p0"]
+    assert sub.calls == []                       # no reviewer round trip
+    # Under scope_only the same field is sent to the reviewer.
+    out = await review_final({"value": "15", "verification": report}, [("q", "How many invoices?")],
+                             batch=False, client=sub, model="sub", ledger=BudgetLedger(),
+                             certificate_policy="scope_only")
+    assert len(sub.calls) == 1 and out["fields"][0].get("certificate")
+    # A certified classification count keeps its scope round even under "skip".
+    cls = classification_draft()
+    out = await review_final(cls, [("q", "How many human referents?")], batch=False, client=sub,
+                             model="sub", ledger=BudgetLedger(), certificate_policy="skip")
+    assert len(sub.calls) == 2 and out["fields"][0]["certificate"]["kind"] == "classification"
+
+
+def test_certificate_policy_default_and_validation(monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
+    assert Settings().claim_review_certificate_policy == "skip"
+    assert Settings().claim_review_max_rounds == 3
+    assert Settings().require_certificate_for_derived is True
+    monkeypatch.setenv("RNSR_CLAIM_REVIEW_CERTIFICATE_POLICY", "bogus")
+    with pytest.raises(ValueError):
+        Settings.from_env()
+
+
+async def test_default_round_cap_surfaces_contested_answer_as_low_tier(tmp_path, monkeypatch):
+    """Two rounds (review + one resubmission), then the contested field is
+    returned flagged rather than burning the remaining root budget."""
+    monkeypatch.setattr("rnsr.harness.loop.recover_variable", AsyncMock(return_value=None))
+    submitted = final()
+    stub_sandbox(monkeypatch, *(copy.deepcopy(submitted) for _ in range(6)))
+    sub = MockLLM(default="COMPLETE").rule(r'"fields"', _rejecting())
+    r = runner(sub, max_root_iters=8)
+    r.root_client = MockLLM(default="```python\nFINAL('draft')\n```").rule(r'"fields"', _rejecting())
+    result = await r.run("Revenue?", EnvSpec(mode="docdb"), run_dir=tmp_path)
+    assert result.status == "final"
+    assert result.final["claim_review"]["reason_code"] in ("review_stalled", "review_rounds_exhausted")
+    assert result.final["claim_review"]["rounds"] <= 3
+    assert result.evidence.tier == "low" and result.evidence.claim_review_status == "unverified"
+
+
+def test_large_operand_proofs_are_summarised_not_dropped():
+    from rnsr.harness.claim_review import MAX_PROMPT_CHARS, MAX_SOURCE_RECORDS, _proof
+
+    def src(i):
+        return {"id": f"src_{i}", "kind": "source", "value": str(100 + i), "raw_value": str(100 + i),
+                "quote": f"Invoice {i} | Total | {100 + i}" + " filler" * 40,
+                "source": {"doc_id": f"inv_{i}", "table": f"t_inv_{i}", "rowid": 1, "column": "total",
+                           "page": 1, "char_start": 0, "char_end": 30}}
+    records = [{"id": "calc_1", "kind": "calculation", "operation": "sum", "value": "60000",
+                "operand_ids": [f"src_{i}" for i in range(400)],
+                "source_ids": [f"src_{i}" for i in range(400)]}] + [src(i) for i in range(400)]
+    report = {"passed": True, "check": "source_bound_calculations", "answer": "60000", "records": records}
+    proof = _proof(report, "f0")[0]
+    kinds = [r["kind"] for r in proof["records"]]
+    assert kinds[0] == "calculation" and kinds[1] == "source_summary"
+    assert kinds.count("source") == MAX_SOURCE_RECORDS
+    summary = proof["records"][1]
+    assert summary["n_sources"] == 400 and summary["n_documents"] == 400 and len(summary["documents"]) == MAX_SOURCE_RECORDS
+    assert summary["values_min"] == "100" and summary["values_max"] == "499"
+    assert len(json.dumps(proof)) < MAX_PROMPT_CHARS // 3
+    assert proof["records"][0]["n_source_ids"] == 400 and len(proof["records"][0]["source_ids"]) == 5
+    # small proofs are untouched
+    small = {**report, "records": records[:1] + [src(i) for i in range(3)]}
+    assert [r["kind"] for r in _proof(small, "f0")[0]["records"]] == ["calculation"] + ["source"] * 3
+
+
+def test_intermediate_calculations_and_long_quote_lists_stay_reviewable():
+    from rnsr.harness.claim_review import MAX_SOURCE_RECORDS, _evidence, _proof
+
+    def src(i):
+        return {"id": f"src_{i}", "kind": "source", "value": "10", "quote": f"row {i}",
+                "source": {"doc_id": f"d{i}", "table": f"t{i}", "rowid": 1, "column": "amt"}}
+    per_row = [{"id": f"mul_{i}", "kind": "calculation", "operation": "multiply", "value": "20",
+                "operand_ids": [f"src_{i}", f"src_{i}"]} for i in range(100)]
+    root = {"id": "total", "kind": "calculation", "operation": "sum", "value": "2000",
+            "operand_ids": [f"mul_{i}" for i in range(100)]}
+    report = {"passed": True, "check": "source_bound_calculations", "answer": "2000",
+              "records": [root] + per_row + [src(i) for i in range(100)],
+              "quotes": [{"quote": f"row {i}", "matched": True} for i in range(96)]}
+    records = _proof(report, "f0")[0]["records"]
+    kinds = [r["kind"] for r in records]
+    assert kinds[0] == "calculation" and records[0]["id"] == "total"
+    assert kinds[1] == "calculation_summary" and records[1]["n_intermediate"] == 100
+    assert records[1]["operations"] == {"multiply": 100}
+    assert kinds.count("calculation") == 1 and kinds.count("source") == MAX_SOURCE_RECORDS
+    summary = next(r for r in records if r["kind"] == "source_summary")
+    assert summary["n_documents"] == 100 and len(summary["documents"]) == MAX_SOURCE_RECORDS
+    # 96 quotes on a certified field: sampled and marked truncated, not refused.
+    evidence, truncated = _evidence(report, "f0")
+    assert truncated and 0 < len(evidence) <= 32
+    with pytest.raises(ValueError, match="evidence_limit"):
+        _evidence({**report, "check": "lexical_source_match"}, "f0")

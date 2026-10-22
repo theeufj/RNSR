@@ -186,14 +186,14 @@ class TestAnswerBatch:
 
     def test_one_group_answers_in_input_order(self, corpus, tmp_path):
         root = MockLLM().script(
-            "```python\nFINAL_BATCH({'q000': 'Paris', 'q001': '42', "
+            "```python\nFINAL_BATCH({'q000': 'Paris', 'q001': '$3,234 million', "
             "'q002': 'NOT_FOUND'}, quotes={'q000': ['ACME 2023 results.'], "
             "'q001': ['Net revenue was $3,234 million.']})\n```"
         )
         answers = rnsr.answer_batch_sync(
             ["Capital?", "Revenue?", "Weather?"], corpus,
             runner=make_runner(root), run_dir=tmp_path / "runs")
-        assert [a.answer for a in answers] == ["Paris", "42", "NOT_FOUND"]
+        assert [a.answer for a in answers] == ["Paris", "$3,234 million", "NOT_FOUND"]
         assert all(a.status == "final" for a in answers)
         assert [a.question for a in answers] == ["Capital?", "Revenue?", "Weather?"]
 

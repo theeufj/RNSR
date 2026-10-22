@@ -20,7 +20,14 @@ from rnsr.eval.autopsy import attach_causes, build_ledger, classify_miss, write_
 from rnsr.eval.baselines.rag import rag_answer
 from rnsr.eval.datasets.base import EvalItem
 from rnsr.eval.manifest import EvalResumeError, build_run_manifest, ensure_run_manifest
-from rnsr.eval.metrics import SCORER_VERSION, EvalResult, judge_answer, score_answer, summarize
+from rnsr.eval.metrics import (
+    JUDGE_VERSION,
+    SCORER_VERSION,
+    EvalResult,
+    judge_answer,
+    score_answer,
+    summarize,
+)
 from rnsr.harness.loop import EnvSpec, RootRunner
 
 SYSTEMS = ("docdb", "rlm-classic", "dci", "dci-raw", "stuffing",
@@ -360,6 +367,7 @@ async def run_eval(
 
     summary = summarize(results)
     summary["scorer_version"] = SCORER_VERSION
+    summary["judge_version"] = JUDGE_VERSION
     summary["run_manifest_fingerprint"] = manifest["fingerprint"]
     summary["autopsy"] = {
         "cause_counts": summary["cause_counts"],

@@ -74,8 +74,9 @@ def trajectory_signals(tdir: Path, qids: set[str]) -> dict:
     return out
 
 
-def build(run_dir: Path, benchmark: str, systems: list[str]) -> dict:
-    results = {s: load_results(run_dir / f"{benchmark}-{s}" / "results.jsonl") for s in systems}
+def build(run_dir: Path, benchmark: str, systems: list[str], *, rejudged: bool = False) -> dict:
+    name = "results.rejudged.jsonl" if rejudged else "results.jsonl"
+    results = {s: load_results(run_dir / f"{benchmark}-{s}" / name) for s in systems}
     common = set.intersection(*(set(r) for r in results.values() if r)) if any(results.values()) else set()
     n = len(common)
     classes = sorted({results[s][q]["task_class"] for s in systems for q in common if q in results[s]})
@@ -108,7 +109,8 @@ def build(run_dir: Path, benchmark: str, systems: list[str]) -> dict:
                     "replayable_numeric": sum(1 for q in numeric if facts.get(q, {}).get("check") in DERIVATION_CHECKS),
                     "numeric": len(numeric), **{k: v for k, v in sig.items() if k != "facts"}}
     # ---- markdown
-    L = [f"# {benchmark}: cross-system comparison", "", f"Run dir `{run_dir}`. {n} questions answered by every system.", "",
+    L = [f"# {benchmark}: cross-system comparison", "",
+         f"Run dir `{run_dir}`. {n} questions answered by every system." + (" Scores are re-judged offline (majority of judge passes)." if rejudged else ""), "",
          "| System | Correct | Accuracy | Judge-scored | Spend | Latency p50 | Status |", "|---|---|---|---|---|---|---|"]
     for s in systems:
         t = totals[s]
@@ -150,9 +152,10 @@ def main(argv=None) -> None:
     ap.add_argument("--run-dir", type=Path, required=True)
     ap.add_argument("--benchmark", required=True)
     ap.add_argument("--systems", default="stuffing,rlm-classic,dci,dci-raw,docdb")
+    ap.add_argument("--rejudged", action="store_true", help="read results.rejudged.jsonl (see rnsr.eval.rejudge)")
     args = ap.parse_args(argv)
     systems = [s.strip() for s in args.systems.split(",") if s.strip()]
-    s = build(args.run_dir, args.benchmark, systems)
+    s = build(args.run_dir, args.benchmark, systems, rejudged=args.rejudged)
     for sys_ in systems:
         t = s["totals"][sys_]
         print(f"{LABELS.get(sys_, sys_):34} {t['correct']}/{t['n']}  ${t['spend_usd']:.2f}")

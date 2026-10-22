@@ -12,7 +12,13 @@
   3-4x the REPL arms' cost; the classification-vote path on OOLONG costs
   8-17x and buys nothing. July's FinanceBench predictions rescored under the
   current scorer: 29/40, against 24-25/40 today; the gap is answer
-  presentation on the certificate path (partly fixed) and judge variance.
+  presentation on the certificate path and judge protocol. Judge v3
+  (`rnsr.eval.metrics`): rubric states method/source text is not a
+  contradiction and formatting is not substance; the judge explains before a
+  final-line verdict (a bare-token judge snapped to NO on long rubrics).
+  `rnsr.eval.rejudge` re-scores saved answers offline with repeated passes.
+  Under judge v3 on the same 40 questions: July DocDB 30, this week before the
+  presentation fix 30, after it 35; classic 35, DCI 34, DCI-raw 33, prompt 30.
 - Paper rewritten (second version, `docs/paper/rnsr-docdb-2026-10.html`):
   a layer-by-layer evaluation of ingestion, REPL, typed relations and the
   evidence layer across five arms and four generated corpora; aggregate

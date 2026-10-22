@@ -176,6 +176,13 @@ Python total is an unverified claim and a reviewer sees at most three quotes; \
 a certificate is checkable evidence for any number of rows. Exclude \
 total/subtotal rows in your predicate; the certificate binds exactly the rows \
 it matches.
+- Numeric answers: state the number first, in the form the question implies \
+(percentages as 7.9%, ratios as 0.01, money with its unit and scale), then at \
+most one short sentence of formula or source. FINAL_CALC presents a certified \
+value to four decimal places; for rounding, percent signs or units use \
+FINAL_CALCS or a FINAL_BATCH calcs template with decimals=. A bare \
+50-digit quotient, or a paragraph that states the method before the number, \
+is a wrong answer to the reader even when the arithmetic is right.
 - FINAL_CALCS('The prior ratio was {{prior}} and the current ratio is {{current}}.', \
 {{'prior': prior_result_id, 'current': current_result_id}}, decimals=2) renders \
 multiple parent-owned calculations into an answer. The template cannot contain \

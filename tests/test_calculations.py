@@ -348,3 +348,17 @@ FINAL_BATCH({'q1': 'x'}, calcs={'q1': {'id': agg['id'], 'template': 'Mean amount
         assert cell.final['verification']['q1']['check'] == 'source_bound_calculations'
         bad = await sandbox.exec_cell("FINAL_BATCH({'q1': 'x'}, calcs={'q1': {'id': agg['id'], 'template': 'In FY2026 {value}'}})")
         assert not bad.ok and 'numeric answer literals' in bad.error
+
+
+def test_final_calc_presents_bounded_precision(registry):
+    from rnsr.env.calculations import present
+
+    assert present('1.5671219971738106453132359868') == '1.5671'
+    assert present('39.72836631742336') == '39.7284'
+    assert present('360.0') == '360.0' and present('77976.25') == '77976.25' and present('-0.0153') == '-0.0153'
+    a, b = fact(registry, 1), fact(registry, 2)
+    ratio = registry.calculate('divide', [a['id'], b['id']])          # 100/250 = 0.4
+    value, report = registry.resolve_final(ratio['id'], ratio['value'])
+    assert value == '0.4' and report['answer'] == '0.4' and report['calculation']['value'] == ratio['value']
+    third = registry.calculate('divide', [a['id'], registry.source_number('t_report_001', 3, 'amount')['id']])  # 100/10
+    assert registry.resolve_final(third['id'], present(third['value']))[0] == third['value']

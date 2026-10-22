@@ -58,6 +58,23 @@ def _render(value: Decimal) -> str:
     return format(value, 'f')
 
 
+PRESENT_DECIMALS = 4
+
+
+def present(value: str) -> str:
+    """The answer form of a certified value: at most four decimal places,
+    trailing zeros dropped. The record keeps the full-precision value; a
+    50-digit quotient is evidence, not an answer (seen live on FinanceBench)."""
+    number = Decimal(value)
+    if number.as_tuple().exponent >= -PRESENT_DECIMALS:
+        return value                      # already a presentable rendering
+    with localcontext() as ctx:
+        ctx.prec = PRECISION
+        rounded = number.quantize(Decimal(1).scaleb(-PRESENT_DECIMALS), rounding=ROUND_HALF_EVEN)
+    text = format(rounded, 'f')
+    return text.rstrip('0').rstrip('.') if '.' in text else text
+
+
 class CalculationRegistry:
     """Session-local facts/results. Never instantiate this in the child.
 
@@ -470,8 +487,8 @@ class CalculationRegistry:
         records, reports, values = {}, [], {}
         for name, result_id in results.items():
             result = self.get(result_id)
-            value, report = self.resolve_final(result_id, result['value'])
-            values[name] = value
+            _presented, report = self.resolve_final(result_id, result['value'])
+            values[name] = result['value']     # templates round the raw value themselves
             reports.append(report)
             records.update({record['id']: record for record in report['records']})
         answer = render_calculations(template, values, decimals=decimals)
@@ -544,7 +561,7 @@ class CalculationRegistry:
                 result_id != self._metric_result_id
                 or result.get('metric_contract', {}).get('sha256') != self._metric_contract.digest):
             raise ValueError("FINAL_CALC result does not satisfy the caller-issued metric contract")
-        if not isinstance(submitted_value, str) or submitted_value != result['value']:
+        if not isinstance(submitted_value, str) or submitted_value not in (result['value'], present(result['value'])):
             raise ValueError("FINAL_CALC value differs from the parent calculation result")
         facts = [self.get(source_id) for source_id in result['source_ids']]
         if result['kind'] == 'aggregate':
@@ -579,7 +596,7 @@ class CalculationRegistry:
                 visit(key)
         visit(result_id)
         report = {'passed': True, 'check': 'source_bound_calculation',
-                                 'answer': result['value'], 'quotes': quotes,
+                                 'answer': present(result['value']), 'quotes': quotes,
                                  'calculation_id': result_id, 'calculation': result,
                                  'records': list(graph.values()),
                                  'claim_support': 'not_checked'}
@@ -587,4 +604,4 @@ class CalculationRegistry:
             report['metric_contract'] = self._metric_contract.describe()
             report['metric_contract_satisfied'] = True
         self._check_deadline()
-        return result['value'], report
+        return present(result['value']), report

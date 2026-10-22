@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- Public benchmarks under the five-arm protocol (`docs/benchmarks/public-2026-10.md`):
+  FinanceBench 40-question seeded subset over 18 real filings, CUAD-long (10)
+  and OOLONG (50), with `rnsr eval` systems `stuffing`, `dci`, `dci-raw`, a
+  shared `--corpus-cache`, `--stratify`, `rnsr.eval.migrate_cache` to carry
+  historical corpora forward, and `rnsr.eval.public_arms_report`. Arms tie
+  within noise on every benchmark; DocDB alone has verified citations on
+  every answer and replayable derivations on 12/20 FinanceBench numerics at
+  3-4x the REPL arms' cost; the classification-vote path on OOLONG costs
+  8-17x and buys nothing. July's FinanceBench predictions rescored under the
+  current scorer: 29/40, against 24-25/40 today; the gap is answer
+  presentation on the certificate path (partly fixed) and judge variance.
 - Paper rewritten (second version, `docs/paper/rnsr-docdb-2026-10.html`):
   a layer-by-layer evaluation of ingestion, REPL, typed relations and the
   evidence layer across five arms and four generated corpora; aggregate

@@ -72,3 +72,40 @@ def load_financebench(limit: int | None = None,
             meta={"doc_name": row["doc_name"], "evidence": row.get("evidence")},
         ))
     return items
+
+
+def stratified_subset(items: list[EvalItem], n: int, *, seed: int = 11,
+                      record: Path | None = None) -> list[EvalItem]:
+    """A fixed, seeded subset of n questions: balanced between numeric and
+    textual golds and concentrated on filings that carry several questions
+    (so each ingested corpus serves more than one answer). The chosen qids
+    are written to ``record`` so every system answers the identical set; if
+    ``record`` already exists it is honoured instead of re-sampling."""
+    import json
+    import random
+
+    if record is not None and record.exists():
+        chosen = json.loads(record.read_text())["qids"]
+        by_qid = {i.qid: i for i in items}
+        return [by_qid[q] for q in chosen if q in by_qid]
+    rng = random.Random(seed)
+    by_doc: dict[str, list[EvalItem]] = {}
+    for item in items:
+        by_doc.setdefault(item.meta.get("doc_name", str(item.sources[0])), []).append(item)
+    # Filings with more questions first; ties broken by seed.
+    docs = sorted(by_doc, key=lambda d: (-len(by_doc[d]), rng.random()))
+    want = {"numeric": n // 2, "textual": n - n // 2}
+    chosen: list[EvalItem] = []
+    for doc in docs:
+        for item in sorted(by_doc[doc], key=lambda i: i.qid):
+            if want.get(item.task_class, 0) > 0:
+                chosen.append(item)
+                want[item.task_class] -= 1
+        if sum(want.values()) == 0:
+            break
+    chosen.sort(key=lambda i: i.qid)
+    if record is not None:
+        record.parent.mkdir(parents=True, exist_ok=True)
+        record.write_text(json.dumps({"seed": seed, "n": n, "qids": [i.qid for i in chosen],
+                                      "filings": sorted({i.meta.get("doc_name", "") for i in chosen})}, indent=1))
+    return chosen

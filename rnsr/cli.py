@@ -249,7 +249,8 @@ def eval_cmd(
                                   help="synthetic-oolong | oolong | financebench | "
                                        "matter | office | cuad | cuad-long | contractnli | legalbench"),
     system: str = typer.Option("docdb", "--system", "-s",
-                               help="docdb | rlm-classic | bm25-rag | vector-rag | rerank-rag | graph-rag"),
+                               help="docdb | rlm-classic | dci | dci-raw | stuffing | "
+                                    "bm25-rag | vector-rag | rerank-rag | graph-rag"),
     limit: int | None = typer.Option(None, "--limit", "-n"),
     run_dir: Path = typer.Option(Path("runs/eval"), "--run-dir"),
     dataset_id: str | None = typer.Option(None, "--dataset-id",
@@ -258,6 +259,13 @@ def eval_cmd(
     concurrency: int = typer.Option(1, "--concurrency", "-c",
                                     help="items answered in parallel "
                                          "(wall-clock win, same LLM spend)"),
+    corpus_cache: Path | None = typer.Option(
+        None, "--corpus-cache", help="shared corpus cache so every system answers over identical "
+                                     "ingested artifacts (default: <run-dir>/<benchmark>-<system>/corpora)"),
+    stratify: int | None = typer.Option(
+        None, "--stratify", help="financebench: a fixed, seeded subset of N questions balanced across "
+                                 "numeric/textual and concentrated on few filings; the qid list is "
+                                 "written to <run-dir>/<benchmark>-subset.json so every system answers it"),
 ) -> None:
     """Run the evaluation harness (§8)."""
     import asyncio
@@ -275,9 +283,12 @@ def eval_cmd(
 
         items = load_oolong(dataset_id or DEFAULT_DATASET_ID, limit=limit)
     elif benchmark == "financebench":
-        from rnsr.eval.datasets.financebench import load_financebench
+        from rnsr.eval.datasets.financebench import load_financebench, stratified_subset
 
-        items = load_financebench(limit=limit)
+        items = load_financebench(limit=None if stratify else limit)
+        if stratify:
+            items = stratified_subset(items, stratify, seed=seed,
+                                      record=run_dir / f"{benchmark}-subset.json")
     elif benchmark == "cuad":
         from rnsr.eval.datasets.legal import load_cuad
 
@@ -311,8 +322,8 @@ def eval_cmd(
     runner = _make_runner(settings)
     out_dir = run_dir / f"{benchmark}-{system}"
     _, summary = asyncio.run(
-        run_eval(items, system, runner, run_dir=out_dir, limit=limit,
-                 concurrency=concurrency)
+        run_eval(items, system, runner, run_dir=out_dir, limit=None if stratify else limit,
+                 concurrency=concurrency, cache_dir=corpus_cache)
     )
     console.print_json(json.dumps(summary))
     console.print(f"results in {out_dir}")

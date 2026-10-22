@@ -23,8 +23,14 @@ from rnsr.eval.manifest import EvalResumeError, build_run_manifest, ensure_run_m
 from rnsr.eval.metrics import SCORER_VERSION, EvalResult, judge_answer, score_answer, summarize
 from rnsr.harness.loop import EnvSpec, RootRunner
 
-SYSTEMS = ("docdb", "rlm-classic", "bm25-rag", "vector-rag", "rerank-rag",
-           "graph-rag")
+SYSTEMS = ("docdb", "rlm-classic", "dci", "dci-raw", "stuffing",
+           "bm25-rag", "vector-rag", "rerank-rag", "graph-rag")
+# Arms that differ from docdb only in corpus presentation (see
+# rnsr.eval.matter_arms): dci = one file per document in the REPL with
+# ls/grep/read; dci-raw = the same over fast text extraction of the original
+# files (no layout model, no tables, no transcription); stuffing = the whole
+# corpus in one prompt per question.
+_PRESENTATION_ARMS = ("rlm-classic", "dci", "dci-raw", "stuffing")
 
 def _corpus_valid(path: Path, n_sources: int) -> bool:
     """A cached corpus must hold every source document and some text."""
@@ -42,15 +48,11 @@ def _corpus_valid(path: Path, n_sources: int) -> bool:
         return False
 
 
-def _corpus_for(sources: list[Path], cache_dir: Path, settings: Settings) -> Path:
-    """Ingest sources into a cached corpus.db (keyed by file content).
-
-    Cached artifacts are validated before reuse — an interrupted ingest must
-    trigger a rebuild, never an empty environment (seen live)."""
+def _cache_name(sources: list[Path], settings: Settings) -> str:
+    """Cache file name for a source set under the current ingestion identity."""
     from rnsr.ingest.cost_estimate import resolve_transcriber
-    from rnsr.ingest.pipeline import ingest
 
-    transcriber, model = resolve_transcriber(settings)
+    _transcriber, model = resolve_transcriber(settings)
     # Ingestion fixes and transcription settings must not reuse older artifacts
     # that omitted pages. Keep previous caches intact for diagnosis.
     # v3 preserves headerless first rows and checks independent prose only.
@@ -61,7 +63,19 @@ def _corpus_for(sources: list[Path], cache_dir: Path, settings: Settings) -> Pat
         source = Path(s)
         h.update(json.dumps((str(source.resolve()), sha256(source.read_bytes()).hexdigest()))
                  .encode())
-    out = cache_dir / f"corpus_{h.hexdigest()[:16]}.db"
+    return f"corpus_{h.hexdigest()[:16]}.db"
+
+
+def _corpus_for(sources: list[Path], cache_dir: Path, settings: Settings) -> Path:
+    """Ingest sources into a cached corpus.db (keyed by file content).
+
+    Cached artifacts are validated before reuse — an interrupted ingest must
+    trigger a rebuild, never an empty environment (seen live)."""
+    from rnsr.ingest.cost_estimate import resolve_transcriber
+    from rnsr.ingest.pipeline import ingest
+
+    transcriber, _model = resolve_transcriber(settings)
+    out = cache_dir / _cache_name(sources, settings)
     if out.exists() and not _corpus_valid(out, len(sources)):
         out.unlink()
     if not out.exists():
@@ -85,6 +99,48 @@ def _text_corpus_for(context: str, cache_dir: Path, settings: Settings) -> Path:
     return out
 
 
+def load_documents_raw_paths(paths: list[Path]) -> dict[str, str]:
+    """Fast text extraction of specific original files (no tables, no OCR)."""
+    from rnsr.ingest.dispatch import parse_any_fast
+
+    docs: dict[str, str] = {}
+    for p in sorted(Path(x) for x in paths):
+        name = p.stem + ".txt"
+        try:
+            d = parse_any_fast(p)
+            docs[name] = "\n".join(e.text or "" for e in d.elements)
+        except Exception as exc:
+            docs[name] = f"[unreadable {p.name}: {type(exc).__name__}]"
+    return docs
+
+
+_STUFFING_SYSTEM = """\
+You answer a question about a document collection from the complete text of \
+the collection, which follows in full. Answer from the documents only. Give the \
+answer directly and concisely, then at most one sentence naming the document it \
+rests on. If the documents do not contain the answer, say so plainly.
+
+DOCUMENTS
+=========
+{corpus}
+"""
+
+
+async def _stuffing_answer(item: EvalItem, cache_dir: Path, runner: RootRunner, settings: Settings):
+    """Whole corpus in one prompt per question; the arm with no retrieval and no code."""
+    if item.sources:
+        from rnsr.eval.matter_arms import flat_context, load_documents
+
+        corpus = flat_context(load_documents(_corpus_for(item.sources, cache_dir, settings)))
+    else:
+        corpus = item.context or ""
+    system = _STUFFING_SYSTEM.format(corpus=corpus)
+    resp = await runner.root_client.complete(f"QUESTION: {item.question}", model=runner.root_model,
+                                             system=system, max_tokens=1024)
+    text = (resp.text or "").strip()
+    return text or None, resp.usage
+
+
 def _env_for(item: EvalItem, system: str, cache_dir: Path, settings: Settings) -> EnvSpec:
     if system == "rlm-classic":
         context = item.context
@@ -94,6 +150,20 @@ def _env_for(item: EvalItem, system: str, cache_dir: Path, settings: Settings) -
             with CorpusDB(corpus_path) as corpus:
                 context = "\n\n".join(corpus.doc_dict().values())
         return EnvSpec(mode="classic", context=context)
+
+    if system in ("dci", "dci-raw"):
+        from rnsr.eval.matter_arms import load_documents
+
+        if system == "dci-raw":
+            if not item.sources:
+                # No original files: fall back to the flat context as one file.
+                return EnvSpec(mode="dci", files={"context.txt": item.context or ""})
+            files = load_documents_raw_paths(item.sources)
+        elif item.sources:
+            files = load_documents(_corpus_for(item.sources, cache_dir, settings))
+        else:
+            files = {"context.txt": item.context or ""}
+        return EnvSpec(mode="dci", files=files)
 
     if system == "docdb":
         if not item.sources:
@@ -125,6 +195,7 @@ async def run_eval(
     limit: int | None = None,
     judge: bool = True,
     concurrency: int = 1,
+    cache_dir: str | Path | None = None,
 ) -> tuple[list[EvalResult], dict]:
     """Run a benchmark; writes results.jsonl + summary.json under run_dir.
 
@@ -145,7 +216,8 @@ async def run_eval(
     double-ingest the same sources."""
     run_dir = Path(run_dir)
     run_dir.mkdir(parents=True, exist_ok=True)
-    cache_dir = run_dir / "corpora"
+    # A shared cache lets every arm answer over the identical ingested corpus.
+    cache_dir = Path(cache_dir) if cache_dir else run_dir / "corpora"
     settings = runner.settings
     manifest = ensure_run_manifest(run_dir, build_run_manifest(
         items, system, runner, limit=limit, judge=judge, concurrency=concurrency))
@@ -182,7 +254,22 @@ async def run_eval(
         t0 = time.monotonic()
         error_type = None
         try:
-            if system in ("bm25-rag", "vector-rag", "rerank-rag", "graph-rag"):
+            if system == "stuffing":
+                async with ingest_lock:
+                    if item.sources:
+                        await asyncio.to_thread(_corpus_for, item.sources, cache_dir, settings)
+                text, usage = await _stuffing_answer(item, cache_dir, runner, settings)
+
+                class _QR:   # minimal QueryResult surface for the result row
+                    answer = text
+                    status = "final" if text else "unanswered"
+                    ledger = {"spend_usd": usage.cost_usd, "sub_calls": 0,
+                              "input_tokens": usage.input_tokens, "output_tokens": usage.output_tokens}
+                    iterations = 1
+                    trajectory_path = None
+                    evidence = None
+                qr = _QR()
+            elif system in ("bm25-rag", "vector-rag", "rerank-rag", "graph-rag"):
                 async with ingest_lock:
                     corpus_path = await asyncio.to_thread(
                         lambda: _corpus_for(item.sources, cache_dir, settings)

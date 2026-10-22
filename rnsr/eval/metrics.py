@@ -32,6 +32,8 @@ class EvalResult:
     tier: str | None = None     # trust tier from AnswerEvidence; None if unknown
     retrieval_hit: bool | None = None  # gold doc appeared in any search/open
     error_type: str | None = None      # preserve setup failure class for autopsy
+    cap_hit: str | None = None         # 'spend' | 'iterations' | 'wall' when a cap ended the query
+    judge_cost_usd: float = 0.0        # scoring overhead, reported separately from cost_usd
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -231,10 +233,11 @@ If equivalence is unresolved, the verdict is NO. Explain your comparison in at
 most two sentences, then on a final line by itself write exactly YES or NO."""
 
 
-async def judge_answer(client, model: str, question: str,
-                       predicted: str, gold: str) -> bool | None:
-    """One sub-LM YES/NO equivalence call. None when the judge is unusable
-    (call failed or reply unparseable) — callers keep the string verdict."""
+async def judge_answer_with_usage(client, model: str, question: str,
+                                  predicted: str, gold: str) -> tuple[bool | None, float]:
+    """One judge call: (verdict, spend_usd). Verdict is None when the judge
+    is unusable (call failed or reply unparseable). Judge spend is scoring
+    overhead, kept separate from query cost but no longer invisible."""
     try:
         resp = await client.complete(
             _JUDGE_PROMPT.format(payload=json.dumps({
@@ -243,16 +246,24 @@ async def judge_answer(client, model: str, question: str,
             model=model, max_tokens=400,
         )
     except Exception:
-        return None
+        return None, 0.0
+    spend = float(getattr(getattr(resp, "usage", None), "cost_usd", 0.0) or 0.0)
     # The verdict is the last non-empty line; a bare-token judge snapped to NO
     # on long rubrics, so the explanation is required and then discarded.
-    lines = [ln.strip().strip("*`.").upper() for ln in resp.text.strip().splitlines() if ln.strip()]
+    lines = [ln.strip().strip("*`.").upper() for ln in (resp.text or "").strip().splitlines() if ln.strip()]
     verdict = lines[-1] if lines else ""
     if verdict == "YES":
-        return True
+        return True, spend
     if verdict == "NO":
-        return False
-    return None
+        return False, spend
+    return None, spend
+
+
+async def judge_answer(client, model: str, question: str,
+                       predicted: str, gold: str) -> bool | None:
+    """One sub-LM YES/NO equivalence call; None when the judge is unusable."""
+    verdict, _spend = await judge_answer_with_usage(client, model, question, predicted, gold)
+    return verdict
 
 
 def percentile(values: list[float], q: float) -> float:
@@ -298,9 +309,17 @@ def summarize(results: list[EvalResult]) -> dict:
         cause_counts[cause] = cause_counts.get(cause, 0) + 1
         bucket = cause_x_class.setdefault(r.task_class, {})
         bucket[cause] = bucket.get(cause, 0) + 1
+    from rnsr.eval.stats import wilson
+
+    n_correct = sum(r.correct for r in results)
     return {
         "n": len(results),
-        "accuracy": (sum(r.correct for r in results) / len(results)) if results else 0.0,
+        "accuracy": (n_correct / len(results)) if results else 0.0,
+        "accuracy_ci95": list(wilson(n_correct, len(results))),
+        "cap_hit_counts": {
+            c: sum(1 for r in results if r.cap_hit == c)
+            for c in sorted({r.cap_hit for r in results if r.cap_hit})
+        },
         "accuracy_by_class": {
             c: sum(r.correct for r in rs) / len(rs) for c, rs in sorted(by_class.items())
         },
@@ -312,6 +331,7 @@ def summarize(results: list[EvalResult]) -> dict:
         "latency_s": {"p50": percentile(latencies, 0.5), "p95": percentile(latencies, 0.95)},
         "cost_usd": {"p50": percentile(costs, 0.5), "p95": percentile(costs, 0.95)},
         "sub_calls_mean": (sum(r.sub_calls for r in results) / len(results)) if results else 0,
+        "judge_cost_usd_total": round(sum(getattr(r, "judge_cost_usd", 0.0) or 0.0 for r in results), 4),
         "status_counts": {
             s: sum(r.status == s for r in results)
             for s in sorted({r.status for r in results})

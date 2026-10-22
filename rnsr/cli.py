@@ -249,7 +249,7 @@ def eval_cmd(
                                   help="synthetic-oolong | oolong | financebench | "
                                        "matter | office | cuad | cuad-long | contractnli | legalbench"),
     system: str = typer.Option("docdb", "--system", "-s",
-                               help="docdb | rlm-classic | dci | dci-raw | stuffing | "
+                               help="docdb | rlm-classic | dci | dci-raw | stuffing | closed-book | "
                                     "bm25-rag | vector-rag | rerank-rag | graph-rag"),
     limit: int | None = typer.Option(None, "--limit", "-n"),
     run_dir: Path = typer.Option(Path("runs/eval"), "--run-dir"),
@@ -266,6 +266,12 @@ def eval_cmd(
         None, "--stratify", help="financebench: a fixed, seeded subset of N questions balanced across "
                                  "numeric/textual and concentrated on few filings; the qid list is "
                                  "written to <run-dir>/<benchmark>-subset.json so every system answers it"),
+    repeat: int = typer.Option(1, "--repeat", help="answer the same items K times into "
+                               "<run-dir>/<benchmark>-<system>-r<k> (k>=2; r1 is the unsuffixed dir) so "
+                               "run-to-run variance is measured, not assumed"),
+    overlay: Path | None = typer.Option(None, "--overlay", help="gold overlay JSON (accepted equivalents "
+                                        "with reasons; rows it accepts are scored_by=gold_overlay). "
+                                        "financebench defaults to the bundled overlay; pass 'none' to disable"),
 ) -> None:
     """Run the evaluation harness (§8)."""
     import asyncio
@@ -320,13 +326,21 @@ def eval_cmd(
 
     settings = Settings.from_env()
     runner = _make_runner(settings)
-    out_dir = run_dir / f"{benchmark}-{system}"
-    _, summary = asyncio.run(
-        run_eval(items, system, runner, run_dir=out_dir, limit=None if stratify else limit,
-                 concurrency=concurrency, cache_dir=corpus_cache)
-    )
-    console.print_json(json.dumps(summary))
-    console.print(f"results in {out_dir}")
+    gold_overlay = None
+    if str(overlay) != "none" and (overlay or benchmark == "financebench"):
+        from rnsr.eval.gold_overlay import DEFAULT_OVERLAY, GoldOverlay
+
+        gold_overlay = GoldOverlay.load(overlay or DEFAULT_OVERLAY)
+    # Every repeat answers over the same cached corpora.
+    corpus_cache = corpus_cache or run_dir / f"{benchmark}-{system}" / "corpora"
+    for k in range(1, max(1, repeat) + 1):
+        out_dir = run_dir / (f"{benchmark}-{system}" if k == 1 else f"{benchmark}-{system}-r{k}")
+        _, summary = asyncio.run(
+            run_eval(items, system, runner, run_dir=out_dir, limit=None if stratify else limit,
+                     concurrency=concurrency, cache_dir=corpus_cache, overlay=gold_overlay)
+        )
+        console.print_json(json.dumps(summary))
+        console.print(f"results in {out_dir}")
 
 
 @app.command("answer-csv")

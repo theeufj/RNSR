@@ -1,0 +1,21 @@
+{
+ "version": "financebench-overlay-2026-10-23",
+ "note": "Accepted equivalents for golds whose stated form disagrees with the dataset's own justification/evidence. Original golds are untouched; rows accepted here are reported as scored_by=gold_overlay and every table shows accuracy with and without them. Golds that are wrong by their own definition (e.g. financebench_id_10420, whose justification names net income attributable to AES while the arms used consolidated net income; financebench_id_00283, whose justification reads the question as the remaining 10% of a $700M cost) are NOT overlaid and stay misses.",
+ "entries": {
+  "financebench_id_04672": {
+   "accepted": ["$8,738 million", "8,738", "$8.738 billion", "$8.74 billion"],
+   "reason": "Gold '$8.70' is the balance-sheet line 'Property, plant and equipment - net' of $8,738 million stated in billions to one decimal; the question asks for USD millions. The justification says the value was directly extracted from that line.",
+   "source": "justification"
+  },
+  "financebench_id_07661": {
+   "accepted": ["$381.6 million", "381.6", "381,603"],
+   "reason": "Gold '$382.00' is 'Net cash provided by operating activities' of $381,603 thousand rounded to the nearest million; the justification says the value was directly extracted from that line.",
+   "source": "justification"
+  },
+  "financebench_id_00585": {
+   "magnitudes": [["0.6", "0.62"], ["14.7", "14.76", "14.8"]],
+   "reason": "Gold states 0.62% (FY2022) and -14.76% (FY2021) using tax/(pre-tax loss); the filing's own effective tax rate table shows (0.6)% and 14.8%, the opposite sign convention for the same quantities. An answer giving both magnitudes for both years is the gold's claim.",
+   "source": "justification"
+  }
+ }
+}

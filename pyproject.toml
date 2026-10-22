@@ -71,6 +71,7 @@ packages = ["rnsr"]
 
 [tool.hatch.build.targets.wheel.force-include]
 "rnsr/forms/legal_base.json" = "rnsr/forms/legal_base.json"
+"rnsr/eval/datasets/financebench_overlay.json" = "rnsr/eval/datasets/financebench_overlay.json"
 
 [tool.hatch.build.targets.sdist]
 exclude = ["testMatter/", "runs/", "terminals/", ".claude/", ".cursor/",

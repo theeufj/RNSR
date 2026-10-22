@@ -19,8 +19,9 @@ from collections import Counter, defaultdict
 from pathlib import Path
 
 from rnsr.eval.arms_bench import DERIVATION_CHECKS, _report_facts
+from rnsr.eval.stats import bootstrap_diff, mcnemar, repeat_range, wilson
 
-LABELS = {"stuffing": "Whole document in context", "rlm-classic": "Classic (flat string in REPL)",
+LABELS = {"closed-book": "Closed book (no documents)", "stuffing": "Whole document in context", "rlm-classic": "Classic (flat string in REPL)",
           "dci": "DCI (ingested text, per file)", "dci-raw": "DCI over raw files (no ingest)", "docdb": "DocDB"}
 
 
@@ -79,6 +80,9 @@ def trajectory_signals(tdir: Path, qids: set[str]) -> dict:
 def build(run_dir: Path, benchmark: str, systems: list[str], *, rejudged: bool = False) -> dict:
     name = "results.rejudged.jsonl" if rejudged else "results.jsonl"
     results = {s: load_results(run_dir / f"{benchmark}-{s}" / name) for s in systems}
+    # Repeats: <benchmark>-<system>-r2, -r3, ... answer the same items again.
+    repeats = {s: [results[s]] + [load_results(p / name) for p in sorted(run_dir.glob(f"{benchmark}-{s}-r[0-9]*"))
+                                  if (p / name).exists()] for s in systems}
     common = set.intersection(*(set(r) for r in results.values() if r)) if any(results.values()) else set()
     n = len(common)
     classes = sorted({results[s][q]["task_class"] for s in systems for q in common if q in results[s]})
@@ -86,7 +90,11 @@ def build(run_dir: Path, benchmark: str, systems: list[str], *, rejudged: bool =
     for s in systems:
         rows = [results[s][q] for q in sorted(common)]
         correct = sum(1 for r in rows if r["correct"])
-        totals[s] = {"correct": correct, "n": n, "spend_usd": round(sum(r.get("cost_usd", 0) or 0 for r in rows), 4),
+        rep_counts = [sum(1 for q in common if rr.get(q, {}).get("correct")) for rr in repeats[s] if rr]
+        totals[s] = {"correct": correct, "n": n, "ci95": list(wilson(correct, n)),
+                     "repeats": repeat_range(rep_counts),
+                     "cap_hits": dict(Counter(r.get("cap_hit") for r in rows if r.get("cap_hit"))),
+                     "spend_usd": round(sum(r.get("cost_usd", 0) or 0 for r in rows), 4),
                      "latency_p50_s": round(sorted(r.get("latency_s", 0) for r in rows)[len(rows) // 2], 1) if rows else None,
                      "status": dict(Counter(r.get("status") for r in rows)),
                      "judge_scored": sum(1 for r in rows if r.get("scored_by") == "judge" and r["correct"]),
@@ -101,9 +109,18 @@ def build(run_dir: Path, benchmark: str, systems: list[str], *, rejudged: bool =
             misses.append({"qid": q, "class": results[systems[0]][q]["task_class"], "gold": results[systems[0]][q]["gold"],
                            "answers": {s: {"miss": wrong[s], "answer": results[s][q].get("predicted"),
                                            "scored_by": results[s][q].get("scored_by")} for s in systems}})
+    qids = sorted(common)
+    pairwise = []
+    for i, a in enumerate(systems):
+        for b in systems[i + 1:]:
+            va = [bool(results[a][q]["correct"]) for q in qids]
+            vb = [bool(results[b][q]["correct"]) for q in qids]
+            test = mcnemar(va, vb) if qids else {"n": 0, "a_only": 0, "b_only": 0, "diff": 0.0, "p_value": 1.0}
+            lo, hi = bootstrap_diff(va, vb) if qids else (0.0, 0.0)
+            pairwise.append({"a": a, "b": b, **test, "diff_ci95": [lo, hi]})
     audit = {}
     for s in systems:
-        if s == "stuffing":
+        if s in ("stuffing", "closed-book"):
             continue
         sig = trajectory_signals(run_dir / f"{benchmark}-{s}" / "trajectories", common)
         numeric = [q for q in common if results[s][q]["task_class"] == "numeric"]
@@ -115,11 +132,21 @@ def build(run_dir: Path, benchmark: str, systems: list[str], *, rejudged: bool =
     # ---- markdown
     L = [f"# {benchmark}: cross-system comparison", "",
          f"Run dir `{run_dir}`. {n} questions answered by every system." + (" Scores are re-judged offline (majority of judge passes)." if rejudged else ""), "",
-         "| System | Correct | Accuracy | Normalised / Judge-scored | Spend | Latency p50 | Status |", "|---|---|---|---|---|---|---|"]
+         "| System | Correct | Accuracy (95% CI) | Repeats min–max | Cap hits | Normalised / Judge-scored | Spend | Latency p50 | Status |",
+         "|---|---|---|---|---|---|---|---|---|"]
     for s in systems:
         t = totals[s]
-        L.append(f"| {LABELS.get(s, s)} | {t['correct']} / {n} | {t['correct'] / n:.1%} | {t['normalised_scored']} / {t['judge_scored']} | ${t['spend_usd']:.2f} | "
+        rep = t["repeats"]
+        rep_s = f"{rep['min']}–{rep['max']} ({rep['repeats']}×)" if rep["repeats"] > 1 else "–"
+        caps = ", ".join(f"{k} {v}" for k, v in sorted(t["cap_hits"].items())) or "0"
+        L.append(f"| {LABELS.get(s, s)} | {t['correct']} / {n} | {t['correct'] / n:.1%} ({t['ci95'][0]:.0%}–{t['ci95'][1]:.0%}) | {rep_s} | {caps} | "
+                 f"{t['normalised_scored']} / {t['judge_scored']} | ${t['spend_usd']:.2f} | "
                  f"{t['latency_p50_s']} s | {t['status']} |" if n else f"| {LABELS.get(s, s)} | – |")
+    L += ["", "Paired differences on identical questions (exact McNemar on discordant pairs; bootstrap 95% CI on the accuracy difference):", "",
+          "| A | B | A right, B wrong | B right, A wrong | Diff (A−B) | 95% CI | p |", "|---|---|---|---|---|---|---|"]
+    for pw in pairwise:
+        L.append(f"| {LABELS.get(pw['a'], pw['a'])} | {LABELS.get(pw['b'], pw['b'])} | {pw['a_only']} | {pw['b_only']} | "
+                 f"{pw['diff']:+.1%} | {pw['diff_ci95'][0]:+.0%}…{pw['diff_ci95'][1]:+.0%} | {pw['p_value']:.2f} |")
     L += ["", "| Task class | " + " | ".join(LABELS.get(s, s) for s in systems) + " |", "|---|" + "---|" * len(systems)]
     for c in classes:
         L.append(f"| `{c}` ({by_class[c][systems[0]][1]}) | " + " | ".join(f"{by_class[c][s][0]} / {by_class[c][s][1]}" for s in systems) + " |")
@@ -145,7 +172,7 @@ def build(run_dir: Path, benchmark: str, systems: list[str], *, rejudged: bool =
             if m["answers"][s]["miss"]:
                 L.append(f"  - {s}: {str(m['answers'][s]['answer'])[:200]!r}")
     (run_dir / f"{benchmark}-report.md").write_text("\n".join(L) + "\n", encoding="utf-8")
-    summary = {"benchmark": benchmark, "systems": systems, "n": n, "totals": totals,
+    summary = {"benchmark": benchmark, "systems": systems, "n": n, "totals": totals, "pairwise": pairwise,
                "by_class": {c: dict(by_class[c]) for c in classes}, "audit": audit, "misses": misses}
     (run_dir / f"{benchmark}-summary.json").write_text(json.dumps(summary, indent=1, ensure_ascii=False))
     return summary

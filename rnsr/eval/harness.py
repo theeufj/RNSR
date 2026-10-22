@@ -24,14 +24,14 @@ from rnsr.eval.metrics import (
     JUDGE_VERSION,
     SCORER_VERSION,
     EvalResult,
-    judge_answer,
+    judge_answer_with_usage,
     normalised_match,
     score_answer,
     summarize,
 )
 from rnsr.harness.loop import EnvSpec, RootRunner
 
-SYSTEMS = ("docdb", "rlm-classic", "dci", "dci-raw", "stuffing",
+SYSTEMS = ("docdb", "rlm-classic", "dci", "dci-raw", "stuffing", "closed-book",
            "bm25-rag", "vector-rag", "rerank-rag", "graph-rag")
 # Arms that differ from docdb only in corpus presentation (see
 # rnsr.eval.matter_arms): dci = one file per document in the REPL with
@@ -39,6 +39,15 @@ SYSTEMS = ("docdb", "rlm-classic", "dci", "dci-raw", "stuffing",
 # files (no layout model, no tables, no transcription); stuffing = the whole
 # corpus in one prompt per question.
 _PRESENTATION_ARMS = ("rlm-classic", "dci", "dci-raw", "stuffing")
+# closed-book: the question alone, no documents. On public benchmarks it
+# measures how much of an arm's score is recall of the public source rather
+# than reading; an arm that does not clear it has not shown it read anything.
+_CLOSED_BOOK_SYSTEM = """\
+You are answering a benchmark question from memory. You are given NO documents. \
+Answer from what you already know about the company, filing or dataset the \
+question refers to. Give the answer directly and concisely in the form the \
+question implies. If you do not know, say "unknown" rather than guessing.
+"""
 
 def _corpus_valid(path: Path, n_sources: int) -> bool:
     """A cached corpus must hold every source document and some text."""
@@ -149,6 +158,17 @@ async def _stuffing_answer(item: EvalItem, cache_dir: Path, runner: RootRunner, 
     return text or None, resp.usage
 
 
+async def _closed_book_answer(item: EvalItem, runner: RootRunner):
+    hint = ""
+    doc = (item.meta or {}).get("doc_name")
+    if doc:
+        hint = f"\n(The question concerns the filing or document known as: {doc})"
+    resp = await runner.root_client.complete(f"QUESTION: {item.question}{hint}", model=runner.root_model,
+                                             system=_CLOSED_BOOK_SYSTEM, max_tokens=512)
+    text = (resp.text or "").strip()
+    return text or None, resp.usage
+
+
 def _env_for(item: EvalItem, system: str, cache_dir: Path, settings: Settings) -> EnvSpec:
     if system == "rlm-classic":
         context = item.context
@@ -194,6 +214,18 @@ def _env_for(item: EvalItem, system: str, cache_dir: Path, settings: Settings) -
     raise ValueError(f"unknown system: {system} (choose from {SYSTEMS})")
 
 
+def _cap_hit(status: str, iterations: int, wall_s: float | None, settings: Settings) -> str | None:
+    """Which cap, if any, ended the query: a cap-bound arm is not measuring
+    the method, it is measuring the budget."""
+    if status == "budget_exhausted":
+        return "spend"
+    if settings.max_root_iters and iterations >= settings.max_root_iters:
+        return "iterations"
+    if settings.max_wall_s and wall_s is not None and wall_s >= settings.max_wall_s * 0.98:
+        return "wall"
+    return None
+
+
 async def run_eval(
     items: list[EvalItem],
     system: str,
@@ -204,6 +236,7 @@ async def run_eval(
     judge: bool = True,
     concurrency: int = 1,
     cache_dir: str | Path | None = None,
+    overlay=None,
 ) -> tuple[list[EvalResult], dict]:
     """Run a benchmark; writes results.jsonl + summary.json under run_dir.
 
@@ -262,11 +295,14 @@ async def run_eval(
         t0 = time.monotonic()
         error_type = None
         try:
-            if system == "stuffing":
-                async with ingest_lock:
-                    if item.sources:
-                        await asyncio.to_thread(_corpus_for, item.sources, cache_dir, settings)
-                text, usage = await _stuffing_answer(item, cache_dir, runner, settings)
+            if system in ("stuffing", "closed-book"):
+                if system == "closed-book":
+                    text, usage = await _closed_book_answer(item, runner)
+                else:
+                    async with ingest_lock:
+                        if item.sources:
+                            await asyncio.to_thread(_corpus_for, item.sources, cache_dir, settings)
+                    text, usage = await _stuffing_answer(item, cache_dir, runner, settings)
 
                 class _QR:   # minimal QueryResult surface for the result row
                     answer = text
@@ -298,19 +334,22 @@ async def run_eval(
             iterations = qr.iterations
             trajectory_path = qr.trajectory_path
             result_tier = qr.evidence.tier if getattr(qr, "evidence", None) else None
+            wall_s = (ledger.get("wall_s") if isinstance(ledger, dict) else None)
         except Exception as e:   # e.g. Docling ConversionError on one filing
             error_type = type(e).__name__
             predicted, status = None, "error"
             ledger = {"spend_usd": 0.0, "sub_calls": 0}
-            iterations, trajectory_path, result_tier = 0, None, None
+            iterations, trajectory_path, result_tier, wall_s = 0, None, None, None
             with (run_dir / "errors.log").open("a", encoding="utf-8") as errors:
                 errors.write(f"{item.qid}: {type(e).__name__}: {e}\n")
-        correct, scored_by = score_answer(predicted, item.gold), "string"
+        correct, scored_by, judge_cost = score_answer(predicted, item.gold), "string", 0.0
         if not correct and predicted is not None and normalised_match(predicted, item.gold):
             correct, scored_by = True, "normalised"
+        if not correct and predicted is not None and overlay is not None and overlay.accepts(item.qid, predicted):
+            correct, scored_by = True, "gold_overlay"
         if judge and not correct and predicted is not None:
-            verdict = await judge_answer(runner.sub_client, runner.sub_model,
-                                         item.question, predicted, item.gold)
+            verdict, judge_cost = await judge_answer_with_usage(
+                runner.sub_client, runner.sub_model, item.question, predicted, item.gold)
             if verdict is not None:
                 correct, scored_by = verdict, "judge"
         return EvalResult(
@@ -329,6 +368,8 @@ async def run_eval(
             expect=getattr(item, "expect", "value"),
             tier=result_tier,
             error_type=error_type,
+            cap_hit=_cap_hit(status, iterations, wall_s, settings) if system not in ("stuffing", "closed-book") else None,
+            judge_cost_usd=round(judge_cost, 6),
         )
 
     with open(results_path, "a") as out:

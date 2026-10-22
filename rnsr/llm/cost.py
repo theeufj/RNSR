@@ -38,7 +38,10 @@ PRICES_PER_MTOK: dict[str, tuple[float, float]] = {
     # long-prompt calls are under-counted by up to 5x.
     "claude-haiku-5-5": (0.10, 0.50),
     "claude-haiku-4-5": (1.0, 5.0),
-    # Gemini
+    # Gemini (ai.google.dev/gemini-api/docs/pricing, verified 2026-10-23;
+    # 3.8 Flash list price doubles on 2027-01-01)
+    "gemini-3.8-flash": (0.75, 3.75),
+    "gemini-3.5-flash-lite": (0.30, 2.50),
     "gemini-2.5-pro": (1.25, 10.0),
     "gemini-2.5-flash": (0.30, 2.50),
     "gemini-2.5-flash-lite": (0.10, 0.40),

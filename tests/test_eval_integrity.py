@@ -310,3 +310,61 @@ def test_rejudge_sample_and_agreement(tmp_path):
     out.write_text("".join(json.dumps(r) + "\n" for r in sample))
     report = agreement(out)
     assert report["marked"] == 4 and report["agree"] + report["judge_no_human_yes"] == 4
+
+
+async def test_closed_book_arm_sees_no_documents_and_records_no_cap(tmp_path):
+    runner = _runner()
+    runner.root_client = MockLLM(default="42")
+    items = [EvalItem(qid="q1", question="Amount?", gold="42", context="Amount 42",
+                      meta={"doc_name": "ACME_2023_10K"})]
+    results, _ = await run_eval(items, "closed-book", runner, run_dir=tmp_path, judge=False)
+    assert results[0].correct and results[0].cap_hit is None
+    call = runner.root_client.calls[0]
+    assert "Amount 42" not in call["prompt"] and "NO documents" in call["system"]
+    assert "ACME_2023_10K" in call["prompt"]
+    assert runner.run.await_count == 0
+
+
+async def test_cap_hit_names_the_cap_that_ended_the_query(tmp_path):
+    runner = _runner()
+    runner.settings = Settings(max_root_iters=4, max_wall_s=100)
+    runner.run.return_value = SimpleNamespace(
+        answer="7", status="final", ledger={"spend_usd": 0.01, "sub_calls": 0, "wall_s": 12.0},
+        iterations=4, trajectory_path=None, evidence=None)
+    results, _ = await run_eval([EvalItem("q", "Amount?", "42", context="42")], "rlm-classic",
+                                runner, run_dir=tmp_path, judge=False)
+    assert results[0].cap_hit == "iterations"
+    runner.run.return_value = SimpleNamespace(
+        answer=None, status="budget_exhausted", ledger={"spend_usd": 2.0, "sub_calls": 0, "wall_s": 12.0},
+        iterations=2, trajectory_path=None, evidence=None)
+    results, _ = await run_eval([EvalItem("q", "Amount?", "42", context="42")], "rlm-classic",
+                                runner, run_dir=tmp_path / "b", judge=False)
+    assert results[0].cap_hit == "spend"
+
+
+async def test_rejudge_with_two_judges_requires_agreement(tmp_path, monkeypatch):
+    from rnsr.eval import rejudge as rj
+
+    rd = tmp_path / "fb-x"
+    rd.mkdir()
+    rows = [{"qid": "q1", "predicted": "forty-two", "gold": "42", "correct": False},  # judges agree YES
+            {"qid": "q2", "predicted": "41", "gold": "42", "correct": False},         # judges disagree
+            {"qid": "q3", "predicted": "42", "gold": "42", "correct": True},          # deterministic
+            {"qid": "q4", "predicted": "7", "gold": "42", "correct": False}]          # judges disagree
+    (rd / "results.jsonl").write_text("".join(json.dumps(r) + "\n" for r in rows))
+    yes = MockLLM(default="The candidate matches.\nYES")
+    picky = MockLLM(default="No.\nNO").rule(r'"candidate": "forty-two"', "Same number.\nYES")
+
+    monkeypatch.setattr(rj, "resolve_judges", lambda specs: [("a:j1", yes, "j1"), ("b:j2", picky, "j2")])
+    s = await rj.rejudge(rd, 3, {"q1": "Amount?"}, judges=["a:j1", "b:j2"])
+    assert s["correct"] == 2 and s["deterministic"] == 1 and s["disputed"] == 2
+    assert s["per_judge"]["a:j1"]["majority_correct"] == 4 and s["per_judge"]["b:j2"]["majority_correct"] == 2
+    assert s["cross_judge"]["a:j1 vs b:j2"]["judged_rows"] == 3
+    assert s["cross_judge"]["a:j1 vs b:j2"]["agree"] == 1
+    assert s["judge_spend_usd"] > 0
+    out = {json.loads(line)["qid"]: json.loads(line) for line in (rd / "results.rejudged.jsonl").read_text().splitlines()}
+    assert out["q2"]["scored_by"] == "judge_disputed" and out["q2"]["correct"] is False
+    assert out["q1"]["scored_by"] == "judge" and out["q1"]["correct"] is True
+    sample = tmp_path / "s.jsonl"
+    n = rj.write_sample([rd], 0, 11, sample, {})
+    assert n == 2 and {json.loads(line)["qid"] for line in sample.read_text().splitlines()} == {"q2", "q4"}

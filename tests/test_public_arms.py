@@ -43,4 +43,4 @@ def test_report_compares_only_common_qids(tmp_path):
     assert s["by_class"]["numeric"] == {"stuffing": [0, 1], "docdb": [1, 1]}
     assert [m["qid"] for m in s["misses"]] == ["q1"]
     md = (tmp_path / "fb-report.md").read_text()
-    assert "| DocDB | 2 / 2 | 100.0% |" in md and "| `q1` | numeric |" in md
+    assert "| DocDB | 2 / 2 | 100.0% (" in md and "| `q1` | numeric |" in md

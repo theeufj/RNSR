@@ -69,7 +69,12 @@ def load_financebench(limit: int | None = None,
             gold=gold,
             task_class="numeric" if _is_numeric_gold(gold) else "textual",
             sources=[pdf],
-            meta={"doc_name": row["doc_name"], "evidence": row.get("evidence")},
+            meta={"doc_name": row["doc_name"], "evidence": row.get("evidence"),
+                  # The dataset's own strata: metrics-generated / domain-relevant /
+                  # novel-generated, and the reasoning the question requires.
+                  "question_type": row.get("question_type"),
+                  "question_reasoning": row.get("question_reasoning"),
+                  "justification": row.get("justification")},
         ))
     return items
 

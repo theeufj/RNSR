@@ -188,7 +188,8 @@ def build(run_dir: Path, systems: list[str], items: dict[str, dict], *, cache_di
           rejudged: bool = False, benchmark: str = "oolong") -> dict:
     name = "results.rejudged.jsonl" if rejudged else "results.jsonl"
     results = {s: _load(run_dir / f"{benchmark}-{s}" / name) for s in systems}
-    common = set.intersection(*(set(r) for r in results.values() if r)) if any(results.values()) else set()
+    answered = [{q for q, r in res.items() if r.get("status") != "error"} for res in results.values() if res]
+    common = set.intersection(*answered) if answered else set()
     common = {q for q in common if q in items}
     strata = {"task": defaultdict(lambda: defaultdict(lambda: [0, 0])),
               "context_len": defaultdict(lambda: defaultdict(lambda: [0, 0]))}

@@ -1,0 +1,258 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>RNSR DocDB — project status, 26 October 2026</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root { --ink:#1b1f24; --muted:#5b6470; --line:#d9dee5; --accent:#0b5fff; --good:#1a7f37; --warn:#b26a00; --bad:#b42318; --bg:#f6f8fa; }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family: -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; color:var(--ink); background:#e9edf2; }
+  .slide { width: 1280px; min-height: 720px; margin: 24px auto; background:#fff; border:1px solid var(--line); padding: 44px 56px; page-break-after: always; position: relative; }
+  .slide h1 { font-size: 40px; margin: 0 0 8px; letter-spacing: -0.01em; }
+  .slide h2 { font-size: 30px; margin: 0 0 18px; letter-spacing: -0.01em; }
+  .slide h3 { font-size: 20px; margin: 18px 0 8px; }
+  .kicker { color: var(--accent); font-weight: 600; text-transform: uppercase; letter-spacing: .08em; font-size: 13px; margin-bottom: 10px; }
+  .sub { color: var(--muted); font-size: 18px; }
+  p, li { font-size: 18px; line-height: 1.45; }
+  ul { margin: 6px 0 10px 22px; padding: 0; }
+  table { border-collapse: collapse; width: 100%; font-size: 16px; margin: 10px 0 14px; }
+  th, td { border-bottom: 1px solid var(--line); padding: 7px 10px; text-align: left; vertical-align: top; }
+  th { background: var(--bg); font-weight: 600; }
+  td.n, th.n { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+  .grid3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 18px; }
+  .card { border: 1px solid var(--line); border-radius: 8px; padding: 16px 18px; background: #fff; }
+  .card .big { font-size: 40px; font-weight: 700; letter-spacing: -0.02em; }
+  .card .lbl { color: var(--muted); font-size: 14px; }
+  .pill { display:inline-block; padding: 2px 9px; border-radius: 999px; font-size: 13px; font-weight: 600; }
+  .done { background:#e6f4ea; color:var(--good);} .wip { background:#fff4e0; color:var(--warn);} .blocked { background:#fde8e6; color:var(--bad);} .todo { background:#eef1f5; color:var(--muted);}
+  .foot { position:absolute; bottom: 18px; left: 56px; right: 56px; display:flex; justify-content: space-between; color: var(--muted); font-size: 12px; }
+  .note { border-left: 4px solid var(--accent); background: var(--bg); padding: 10px 14px; font-size: 16px; margin: 10px 0; }
+  .bar { height: 14px; background: #e4e8ee; border-radius: 7px; overflow: hidden; }
+  .bar > span { display:block; height: 100%; background: var(--accent); }
+  .barrow { display:grid; grid-template-columns: 300px 1fr 90px; gap: 12px; align-items: center; font-size: 16px; margin: 6px 0; }
+  .small { font-size: 14px; color: var(--muted); }
+  @media print { body { background:#fff; } .slide { margin:0; border:0; width: auto; min-height: auto; height: 100vh; } }
+</style>
+</head>
+<body>
+
+<!-- 1. Title -->
+<section class="slide">
+  <div class="kicker">Status update</div>
+  <h1>RNSR DocDB</h1>
+  <p class="sub">A relational document environment for a language-model controller: what it buys, measured layer by layer.</p>
+  <div class="grid3" style="margin-top:36px">
+    <div class="card"><div class="big">1,555</div><div class="lbl">tests passing (unit + integration)</div></div>
+    <div class="card"><div class="big">187</div><div class="lbl">commits since Jan 2026; ~24.6k lines of Python</div></div>
+    <div class="card"><div class="big">4</div><div class="lbl">benchmark families run under one protocol: generated matters, FinanceBench, CUAD-long, OOLONG</div></div>
+  </div>
+  <div class="note" style="margin-top:36px">
+    One-line summary: <b>within a context window every architecture ties on accuracy</b>. DocDB's measurable advantages are (1) it reads documents the others cannot (scans), (2) it answers aggregation questions beyond the context window where prompting collapses, and (3) it is the only arm that produces a verified citation on every answer and a replayable derivation on computed ones. It costs 2–3× a plain REPL for that. Those three claims are now measured; the trust-tier layer still is not a signal.
+  </div>
+  <div class="foot"><span>Joshua Theeuf · RNSR · github.com/theeufj/RNSR</span><span>26 Oct 2026</span></div>
+</section>
+
+<!-- 2. What it is -->
+<section class="slide">
+  <div class="kicker">What we built</div>
+  <h2>The system in one picture</h2>
+  <div class="grid">
+    <div>
+      <h3>Ingest → corpus artifact</h3>
+      <ul>
+        <li>Docling layout parse, OCR/transcription of scanned pages, typed tables with character coordinates, FTS index, health record — one SQLite file per matter.</li>
+        <li>Frozen: every answer binds to row ids and spans a human can re-open.</li>
+      </ul>
+      <h3>Controller in a sandboxed REPL</h3>
+      <ul>
+        <li>Sonnet 5.5 root, Haiku 5.5 sub-calls; SQL, search ladder (FTS → embeddings), <code>semantic_annotate / semantic_classify</code>, source-bound <code>calculate</code> and <code>aggregate</code>.</li>
+        <li>Budgets: 24 root iterations, 600 s, $2 per query; run spend ceiling.</li>
+      </ul>
+      <h3>Evidence layer</h3>
+      <ul>
+        <li>Quotation verification, parent-executed certificates (the parent re-runs the selection SQL and re-reads every row), claim reviewer, trust tiers.</li>
+      </ul>
+    </div>
+    <div>
+      <h3>Evaluation harness (the part that grew most this month)</h3>
+      <ul>
+        <li>Five arms over identical corpora: whole-document prompting, classic REPL, DCI (files + grep), DCI over raw files, DocDB; plus a closed-book arm (no documents).</li>
+        <li>One-command matter bench; three public benchmarks; repeats; Wilson intervals and paired McNemar tests; two-provider judge with hand adjudication file; gold overlay with cited reasons.</li>
+        <li>Diagnostics: auditability counters (verified citation, replayable derivation), OOLONG per-line label accuracy against gold labels.</li>
+      </ul>
+      <div class="note">Design stance: the paper and the code must agree. Every number in the paper is produced by a command in the repository and pinned to a commit.</div>
+    </div>
+  </div>
+  <div class="foot"><span>RNSR DocDB status</span><span>2 / 9</span></div>
+</section>
+
+<!-- 3. Headline findings -->
+<section class="slide">
+  <div class="kicker">Findings</div>
+  <h2>What the measurements say (generated matters, 5 arms, identical corpora)</h2>
+  <table>
+    <thead><tr><th>Corpus</th><th>Whole matter in prompt</th><th>Classic REPL</th><th>DCI</th><th>DCI raw files</th><th>DocDB</th><th>Reading</th></tr></thead>
+    <tbody>
+      <tr><td>3 small matters (286 q, fits in window)</td><td class="n">278</td><td class="n">280</td><td class="n">–</td><td class="n">–</td><td class="n">275</td><td>Tie. Structure buys nothing when the prompt holds the corpus.</td></tr>
+      <tr><td>999-doc family-law file (90 fields)</td><td class="n">78</td><td class="n">81</td><td class="n">–</td><td class="n">–</td><td class="n">80</td><td>Tie again at ~450k tokens.</td></tr>
+      <tr><td>Dense uniform matter, 38 q, ~600k tokens</td><td class="n">24</td><td class="n">37</td><td class="n">37</td><td class="n">–</td><td class="n">36–38</td><td>Prompting fails aggregation (3–4 of 15); every REPL arm writes its own parser and gets 15/15.</td></tr>
+      <tr><td>Dense heterogeneous matter (5 invoice layouts, 34 scans)</td><td class="n">24</td><td class="n">37</td><td class="n">37</td><td class="n"><b>30</b></td><td class="n"><b>38</b></td><td>Ingestion is worth 7 questions: raw files cannot read the scans and give confident wrong totals.</td></tr>
+    </tbody>
+  </table>
+  <div class="grid3">
+    <div class="card"><div class="big">38 / 38</div><div class="lbl">DocDB on the heterogeneous matter, five reruns, $1.63–2.03, 5.4–5.8 min (was $2.67, 7.1 min)</div></div>
+    <div class="card"><div class="big">12–16 / 21</div><div class="lbl">computed answers with a replayable derivation from frozen source rows; no other arm produces any</div></div>
+    <div class="card"><div class="big">2.3–2.9×</div><div class="lbl">DocDB cost relative to the cheapest REPL arm on that matter; ~3× the wall time</div></div>
+  </div>
+  <p class="small">Sources: docs/benchmarks/matters-2026-10.md; runs/dense-hetero-arms/report*.md. Judge range across passes shown in the records; all differences between REPL arms and DocDB within noise.</p>
+  <div class="foot"><span>RNSR DocDB status</span><span>3 / 9</span></div>
+</section>
+
+<!-- 4. Public benchmarks -->
+<section class="slide">
+  <div class="kicker">Findings</div>
+  <h2>Public benchmarks: full FinanceBench (113 q), OOLONG, CUAD-long</h2>
+  <table>
+    <thead><tr><th>FinanceBench, 113 questions answered by every arm</th><th class="n">Correct</th><th class="n">Accuracy (95% CI)</th><th class="n">Repeats</th><th class="n">Spend</th><th class="n">Verified citation</th><th class="n">Replayable (numeric)</th></tr></thead>
+    <tbody>
+      <tr><td>Closed book — question only, <b>no documents</b></td><td class="n">59</td><td class="n">52% (43–61)</td><td class="n">3 runs</td><td class="n">$0.29</td><td class="n">0</td><td class="n">0 / 37</td></tr>
+      <tr><td>Whole document in context</td><td class="n">95</td><td class="n">84% (76–90)</td><td class="n">3 runs</td><td class="n">$42.48*</td><td class="n">0</td><td class="n">0 / 37</td></tr>
+      <tr><td>Classic REPL</td><td class="n">96</td><td class="n">85% (77–90)</td><td class="n">94–96</td><td class="n">$2.74</td><td class="n">0</td><td class="n">0 / 37</td></tr>
+      <tr><td>DCI (files + grep)</td><td class="n">95</td><td class="n">84% (76–90)</td><td class="n">94–95</td><td class="n">$3.23</td><td class="n">0</td><td class="n">0 / 37</td></tr>
+      <tr><td>DocDB</td><td class="n">92</td><td class="n">81% (73–88)</td><td class="n">1 run</td><td class="n">$9.46</td><td class="n"><b>112 / 113</b></td><td class="n"><b>22 / 37</b></td></tr>
+    </tbody>
+  </table>
+  <div class="grid">
+    <div>
+      <ul>
+        <li><b>Half of FinanceBench is answerable from memory.</b> The closed-book arm scores 52% (53% on numeric questions). Every reading arm is 30 points above it (p &lt; 0.01, paired); no two reading arms differ significantly (largest gap classic vs DocDB +3.5 points, p = 0.22).</li>
+        <li>*Whole-document prompting costs $42 on first run; repeats hit the provider's prompt cache and cost $2. The first-run figure is the honest one.</li>
+        <li>OOLONG (350 q, synthetic classify-and-count): prompting 64% (3 runs, 221–224/350); classic REPL 81% on the 182 it completed. DocDB's earlier 50-question run: 36/50 at $2.90 after the label-once change (was 34/50 at $16.77).</li>
+        <li>CUAD-long (10 contracts): 7 / 6 / 6 — nothing distinguishable on n = 10.</li>
+      </ul>
+    </div>
+    <div class="note">
+      <b>Provisional.</b> These FinanceBench/OOLONG rows are judged by Gemini 3.8 Flash alone (3 passes) because the Anthropic account reached its monthly API limit on 23 Oct; the Haiku judge, the DocDB repeats and the remaining OOLONG arms resume on 1 Nov. Judge version 4 ("a matching verdict word with a different value is NO") is being applied now; the numbers above are v3 and may move by a few questions.
+    </div>
+  </div>
+  <div class="foot"><span>RNSR DocDB status · runs/public-full/financebench-report.md</span><span>4 / 9</span></div>
+</section>
+
+<!-- 5. What changed this month -->
+<section class="slide">
+  <div class="kicker">Progress</div>
+  <h2>What changed in October (and what each change was worth)</h2>
+  <table>
+    <thead><tr><th>Change</th><th>Why</th><th>Measured effect</th></tr></thead>
+    <tbody>
+      <tr><td>Aggregate certificate (<code>aggregate</code> over parent-executed SQL, uncapped operands)</td><td>Reviewer withheld trust from correct sums; 32-operand cap was arbitrary</td><td>Replayable derivations 8–15 → 12–16 of 21 computed questions</td></tr>
+      <tr><td>Scope-only reviewer for certificates; embedding gate on the search ladder</td><td>Reviewer argued with arithmetic it could not check; 10,554 embedding requests bought nothing</td><td>Requests 10,554 → 223 on the heterogeneous matter; 38/38</td></tr>
+      <tr><td>Review loop capped at 3 rounds; certificate skip; certificate nudge</td><td>Six full-context root calls per contested field</td><td>Root calls −33%, spend $2.67 → $1.63–2.03, no accuracy change</td></tr>
+      <tr><td>Label once, certify the count (OOLONG classification)</td><td>Three votes per label, then voting with its own reviewer</td><td>$16.77 → $2.90, 6,915 → 895 sub-calls, 11 → 0 halts, 34 → 36/50</td></tr>
+      <tr><td>Answer presentation: number first, bounded precision</td><td>Certificate path carried its proof in the answer text</td><td>FinanceBench subset 30 → 35/40 against the same July answers</td></tr>
+      <tr><td>Judge v3/v4, normaliser, two providers, adjudication file</td><td>Bare-token judge penalised correct numbers stated with a formula; one judge family is not an instrument</td><td>Every arm moved 5–12 questions between judge versions; Gemini accepts self-corrected answers Haiku rejected — now a stated policy</td></tr>
+      <tr><td>Count certificates over text columns; bounded proofs for the reviewer</td><td>Controller refused 4× trying to certify a count; 317k-char proofs were dropped unread</td><td>Largest proof 317k → 36k chars; fields now judged instead of dropped</td></tr>
+    </tbody>
+  </table>
+  <div class="foot"><span>RNSR DocDB status · CHANGELOG.md</span><span>5 / 9</span></div>
+</section>
+
+<!-- 6. Workstream status -->
+<section class="slide">
+  <div class="kicker">Status by workstream</div>
+  <h2>Where each piece stands</h2>
+  <table>
+    <thead><tr><th style="width:34%">Workstream</th><th style="width:12%">State</th><th>Notes</th></tr></thead>
+    <tbody>
+      <tr><td>Ingestion (Docling, OCR, typed tables, health)</td><td><span class="pill done">Done</span></td><td>Measured value: documents a model cannot otherwise read. Zero value on clean 10-Ks.</td></tr>
+      <tr><td>Sandboxed controller + tools</td><td><span class="pill done">Done</span></td><td>Parity with every REPL baseline on every corpus; the only arm with a 15/15 and a 38/38.</td></tr>
+      <tr><td>Aggregate certificate / source-bound calculation</td><td><span class="pill done">Done</span></td><td>Works where tables exist. Gap: 13% of invoices on the hetero matter have no table → certificate cannot reach them.</td></tr>
+      <tr><td>Claim review loop</td><td><span class="pill wip">Bounded, not solved</span></td><td>19–23 of 38 correct answers still finish low-tier: reviewer cannot verify scope of controller-chosen operands.</td></tr>
+      <tr><td>Trust tiers</td><td><span class="pill wip">Not yet a signal</span></td><td>High tier reached on 2 of 113 FinanceBench answers (first time); needs table validation at ingest.</td></tr>
+      <tr><td>Evaluation instrument (repeats, CIs, two judges, overlay, strata)</td><td><span class="pill done">Built</span></td><td>Code complete and tested; first full runs partly complete (see blocker).</td></tr>
+      <tr><td>Full public-benchmark runs (6 arms × 3 repeats)</td><td><span class="pill blocked">Blocked until 1 Nov</span></td><td>FinanceBench: 4 arms × 3 + DocDB × 1 done. OOLONG: prompting × 3 done, classic 182/350, DocDB 0/350. Resume is automatic (same commands).</td></tr>
+      <tr><td>Part B score work (verdict-first rubric; specific-before-generic labels)</td><td><span class="pill wip">On branch</span></td><td>Diagnosed from label data: 93% label accuracy, "entity" absorbing places/people/concepts → exact counts fail. Fix written on <code>partb-scores</code>, unmeasured.</td></tr>
+      <tr><td>Paper (arXiv draft, HTML)</td><td><span class="pill wip">v2 drafted</span></td><td>§6.7 and Table 6 need the full-run numbers; pinned to commits 3d62d4b / 1b990a8.</td></tr>
+    </tbody>
+  </table>
+  <div class="foot"><span>RNSR DocDB status</span><span>6 / 9</span></div>
+</section>
+
+<!-- 7. Honest assessment -->
+<section class="slide">
+  <div class="kicker">Assessment</div>
+  <h2>Is it valuable? What the evidence supports, and what it does not</h2>
+  <div class="grid">
+    <div>
+      <h3>Supported by measurement</h3>
+      <ul>
+        <li>Beyond the context window, a REPL (any REPL) beats prompting on aggregation 15/15 vs 3–4/15. That part is commodity: DCI and classic get it too.</li>
+        <li>Layout-aware ingestion is worth ~18% of questions on a corpus with scans, and 0% on clean PDFs.</li>
+        <li>DocDB is the only arm with a verified citation on every answer and a replayable derivation on 54–76% of computed ones. This is the product property; no baseline has it.</li>
+        <li>Cost of that property: 2–3× a REPL and ~3× its wall time, down from ~10× in September.</li>
+      </ul>
+    </div>
+    <div>
+      <h3>Not supported (yet)</h3>
+      <ul>
+        <li>No accuracy advantage over a plain REPL anywhere. Claims of "more accurate" should not be made.</li>
+        <li>Trust tiers do not predict correctness: on the dense matter 22/38 correct answers are low-tier because the reviewer cannot check scope.</li>
+        <li>Half of FinanceBench is in the model's memory; the benchmark measures recall as much as reading. Any public-10-K result needs the closed-book baseline beside it.</li>
+        <li>Judge choice moves scores by 5–12 questions on 40. Differences of a few questions are not findings.</li>
+      </ul>
+    </div>
+  </div>
+  <div class="note">So what: the pitch is <b>auditability at a known price</b>, not accuracy. The relational layer is what makes a derivation replayable; the question for legal-tech is whether a receipt a reader can re-open is worth 2–3× the inference cost. That is now a priced, product question rather than a research one.</div>
+  <div class="foot"><span>RNSR DocDB status</span><span>7 / 9</span></div>
+</section>
+
+<!-- 8. Blockers and risks -->
+<section class="slide">
+  <div class="kicker">Blockers and risks</div>
+  <h2>What is in the way</h2>
+  <div class="grid">
+    <div>
+      <h3>Blocker</h3>
+      <ul>
+        <li><b>Anthropic monthly API limit reached 23 Oct</b> ("regain access 2026-11-01"). All Claude-based runs and the Haiku judge are paused. Raising the limit in the console would unblock immediately; otherwise everything resumes 1 Nov with the same commands (completed rows are kept, failed rows retried).</li>
+      </ul>
+      <h3>Risks</h3>
+      <ul>
+        <li>Remaining full-run spend ≈ $90 (FinanceBench DocDB ×2, OOLONG classic ×3, OOLONG DocDB ×3) plus ~$6 judge; Part B reruns another ≈ $70.</li>
+        <li>Gemini judge is more lenient than Haiku on self-correcting answers; cross-judge disagreement will land in the adjudication file and needs a human reader (20-row sample ready).</li>
+        <li>Certificates cannot cover numbers that live in prose (no table). Structural fix: text-span rows in <code>aggregate()</code>. Not started.</li>
+      </ul>
+    </div>
+    <div>
+      <h3>Spend to date (list price, October)</h3>
+      <div class="barrow"><span>Small matters (3 corpora, 3 arms)</span><div class="bar"><span style="width:41%"></span></div><span class="n">~$38</span></div>
+      <div class="barrow"><span>TS6 + dense matters, all reruns</span><div class="bar"><span style="width:54%"></span></div><span class="n">~$50</span></div>
+      <div class="barrow"><span>Public 40/10/50 subsets, 5 arms (incl. superseded runs)</span><div class="bar"><span style="width:86%"></span></div><span class="n">~$80</span></div>
+      <div class="barrow"><span>Full FinanceBench/OOLONG so far</span><div class="bar"><span style="width:100%"></span></div><span class="n">~$93</span></div>
+      <div class="barrow"><span>Judging (both providers)</span><div class="bar"><span style="width:11%"></span></div><span class="n">~$10</span></div>
+      <p class="small">October total ≈ $270 at list price, summed from each run's results; per-run figures are in each run's summary.json. Haiku 5.5 is priced at its ≤100k-token tier so long-prompt sub-calls are under-counted.</p>
+    </div>
+  </div>
+  <div class="foot"><span>RNSR DocDB status</span><span>8 / 9</span></div>
+</section>
+
+<!-- 9. Next -->
+<section class="slide">
+  <div class="kicker">Next</div>
+  <h2>Next four weeks</h2>
+  <ol>
+    <li style="font-size:18px;line-height:1.5"><b>1 Nov — resume the full runs.</b> FinanceBench DocDB ×2 more, OOLONG classic and DocDB ×3; re-judge everything with both providers; mark the adjudication sample by hand; publish intervals, not points.</li>
+    <li style="font-size:18px;line-height:1.5"><b>Merge Part B and measure it.</b> Verdict-first answers; classification rubrics from most specific to catch-all label. Expect OOLONG exact-count questions to move; expect FinanceBench not to.</li>
+    <li style="font-size:18px;line-height:1.5"><b>Text-span rows in the aggregate certificate</b>, so a parent-executed selection can cover a corpus whose numbers are partly in prose; then re-measure how many correct answers still finish low-tier.</li>
+    <li style="font-size:18px;line-height:1.5"><b>Table validation at ingest</b>, so the high tier is reachable and tier calibration can be measured on held-out matters.</li>
+    <li style="font-size:18px;line-height:1.5"><b>A corpus of real scanned vendor paperwork.</b> The ingestion result rests on generated scans; the claim needs real ones.</li>
+    <li style="font-size:18px;line-height:1.5"><b>Paper to arXiv</b> once items 1–2 land: Table 6 and §6.7 from the full runs, closed-book baseline in every public table, judge protocol and adjudication agreement reported.</li>
+  </ol>
+  <div class="note">Decision requested: raise the Anthropic monthly limit now (unblocks ~1 week early), or hold to 1 Nov.</div>
+  <div class="foot"><span>RNSR DocDB status · docs/status/status-2026-10-26.html</span><span>9 / 9</span></div>
+</section>
+
+</body>
+</html>

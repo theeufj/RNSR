@@ -83,14 +83,21 @@ def build(run_dir: Path, benchmark: str, systems: list[str], *, rejudged: bool =
     # Repeats: <benchmark>-<system>-r2, -r3, ... answer the same items again.
     repeats = {s: [results[s]] + [load_results(p / name) for p in sorted(run_dir.glob(f"{benchmark}-{s}-r[0-9]*"))
                                   if (p / name).exists()] for s in systems}
-    common = set.intersection(*(set(r) for r in results.values() if r)) if any(results.values()) else set()
+    # Only questions every system actually answered (an 'error' row is an
+    # outage or a cap, not an answer) are compared.
+    answered = [{q for q, r in res.items() if r.get("status") != "error"} for res in results.values() if res]
+    common = set.intersection(*answered) if answered else set()
     n = len(common)
     classes = sorted({results[s][q]["task_class"] for s in systems for q in common if q in results[s]})
     totals, by_class, misses = {}, defaultdict(dict), []
     for s in systems:
         rows = [results[s][q] for q in sorted(common)]
         correct = sum(1 for r in rows if r["correct"])
-        rep_counts = [sum(1 for q in common if rr.get(q, {}).get("correct")) for rr in repeats[s] if rr]
+        # A repeat counts only when it answered every common question; a run cut
+        # short by an outage or a provider cap is not a measurement of variance.
+        complete = [rr for rr in repeats[s] if rr and all(
+            q in rr and rr[q].get("status") not in (None, "error") for q in common)]
+        rep_counts = [sum(1 for q in common if rr[q].get("correct")) for rr in complete]
         totals[s] = {"correct": correct, "n": n, "ci95": list(wilson(correct, n)),
                      "repeats": repeat_range(rep_counts),
                      "cap_hits": dict(Counter(r.get("cap_hit") for r in rows if r.get("cap_hit"))),

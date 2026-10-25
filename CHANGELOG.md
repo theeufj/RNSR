@@ -2,6 +2,32 @@
 
 ## Unreleased
 
+- Benchmark instrument (`docs/benchmarks/public-full-2026-10.md`). `rnsr eval
+  --repeat K` answers the same items K times into `<bench>-<system>-r<k>`;
+  a `closed-book` arm (question only, no documents) measures how much of a
+  public-benchmark score is recall; each result records `cap_hit`
+  (spend/iterations/wall) and `judge_cost_usd`. `rnsr.eval.stats`: Wilson
+  95% intervals, exact McNemar on discordant pairs, paired bootstrap on the
+  accuracy difference, repeat ranges; `public_arms_report` shows them and
+  ignores repeats cut short by an outage. `rnsr.eval.rejudge --judges
+  provider:model,...` judges with more than one provider (default passes 3),
+  requires every judge's majority to agree, marks disagreements
+  `judge_disputed`, reports Cohen's kappa and judge spend, and always puts
+  disputed rows in the adjudication file; `gemini-3.8-flash` verified and
+  priced as the second judge. Judge v4 (`4-values-must-match`): a matching
+  verdict word with a different value is NO, and a candidate that states two
+  values without retracting one has not answered. `rnsr.eval.gold_overlay`
+  and `datasets/financebench_overlay.json`: accepted equivalents for golds
+  whose stated form disagrees with the dataset's own justification, each
+  with a reason and source column; rows it accepts are
+  `scored_by=gold_overlay` and reported with and without. FinanceBench items
+  carry `question_type`/`question_reasoning`. `rnsr.eval.oolong_report`:
+  accuracy by task type and context length, and for DocDB the per-line
+  labels it saved joined to the dataset's gold labels (label accuracy,
+  confusion, counts-vs-answer cross-tab). First finding from it: DocDB's
+  labels were 93% right with the generic label absorbing places, people
+  and concepts, so almost no exact count was right while relative-frequency
+  questions survived.
 - Review loop bounded and certificate-aware. `claim_review_certificate_policy`
   defaults to `skip`: a field whose proof is an aggregate certificate with a
   parent-executed selection is supported without a model review
